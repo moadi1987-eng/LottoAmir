@@ -5,6 +5,8 @@ backup_2025-02-18/
 *.xlsx
 *.json
 *.png
+!10.png
+!14.png
 
 # Python helper scripts are kept local for now
 *.py

@@ -746,6 +746,11 @@
             calibration: 'lottoCalibV41'
         };
 
+        const DEFAULT_FORM_IMAGES = {
+            long: '14.png',
+            short: '10.png'
+        };
+
         // ========== מצב ==========
         let state = {
             formType: 'long',
@@ -814,8 +819,8 @@
         }
 
         function updateImageStatusDots() {
-            const hasLong = localStorage.getItem(STORAGE_KEYS.imageLong) !== null;
-            const hasShort = localStorage.getItem(STORAGE_KEYS.imageShort) !== null;
+            const hasLong = localStorage.getItem(STORAGE_KEYS.imageLong) !== null || Boolean(DEFAULT_FORM_IMAGES.long);
+            const hasShort = localStorage.getItem(STORAGE_KEYS.imageShort) !== null || Boolean(DEFAULT_FORM_IMAGES.short);
             
             document.getElementById('dotLong').classList.toggle('has-image', hasLong);
             document.getElementById('dotLong').classList.toggle('no-image', !hasLong);
@@ -828,7 +833,7 @@
                 localStorage.removeItem(STORAGE_KEYS.imageLong);
                 localStorage.removeItem(STORAGE_KEYS.imageShort);
                 updateImageStatusDots();
-                document.getElementById('lottoForm').style.backgroundImage = 'none';
+                setFormImage(DEFAULT_FORM_IMAGES[state.formType]);
                 showStatus('תמונות נמחקו', 'info');
             }
         }
@@ -981,7 +986,7 @@
             if (savedImage) {
                 setFormImage(savedImage);
             } else {
-                document.getElementById('lottoForm').style.backgroundImage = 'none';
+                setFormImage(DEFAULT_FORM_IMAGES[type]);
             }
             
             updatePageSize();
