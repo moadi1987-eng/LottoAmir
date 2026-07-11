@@ -611,6 +611,106 @@
         .btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
         .btn-secondary:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--accent); }
 
+        .pin-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 0 0 16px;
+        }
+        .pin-form-btn {
+            padding: 9px 18px;
+            border: 1px solid var(--warning-border);
+            border-radius: 8px;
+            background: rgba(245, 158, 11, 0.14);
+            color: var(--warning);
+            font-weight: 800;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .pin-form-btn:hover {
+            background: rgba(245, 158, 11, 0.22);
+            box-shadow: 0 4px 16px rgba(245, 158, 11, 0.16);
+        }
+        .pinned-status {
+            margin: 0 0 16px;
+            padding: 12px;
+            border: 1px solid var(--warning-border);
+            border-radius: 10px;
+            background: rgba(245, 158, 11, 0.09);
+            color: var(--text);
+            font-size: 13px;
+        }
+        .pinned-status-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .pinned-status-title {
+            color: var(--warning);
+            font-weight: 800;
+        }
+        .pinned-status-meta {
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+        .pinned-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .pinned-actions .pill-btn {
+            border-radius: 7px;
+        }
+        .pinned-future-source {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            background: var(--bg-elevated);
+            margin-bottom: 14px;
+        }
+        .pinned-future-title {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            color: var(--text);
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+        .future-draw {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .future-draw summary {
+            cursor: pointer;
+            padding: 11px 12px;
+            color: var(--text);
+            font-weight: 700;
+            list-style-position: inside;
+        }
+        .future-draw-body {
+            border-top: 1px solid var(--border);
+            padding: 12px;
+        }
+        .future-draw-numbers {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 8px 0 12px;
+        }
+
         /* ===== MOBILE RESPONSIVE ===== */
         @media (max-width: 768px) {
             body { padding: 6px; }
@@ -712,6 +812,14 @@
             .fill-all-btn { padding: 11px; font-size: 13px; margin-top: 12px; }
 
             .quick-btn, .pill-btn { padding: 7px 11px; font-size: 11px; }
+            .pin-toolbar { display: grid; grid-template-columns: 1fr; gap: 8px; }
+            .pin-form-btn { width: 100%; min-height: 42px; }
+            .pinned-status-main { align-items: stretch; }
+            .pinned-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
+            .pinned-actions .pill-btn { width: 100%; }
+            .pinned-future-source { padding: 10px; }
+            .future-draw summary { font-size: 12px; }
+            .future-draw-body { padding: 10px; }
 
             /* Hide floating side nav on mobile — use scroll instead */
             .side-nav { display: none !important; }
@@ -932,6 +1040,11 @@
                         </div>
                     </div>
 
+                    <div class="pin-toolbar">
+                        <button class="pin-form-btn" id="pinMainFormBtn" onclick="pinCurrentForm('main')">📌 קבע טופס ראשון</button>
+                    </div>
+                    <div class="pinned-status" id="pinnedMainStatus" style="display:none;"></div>
+
                     <div class="combinations" id="combinations"></div>
 
                     <button class="fill-all-btn" onclick="sendAllToForm()">
@@ -948,6 +1061,10 @@
                     <div class="info-note" style="text-align: center;">
                         💪 <strong>רוטציית חזק:</strong> כל מספר חזק (1-7) מופיע בדיוק בשני כרטיסים — מבטיח פגיעה!
                     </div>
+                    <div class="pin-toolbar">
+                        <button class="pin-form-btn" id="pinForm2Btn" onclick="pinCurrentForm('form2')">📌 קבע טופס שני</button>
+                    </div>
+                    <div class="pinned-status" id="pinnedForm2Status" style="display:none;"></div>
                     <div class="combinations" id="combinationsForm2"></div>
                     <button class="fill-all-btn" onclick="sendAllToForm2()">
                         📝 שלח את כל 14 (טופס אחר) לטופס
@@ -1022,6 +1139,11 @@
                         <tbody id="quartetsTable"></tbody>
                     </table>
                 </div>
+
+                <div class="card card-highlight" id="pinnedFutureCard">
+                    <div class="card-header">📌 השוואות עתידיות לטפסים מקובעים</div>
+                    <div id="pinnedFutureContent"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -1036,6 +1158,12 @@
         let loadedExcelRows = null;
         let comparisonLiveUpdateTimer = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
+        const PINNED_FORMS_STORAGE_KEY = 'lottoPinnedFormsV1';
+        const PINNED_FORM_SOURCES = {
+            main: { label: 'טופס ראשון', fullLabel: 'טופס ראשון – 14 קומבינציות מומלצות' },
+            form2: { label: 'טופס שני', fullLabel: 'טופס שני – 14 קומבינציות (1 עד 14)' }
+        };
+        let pinnedForms = { version: 1, main: null, form2: null };
         
         function detectDataFormat(data) {
             if (!data || data.length === 0) return { numStart: 0, strongIdx: 6, hasDrawDate: false };
@@ -1072,6 +1200,441 @@
         let selectedData = null;
         let lastAnalysis = null;   // הניתוח האחרון (לשמירה)
         let savedAnalysis = null;  // ניתוח שמור (להשוואה)
+
+        function loadPinnedForms() {
+            try {
+                const raw = localStorage.getItem(PINNED_FORMS_STORAGE_KEY);
+                if (!raw) {
+                    pinnedForms = { version: 1, main: null, form2: null };
+                    return pinnedForms;
+                }
+                const parsed = JSON.parse(raw);
+                pinnedForms = {
+                    version: 1,
+                    main: parsed && parsed.main ? parsed.main : null,
+                    form2: parsed && parsed.form2 ? parsed.form2 : null
+                };
+            } catch (error) {
+                console.warn('Pinned forms load error:', error);
+                pinnedForms = { version: 1, main: null, form2: null };
+            }
+            return pinnedForms;
+        }
+
+        function savePinnedForms() {
+            try {
+                localStorage.setItem(PINNED_FORMS_STORAGE_KEY, JSON.stringify(pinnedForms));
+                return true;
+            } catch (error) {
+                alert('❌ הדפדפן לא הצליח לשמור את ה-PIN. נסה לפנות מקום או לבדוק הרשאות אחסון.');
+                console.warn('Pinned forms save error:', error);
+                return false;
+            }
+        }
+
+        function getCombosForSource(source) {
+            return source === 'form2' ? (currentCombinationsForm2 || []) : (currentCombinations || []);
+        }
+
+        function normalizePinnedCombination(combo, index) {
+            const nums = (combo.numbers || [])
+                .map(function(n) { return parseInt(n, 10); })
+                .filter(function(n) { return !isNaN(n) && n >= 1 && n <= 37; })
+                .slice(0, 6)
+                .sort(function(a, b) { return a - b; });
+            const strong = parseInt(combo.strong, 10);
+            return {
+                comboNum: combo.comboNum != null ? combo.comboNum : (index + 1),
+                strategy: combo.strategy || ('קומבינציה ' + (index + 1)),
+                numbers: nums,
+                strong: !isNaN(strong) ? strong : null
+            };
+        }
+
+        function formatPinnedDate(isoDate) {
+            if (!isoDate) return 'ללא תאריך';
+            const d = new Date(isoDate);
+            if (isNaN(d.getTime())) return String(isoDate);
+            return d.toLocaleString('he-IL', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function parseDrawDate(value) {
+            if (value == null || value === '') return null;
+            if (value instanceof Date) {
+                const time = value.getTime();
+                return isNaN(time) ? null : time;
+            }
+            if (typeof value === 'number' && isFinite(value)) {
+                const excelEpoch = Date.UTC(1899, 11, 30);
+                return excelEpoch + Math.round(value * 86400000);
+            }
+            const text = String(value).trim();
+            if (!text) return null;
+            const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (iso) {
+                return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10)).getTime();
+            }
+            const local = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+            if (local) {
+                let year = parseInt(local[3], 10);
+                if (year < 100) year += 2000;
+                return new Date(year, parseInt(local[2], 10) - 1, parseInt(local[1], 10)).getTime();
+            }
+            const numeric = parseFloat(text);
+            if (!isNaN(numeric) && numeric > 20000 && numeric < 80000) {
+                const excelEpoch = Date.UTC(1899, 11, 30);
+                return excelEpoch + Math.round(numeric * 86400000);
+            }
+            const parsed = Date.parse(text);
+            return isNaN(parsed) ? null : parsed;
+        }
+
+        function formatDrawDateForDisplay(value) {
+            if (value == null || value === '') return '';
+            const time = parseDrawDate(value);
+            if (time != null) return new Date(time).toLocaleDateString('he-IL');
+            return String(value);
+        }
+
+        function getLatestDrawAnchor() {
+            const draw = currentData && currentData.length > 0 ? currentData[0] : null;
+            if (!draw) {
+                return { anchorDrawNumber: null, anchorDrawDate: null };
+            }
+            const drawNumber = parseInt(draw.drawNumber, 10);
+            return {
+                anchorDrawNumber: !isNaN(drawNumber) ? drawNumber : null,
+                anchorDrawDate: draw.date != null && draw.date !== '' ? draw.date : null
+            };
+        }
+
+        function buildAnchorLabel(pin) {
+            const parts = [];
+            if (pin.anchorDrawNumber != null) parts.push('הגרלה #' + pin.anchorDrawNumber);
+            if (pin.anchorDrawDate != null && pin.anchorDrawDate !== '') parts.push(formatDrawDateForDisplay(pin.anchorDrawDate));
+            return parts.length ? parts.join(' • ') : 'ללא עוגן הגרלה';
+        }
+
+        function pinCurrentForm(source) {
+            const meta = PINNED_FORM_SOURCES[source] || PINNED_FORM_SOURCES.main;
+            const combos = getCombosForSource(source);
+            if (!currentData || currentData.length === 0 || !lastAnalysis) {
+                alert('הרץ ניתוח קודם כדי לקבע את הקומבינציות.');
+                return;
+            }
+            if (!combos || combos.length === 0) {
+                alert('אין קומבינציות לקיבוע בטופס הזה.');
+                return;
+            }
+            if (pinnedForms[source]) {
+                const ok = confirm('כבר קיים PIN עבור ' + meta.label + '. להחליף אותו בקומבינציות הנוכחיות?');
+                if (!ok) return;
+            }
+            const anchor = getLatestDrawAnchor();
+            pinnedForms[source] = {
+                source: source,
+                label: meta.label,
+                fullLabel: meta.fullLabel,
+                pinnedAt: new Date().toISOString(),
+                anchorDrawNumber: anchor.anchorDrawNumber,
+                anchorDrawDate: anchor.anchorDrawDate,
+                combinations: combos.slice(0, 14).map(normalizePinnedCombination)
+            };
+            if (!savePinnedForms()) return;
+            renderPinnedFormStatus();
+            renderPinnedFutureComparisons();
+            alert('✅ ' + meta.label + ' קובע ונשמר עם ' + pinnedForms[source].combinations.length + ' קומבינציות.');
+        }
+
+        function clearPinnedForm(source) {
+            const meta = PINNED_FORM_SOURCES[source] || PINNED_FORM_SOURCES.main;
+            if (!pinnedForms[source]) return;
+            if (!confirm('לבטל את ה-PIN של ' + meta.label + '?')) return;
+            pinnedForms[source] = null;
+            if (!savePinnedForms()) return;
+            renderPinnedFormStatus();
+            renderPinnedFutureComparisons();
+        }
+
+        function sendPinnedToForm(source) {
+            const pin = pinnedForms[source];
+            if (!pin || !pin.combinations || pin.combinations.length === 0) {
+                alert('אין טופס מקובע לשליחה.');
+                return;
+            }
+            const combos = pin.combinations.slice(0, 14);
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'FILL_ALL_TABLES',
+                    combinations: combos
+                }, '*');
+                alert('✅ ' + combos.length + ' קומבינציות מקובעות נשלחו לטופס!');
+            } else {
+                localStorage.setItem('lottoFillAll', JSON.stringify({
+                    combinations: combos,
+                    timestamp: Date.now(),
+                    source: source,
+                    pinned: true
+                }));
+                alert('✅ הקומבינציות המקובעות נשמרו לטופס!');
+            }
+        }
+
+        function renderPinnedFormStatus() {
+            renderPinnedStatusForSource('main', 'pinnedMainStatus');
+            renderPinnedStatusForSource('form2', 'pinnedForm2Status');
+        }
+
+        function renderPinnedStatusForSource(source, elementId) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            const pin = pinnedForms[source];
+            if (!pin) {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            el.style.display = 'block';
+            el.innerHTML = `
+                <div class="pinned-status-main">
+                    <div>
+                        <div class="pinned-status-title">📌 ${pin.fullLabel || pin.label || 'טופס מקובע'}</div>
+                        <div class="pinned-status-meta">
+                            קובע: ${formatPinnedDate(pin.pinnedAt)}<br>
+                            עוגן: ${buildAnchorLabel(pin)} • ${(pin.combinations || []).length} קומבינציות
+                        </div>
+                    </div>
+                    <div class="pinned-actions">
+                        <button class="pill-btn" onclick="renderPinnedFutureComparisons(); scrollToSection('pinnedFutureCard')">🔎 השווה עתידי</button>
+                        <button class="pill-btn" onclick="sendPinnedToForm('${source}')">📝 שלח PIN לטופס</button>
+                        <button class="pill-btn" onclick="pinCurrentForm('${source}')">🔁 החלף PIN</button>
+                        <button class="pill-btn" onclick="clearPinnedForm('${source}')">🗑️ בטל PIN</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getFutureRowsForPin(pin) {
+            if (!pin || !currentData || currentData.length === 0) return [];
+            const anchorTime = parseDrawDate(pin.anchorDrawDate);
+            return currentData
+                .map(function(draw, index) { return { draw: draw, rowNumber: index + 1 }; })
+                .filter(function(item) {
+                    const draw = item.draw || {};
+                    if (typeof draw.drawNumber === 'number' && typeof pin.anchorDrawNumber === 'number') {
+                        return draw.drawNumber > pin.anchorDrawNumber;
+                    }
+                    const drawNumber = parseInt(draw.drawNumber, 10);
+                    if (!isNaN(drawNumber) && pin.anchorDrawNumber != null) {
+                        return drawNumber > pin.anchorDrawNumber;
+                    }
+                    const drawTime = parseDrawDate(draw.date);
+                    return drawTime != null && anchorTime != null && drawTime > anchorTime;
+                });
+        }
+
+        function scorePinnedFormAgainstDraw(pin, drawRow) {
+            const drawNumbers = (drawRow.numbers || [])
+                .map(function(n) { return parseInt(n, 10); })
+                .filter(function(n) { return !isNaN(n) && n >= 1 && n <= 37; });
+            const drawStrong = parseInt(drawRow.strong, 10);
+            const results = (pin.combinations || []).map(function(combo, index) {
+                const nums = (combo.numbers || [])
+                    .map(function(n) { return parseInt(n, 10); })
+                    .filter(function(n) { return !isNaN(n); });
+                const comboStrong = parseInt(combo.strong, 10);
+                const regularMatches = nums.filter(function(n) { return drawNumbers.includes(n); }).length;
+                const strongMatch = !isNaN(comboStrong) && comboStrong === drawStrong ? 1 : 0;
+                return { combo: combo, index: index, numbers: nums, regularMatches: regularMatches, strongMatch: strongMatch };
+            });
+            results.sort(function(a, b) {
+                return b.regularMatches - a.regularMatches || b.strongMatch - a.strongMatch;
+            });
+            const countByHits = [0, 0, 0, 0, 0, 0, 0];
+            results.forEach(function(result) { countByHits[result.regularMatches]++; });
+            return {
+                results: results,
+                best: results[0] || null,
+                totalRegular: results.reduce(function(sum, result) { return sum + result.regularMatches; }, 0),
+                totalStrong: results.reduce(function(sum, result) { return sum + result.strongMatch; }, 0),
+                countByHits: countByHits
+            };
+        }
+
+        function renderPinnedFutureComparisons() {
+            const container = document.getElementById('pinnedFutureContent');
+            if (!container) return;
+            const activePins = ['main', 'form2'].map(function(source) { return pinnedForms[source]; }).filter(Boolean);
+            if (activePins.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted); text-align:center;">אין עדיין טפסים מקובעים. לחץ PIN ליד אחד מטפסי הקומבינציות אחרי ניתוח.</p>';
+                return;
+            }
+            container.innerHTML = activePins.map(renderPinnedFutureSource).join('');
+        }
+
+        function renderPinnedFutureSource(pin) {
+            if (!currentData || currentData.length === 0) {
+                return `
+                    <div class="pinned-future-source">
+                        <div class="pinned-future-title">
+                            <span>📌 ${pin.fullLabel || pin.label}</span>
+                            <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
+                        </div>
+                        <div class="info-note" style="margin-bottom:0;">טען קובץ הגרלות ולחץ נתח כדי להשוות את ה-PIN מול הגרלות עתידיות.</div>
+                    </div>
+                `;
+            }
+
+            const futureRows = getFutureRowsForPin(pin);
+            if (futureRows.length === 0) {
+                return `
+                    <div class="pinned-future-source">
+                        <div class="pinned-future-title">
+                            <span>📌 ${pin.fullLabel || pin.label}</span>
+                            <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
+                        </div>
+                        <div class="pinned-status-meta" style="margin-bottom: 8px;">עוגן: ${buildAnchorLabel(pin)}</div>
+                        <div class="info-note" style="margin-bottom:0;">אין עדיין הגרלות חדשות אחרי הקיבוע. עדכן את NUMBERS.xlsx וטען מחדש.</div>
+                    </div>
+                `;
+            }
+
+            const scoredRows = futureRows.map(function(item) {
+                const score = scorePinnedFormAgainstDraw(pin, item.draw);
+                return Object.assign({}, item, { score: score });
+            });
+            const aggregateRegular = scoredRows.reduce(function(sum, item) { return sum + item.score.totalRegular; }, 0);
+            const aggregateStrong = scoredRows.reduce(function(sum, item) { return sum + item.score.totalStrong; }, 0);
+            const bestOverall = scoredRows
+                .map(function(item) {
+                    return {
+                        item: item,
+                        best: item.score.best
+                    };
+                })
+                .filter(function(entry) { return entry.best; })
+                .sort(function(a, b) {
+                    return b.best.regularMatches - a.best.regularMatches || b.best.strongMatch - a.best.strongMatch;
+                })[0];
+
+            const maxRegular = futureRows.length * (pin.combinations || []).length * 6;
+            const hitRate = maxRegular > 0 ? ((aggregateRegular / maxRegular) * 100).toFixed(1) : '0.0';
+            const bestText = bestOverall && bestOverall.best
+                ? bestOverall.best.regularMatches + '/6' + (bestOverall.best.strongMatch ? ' + חזק' : '')
+                : '-';
+
+            const drawDetails = scoredRows.map(function(item, drawIndex) {
+                return renderFutureDrawDetails(pin, item, drawIndex === 0);
+            }).join('');
+
+            return `
+                <div class="pinned-future-source">
+                    <div class="pinned-future-title">
+                        <span>📌 ${pin.fullLabel || pin.label}</span>
+                        <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
+                    </div>
+                    <div class="pinned-status-meta" style="margin-bottom: 10px;">עוגן: ${buildAnchorLabel(pin)} • נמצאו ${futureRows.length} הגרלות עתידיות</div>
+                    <div class="stats-grid" style="margin-bottom: 10px;">
+                        <div class="stat-box">
+                            <div class="stat-label">הגרלות חדשות</div>
+                            <div class="stat-value">${futureRows.length}</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">סך פגיעות רגילות</div>
+                            <div class="stat-value" style="color: var(--success);">${aggregateRegular}</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${hitRate}%</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">פגיעות חזק</div>
+                            <div class="stat-value">${aggregateStrong}</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">התוצאה הטובה ביותר</div>
+                            <div class="stat-value" style="color: var(--warning);">${bestText}</div>
+                        </div>
+                    </div>
+                    ${drawDetails}
+                </div>
+            `;
+        }
+
+        function renderFutureDrawDetails(pin, item, shouldOpen) {
+            const draw = item.draw || {};
+            const score = item.score;
+            const drawNumbers = (draw.numbers || []).filter(function(n) { return !isNaN(n) && n >= 1 && n <= 37; });
+            const drawStrong = draw.strong;
+            const drawNumberLabel = draw.drawNumber != null && draw.drawNumber !== '' ? 'הגרלה #' + draw.drawNumber : 'שורה ' + item.rowNumber;
+            const dateLabel = draw.date != null && draw.date !== '' ? ' • ' + formatDrawDateForDisplay(draw.date) : '';
+            const best = score.best;
+            const bestSummary = best ? 'טובה ביותר: ' + best.regularMatches + '/6' + (best.strongMatch ? ' + חזק' : '') : 'אין תוצאה';
+            const rows = score.results.map(function(result, rank) {
+                const combo = result.combo || {};
+                const drawSet = new Set(drawNumbers);
+                const nums = (result.numbers || []).map(function(n) {
+                    return drawSet.has(n)
+                        ? '<span style="background: rgba(16,185,129,0.35); color: #34d399; padding: 2px 6px; border-radius: 4px; font-weight: 800;">' + n + '</span>'
+                        : '<span style="color: var(--text-muted);">' + n + '</span>';
+                }).join(', ');
+                const comboStrong = combo.strong == null ? '—' : combo.strong;
+                const strongCell = result.strongMatch
+                    ? '<span style="background: rgba(139,92,246,0.35); color: #a78bfa; padding: 2px 6px; border-radius: 4px; font-weight: 800;">' + comboStrong + '</span>'
+                    : '<span style="color: var(--text-muted);">' + comboStrong + '</span>';
+                const matchColor = result.regularMatches >= 3 ? '#34d399' : result.regularMatches >= 2 ? '#fbbf24' : '#94a3b8';
+                const rowBg = result.regularMatches >= 4 ? 'rgba(16, 185, 129, 0.22)'
+                    : result.regularMatches >= 3 ? 'rgba(16, 185, 129, 0.12)'
+                    : result.regularMatches >= 2 ? 'rgba(245, 158, 11, 0.12)'
+                    : 'transparent';
+                return '<tr style="background:' + rowBg + ';">' +
+                    '<td style="font-weight:700;">' + (rank + 1) + '</td>' +
+                    '<td style="font-weight:700;">#' + (combo.comboNum != null ? combo.comboNum : result.index + 1) + '</td>' +
+                    '<td style="font-size:12px;">' + (combo.strategy || '—') + '</td>' +
+                    '<td style="font-size:13px; direction:ltr;">' + nums + '</td>' +
+                    '<td>' + strongCell + '</td>' +
+                    '<td style="font-size:18px; font-weight:800; color:' + matchColor + ';">' + result.regularMatches + '/6</td>' +
+                    '<td style="font-size:16px;">' + (result.strongMatch ? '✅' : '❌') + '</td>' +
+                '</tr>';
+            }).join('');
+
+            return `
+                <details class="future-draw" ${shouldOpen ? 'open' : ''}>
+                    <summary>${drawNumberLabel}${dateLabel} • ${bestSummary} • סך רגילות: ${score.totalRegular} • חזק: ${score.totalStrong}</summary>
+                    <div class="future-draw-body">
+                        <div class="future-draw-numbers">
+                            <strong>מספרים:</strong>
+                            ${drawNumbers.map(function(n) { return '<span class="number-badge hot" style="font-size:13px; padding:5px 10px;">' + n + '</span>'; }).join('')}
+                            <strong style="margin-right: 10px;">חזק:</strong>
+                            <span class="number-badge medium" style="font-size:13px; padding:5px 10px;">${drawStrong}</span>
+                        </div>
+                        <div style="overflow-x:auto;">
+                            <table class="numbers-table">
+                                <thead>
+                                    <tr>
+                                        <th>דירוג</th>
+                                        <th>#</th>
+                                        <th>אסטרטגיה</th>
+                                        <th>מספרים</th>
+                                        <th>חזק</th>
+                                        <th>פגיעות</th>
+                                        <th>חזק</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </details>
+            `;
+        }
+
+        loadPinnedForms();
+        renderPinnedFormStatus();
+        renderPinnedFutureComparisons();
         
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -1191,6 +1754,8 @@
             document.getElementById('rowRangeInfo').textContent = `(טווח: 1-${currentData.length} מהקובץ המקורי)`;
             document.getElementById('comparisonRowInput').max = currentData.length;
             updateComparison();
+            renderPinnedFormStatus();
+            renderPinnedFutureComparisons();
         }
         
         function selectRows(data, selection) {
