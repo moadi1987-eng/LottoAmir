@@ -1,0 +1,43 @@
+name: Diagnose Pais Connectivity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe official Pais endpoint
+        shell: bash
+        run: |
+          set +e
+          date -u
+          echo "DNS"
+          getent ahostsv4 www.pais.co.il
+
+          echo "TLS"
+          timeout 15 openssl s_client -connect www.pais.co.il:443 -servername www.pais.co.il -brief </dev/null
+          echo "tls_exit=$?"
+
+          echo "Archive page"
+          curl --ipv4 --http1.1 --silent --show-error --location \
+            --connect-timeout 15 --max-time 30 \
+            --output /dev/null \
+            --write-out 'archive_http=%{http_code} connect=%{time_connect} total=%{time_total}\n' \
+            'https://www.pais.co.il/lotto/archive.aspx'
+          echo "archive_exit=$?"
+
+          echo "CSV endpoint"
+          curl --ipv4 --http1.1 --silent --show-error --location \
+            --connect-timeout 15 --max-time 30 \
+            --user-agent 'Mozilla/5.0 (compatible; LottoAmir-Updater/1.0)' \
+            --referer 'https://www.pais.co.il/lotto/archive.aspx' \
+            --output /tmp/Lotto.csv \
+            --write-out 'csv_http=%{http_code} connect=%{time_connect} total=%{time_total} bytes=%{size_download}\n' \
+            'https://www.pais.co.il/Lotto/lotto_resultsDownload.aspx'
+          echo "csv_exit=$?"
+          wc -c /tmp/Lotto.csv 2>/dev/null
