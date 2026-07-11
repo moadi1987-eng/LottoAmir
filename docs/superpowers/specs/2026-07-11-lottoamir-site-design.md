@@ -6,7 +6,9 @@ Create a clean static website named **LottoAmir** that can be published through 
 
 ## Primary Experience
 
-The website entry point will be `index.html`. It will act as a professional home page and navigation hub for:
+The website entry point will be `index.html`. It will redirect directly to `Lotto_All_In_One.html`, because the preferred default experience is the combined ALL-IN-ONE workflow.
+
+The previous professional home page and navigation hub will remain available as `hub.html` for:
 
 1. **Lotto PRO V41**  
    Opens `Lottery_V41_Final.html`. This is the main/latest version and should be visually treated as the primary tool.
@@ -21,9 +23,10 @@ The website entry point will be `index.html`. It will act as a professional home
 
 The first version will keep the existing tools as separate HTML pages. The home page will link to them directly instead of embedding them in iframes. This keeps each tool stable, preserves localStorage behavior, and avoids layout bugs from nested scrolling.
 
-Recommended file layout for the first publishable version:
+Recommended file layout for the publishable version:
 
-- `index.html` - new LottoAmir home page.
+- `index.html` - direct redirect to ALL-IN-ONE.
+- `hub.html` - LottoAmir home page and tool hub.
 - `Lottery_V41_Final.html` - primary V41 tool.
 - `Lotto_All_In_One.html` - all-in-one tool.
 - `lotto_analyzer.html` - result analysis tool.

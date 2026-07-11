@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first publishable LottoAmir static site entry point with three clear tool links.
+**Goal:** Build the first publishable LottoAmir static site entry point that opens ALL-IN-ONE by default while preserving a tool hub.
 
-**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Publish through GitHub Pages directly from the `main` branch root.
+**Architecture:** Keep the existing tools as separate HTML pages. Use root `index.html` as a redirect to `Lotto_All_In_One.html`, and preserve the tool-selection home page as `hub.html`. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Publish through GitHub Pages directly from the `main` branch root.
 
 **Tech Stack:** Static HTML, CSS, JavaScript-free navigation, Git, GitHub Pages.
 
@@ -12,7 +12,8 @@
 
 - The site name is exactly `LottoAmir`.
 - The first version has only three primary tools: `Lottery_V41_Final.html`, `Lotto_All_In_One.html`, and `lotto_analyzer.html`.
-- `Lottery_V41_Final.html` is the main/latest version and should be visually emphasized.
+- `index.html` should open `Lotto_All_In_One.html` directly.
+- `Lottery_V41_Final.html` is the main/latest standalone version and should be visually emphasized in `hub.html`.
 - Do not merge or rewrite existing tool logic in the first step.
 - Do not embed the tools in iframes in the first step.
 - Use Hebrew right-to-left layout.
@@ -21,14 +22,15 @@
 
 ---
 
-### Task 1: Create The LottoAmir Home Page
+### Task 1: Create The LottoAmir Direct Entry And Hub
 
 **Files:**
 - Create: `index.html`
+- Create: `hub.html`
 
 **Interfaces:**
 - Consumes: existing HTML tool files in the project root.
-- Produces: a root `index.html` page linking to the three tool files.
+- Produces: a root `index.html` page redirecting to ALL-IN-ONE and a `hub.html` page linking to the three tool files.
 
 - [ ] **Step 1: Confirm target files exist**
 
