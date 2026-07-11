@@ -259,6 +259,22 @@
             gap: 10px;
         }
 
+        .form2-quality-summary {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 36px;
+            margin: 10px 0 14px;
+            padding: 8px 12px;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+            line-height: 1.6;
+        }
+
         .combo-card {
             background: var(--bg-elevated);
             border: 1px solid var(--border);
@@ -743,6 +759,7 @@
             .tri-columns { grid-template-columns: 1fr; gap: 10px; }
 
             .combinations { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .form2-quality-summary { font-size: 11px; padding: 7px 4px; }
             .combo-card { padding: 8px 6px 6px; border-right-width: 2px; }
             .combo-title { font-size: 11px; margin-bottom: 6px; }
             .combo-numbers { gap: 3px; margin-bottom: 6px; }
@@ -1059,12 +1076,13 @@
                         חישוב סטטיסטי חכם: משקל זמן, פריצת קור, מגמות, פער אופטימלי, פיזור, סינרגיה ועוד
                     </p>
                     <div class="info-note" style="text-align: center;">
-                        💪 <strong>רוטציית חזק:</strong> כל מספר חזק (1-7) מופיע בדיוק בשני כרטיסים — מבטיח פגיעה!
+                        💪 <strong>רוטציית חזק:</strong> כל מספר חזק (1-7) מופיע בדיוק בשני כרטיסים לכיסוי מלא.
                     </div>
                     <div class="pin-toolbar">
                         <button class="pin-form-btn" id="pinForm2Btn" onclick="pinCurrentForm('form2')">📌 קבע טופס שני</button>
                     </div>
                     <div class="pinned-status" id="pinnedForm2Status" style="display:none;"></div>
+                    <div class="form2-quality-summary" id="form2DiversitySummary"></div>
                     <div class="combinations" id="combinationsForm2"></div>
                     <button class="fill-all-btn" onclick="sendAllToForm2()">
                         📝 שלח את כל 14 (טופס אחר) לטופס
@@ -2327,27 +2345,284 @@
             return combos;
         }
         
+        const FORM2_STRATEGY_LABELS = [
+            'בשלים + תדירות',
+            'פריצת קור',
+            'מגמת עלייה מואצת',
+            'פער אופטימלי',
+            'איזון פיזור',
+            'זוגות מאמצע הדירוג',
+            'שלישייה מובילה + קרים',
+            'ממוצע נע',
+            'אנטי-אחרון',
+            'מספרים בשלים',
+            'תנודה בין חלונות',
+            'חזרת מגמה',
+            'סינרגיה מלאה',
+            'ממוצע משוקלל'
+        ];
+
+        function normalizeForm2Numbers(values, candidatePriority) {
+            const result = [];
+            const seen = new Set();
+            const addValue = function(value) {
+                const raw = value && typeof value === 'object' ? value.number : value;
+                const number = parseInt(raw, 10);
+                if (number >= 1 && number <= 37 && !seen.has(number)) {
+                    seen.add(number);
+                    result.push(number);
+                }
+            };
+
+            (values || []).forEach(addValue);
+            (candidatePriority || []).forEach(addValue);
+            for (let number = 1; number <= 37 && result.length < 6; number++) addValue(number);
+            return result.slice(0, 6).sort((a, b) => a - b);
+        }
+
+        function getForm2CombinationKey(numbers) {
+            return (numbers || []).slice().sort((a, b) => a - b).join('-');
+        }
+
+        function getForm2Overlap(firstNumbers, secondNumbers) {
+            const second = new Set(secondNumbers || []);
+            return (firstNumbers || []).filter(number => second.has(number)).length;
+        }
+
+        function getNumberSelections(values, count) {
+            if (count === 0) return [[]];
+            const selections = [];
+            function visit(start, selected) {
+                if (selected.length === count) {
+                    selections.push(selected.slice());
+                    return;
+                }
+                const remaining = count - selected.length;
+                for (let index = start; index <= values.length - remaining; index++) {
+                    selected.push(values[index]);
+                    visit(index + 1, selected);
+                    selected.pop();
+                }
+            }
+            visit(0, []);
+            return selections;
+        }
+
+        function buildForm2CandidatePriority(mainStats, hot, medium, cold) {
+            const priority = [];
+            const seen = new Set();
+            const add = function(item) {
+                const number = parseInt(item && typeof item === 'object' ? item.number : item, 10);
+                if (number >= 1 && number <= 37 && !seen.has(number)) {
+                    seen.add(number);
+                    priority.push(number);
+                }
+            };
+            (mainStats || []).forEach(add);
+            (hot || []).forEach(add);
+            (medium || []).forEach(add);
+            (cold || []).forEach(add);
+            for (let number = 1; number <= 37; number++) add(number);
+            return priority;
+        }
+
+        function buildForm2StrongRotation(strongHot, strongMedium, strongCold) {
+            const order = [];
+            const seen = new Set();
+            [...(strongHot || []), ...(strongMedium || []), ...(strongCold || [])].forEach(item => {
+                const number = parseInt(item && item.number, 10);
+                if (number >= 1 && number <= 7 && !seen.has(number)) {
+                    seen.add(number);
+                    order.push(number);
+                }
+            });
+            for (let number = 1; number <= 7; number++) {
+                if (!seen.has(number)) order.push(number);
+            }
+            return Array.from({ length: 14 }, (_, index) => order[index % 7]);
+        }
+
+        function findForm2FallbackCombination(priority, accepted, exposure, covered, targetCoverage, options) {
+            const acceptedKeys = new Set(accepted.map(combo => getForm2CombinationKey(combo.numbers)));
+            const ordered = priority.slice().sort((a, b) => {
+                const aCovered = covered.has(a) ? 1 : 0;
+                const bCovered = covered.has(b) ? 1 : 0;
+                if (aCovered !== bCovered) return aCovered - bCovered;
+                if ((exposure[a] || 0) !== (exposure[b] || 0)) return (exposure[a] || 0) - (exposure[b] || 0);
+                return priority.indexOf(a) - priority.indexOf(b);
+            });
+            let found = null;
+
+            function search(start, selected, newCount) {
+                if (found) return;
+                if (selected.length === 6) {
+                    const numbers = selected.slice().sort((a, b) => a - b);
+                    if (covered.size + newCount < targetCoverage) return;
+                    if (acceptedKeys.has(getForm2CombinationKey(numbers))) return;
+                    found = numbers;
+                    return;
+                }
+
+                const remaining = 6 - selected.length;
+                for (let index = start; index <= ordered.length - remaining; index++) {
+                    const number = ordered[index];
+                    if ((exposure[number] || 0) >= options.maximumExposure) continue;
+                    const overlapsTooMuch = accepted.some(combo => {
+                        const previous = new Set(combo.numbers || []);
+                        let overlap = selected.filter(value => previous.has(value)).length;
+                        if (previous.has(number)) overlap++;
+                        return overlap > options.maximumOverlap;
+                    });
+                    if (overlapsTooMuch) continue;
+                    selected.push(number);
+                    search(index + 1, selected, newCount + (covered.has(number) ? 0 : 1));
+                    selected.pop();
+                    if (found) return;
+                }
+            }
+
+            search(0, [], 0);
+            return found;
+        }
+
+        function diversifyForm2Combinations(combos, candidatePriority, options) {
+            const settings = Object.assign({
+                minimumCoverage: 30,
+                maximumExposure: 7,
+                maximumOverlap: 4
+            }, options || {});
+            const priority = buildForm2CandidatePriority(candidatePriority, [], [], []);
+            const priorityIndex = new Map(priority.map((number, index) => [number, index]));
+            const accepted = [];
+            const acceptedKeys = new Set();
+            const exposure = {};
+            const covered = new Set();
+            const total = (combos || []).length;
+
+            (combos || []).forEach((baseCombo, comboIndex) => {
+                const baseNumbers = normalizeForm2Numbers(baseCombo.numbers, priority);
+                const baseSet = new Set(baseNumbers);
+                const replacements = priority.filter(number => !baseSet.has(number));
+                const targetCoverage = Math.min(
+                    settings.minimumCoverage,
+                    Math.ceil(settings.minimumCoverage * (comboIndex + 1) / Math.max(1, total))
+                );
+                let chosen = null;
+
+                for (let retainedCount = 6; retainedCount >= 3 && !chosen; retainedCount--) {
+                    const keptSelections = getNumberSelections(baseNumbers, retainedCount);
+                    const replacementSelections = getNumberSelections(replacements, 6 - retainedCount);
+                    let best = null;
+
+                    keptSelections.forEach(kept => {
+                        replacementSelections.forEach(replacement => {
+                            const numbers = [...kept, ...replacement].sort((a, b) => a - b);
+                            const key = getForm2CombinationKey(numbers);
+                            if (acceptedKeys.has(key)) return;
+                            if (numbers.some(number => (exposure[number] || 0) >= settings.maximumExposure)) return;
+                            if (accepted.some(combo => getForm2Overlap(numbers, combo.numbers) > settings.maximumOverlap)) return;
+
+                            const newCount = numbers.filter(number => !covered.has(number)).length;
+                            if (covered.size + newCount < targetCoverage) return;
+
+                            const exposureSum = numbers.reduce((sum, number) => sum + (exposure[number] || 0), 0);
+                            const prioritySum = numbers.reduce((sum, number) => sum + (priorityIndex.get(number) || 0), 0);
+                            const score = { numbers, key, newCount, exposureSum, prioritySum };
+                            const isBetter = !best ||
+                                score.newCount > best.newCount ||
+                                (score.newCount === best.newCount && score.exposureSum < best.exposureSum) ||
+                                (score.newCount === best.newCount && score.exposureSum === best.exposureSum && score.prioritySum < best.prioritySum) ||
+                                (score.newCount === best.newCount && score.exposureSum === best.exposureSum && score.prioritySum === best.prioritySum && score.key < best.key);
+                            if (isBetter) best = score;
+                        });
+                    });
+
+                    if (best) chosen = best.numbers;
+                }
+
+                if (!chosen) {
+                    chosen = findForm2FallbackCombination(
+                        priority,
+                        accepted,
+                        exposure,
+                        covered,
+                        targetCoverage,
+                        settings
+                    );
+                }
+                if (!chosen) throw new Error('לא ניתן ליצור 14 קומבינציות שונות לטופס השני.');
+
+                const finalCombo = Object.assign({}, baseCombo, { numbers: chosen });
+                accepted.push(finalCombo);
+                acceptedKeys.add(getForm2CombinationKey(chosen));
+                chosen.forEach(number => {
+                    exposure[number] = (exposure[number] || 0) + 1;
+                    covered.add(number);
+                });
+            });
+
+            return accepted;
+        }
+
+        function getForm2DiversityMetrics(combos) {
+            const combinationKeys = new Set();
+            const covered = new Set();
+            const exposure = {};
+            const strongCounts = {};
+            for (let number = 1; number <= 7; number++) strongCounts[number] = 0;
+            let maximumOverlap = 0;
+
+            (combos || []).forEach(combo => {
+                const numbers = normalizeForm2Numbers(combo.numbers, []);
+                combinationKeys.add(getForm2CombinationKey(numbers));
+                numbers.forEach(number => {
+                    covered.add(number);
+                    exposure[number] = (exposure[number] || 0) + 1;
+                });
+                const strong = parseInt(combo.strong, 10);
+                if (strong >= 1 && strong <= 7) strongCounts[strong]++;
+            });
+
+            for (let first = 0; first < (combos || []).length; first++) {
+                for (let second = first + 1; second < combos.length; second++) {
+                    maximumOverlap = Math.max(maximumOverlap, getForm2Overlap(combos[first].numbers, combos[second].numbers));
+                }
+            }
+
+            return {
+                combinationCount: (combos || []).length,
+                uniqueCombinationCount: combinationKeys.size,
+                coveredNumberCount: covered.size,
+                maximumExposure: Math.max(0, ...Object.values(exposure)),
+                maximumOverlap,
+                strongCounts
+            };
+        }
+
+        function renderForm2DiversitySummary(combos) {
+            const element = document.getElementById('form2DiversitySummary');
+            if (!element) return;
+            const metrics = getForm2DiversityMetrics(combos || []);
+            const strongBalanced = Object.values(metrics.strongCounts).every(count => count === 2);
+            const strongSummary = strongBalanced ? 'חזק 1–7 ×2' : 'חזק לא מאוזן';
+            element.textContent =
+                'כיסוי ' + metrics.coveredNumberCount + '/37 | ' +
+                'שישיות שונות ' + metrics.uniqueCombinationCount + '/' + metrics.combinationCount + ' | ' +
+                'חפיפה מרבית ' + metrics.maximumOverlap + ' | ' +
+                strongSummary;
+        }
+
         // ========== 14 קומבינציות לטופס אחר (1–14) – חישוב סטטיסטי חכם ==========
         function generateCombinationsForm2(hot, medium, cold, strongHot, strongMedium, strongCold, pairs, mainStats, triplets, quartets, rawData) {
             const limited = (rawData || []).slice(0, Math.min(100, (rawData || []).length));
             const combos = [];
 
-            // === שיפור: רוטציית מספר חזק (כיסוי מלא של כל 7 המספרים) ===
-            // בונים רשימה של 14 מספרים חזקים כך שכל מספר (1-7) מופיע בדיוק פעמיים.
-            // מתמטית: ההגרלה תבחר 1 מ-7 → מובטח שיש לנו 2 כרטיסים עם המספר הנכון.
-            // הסדר הוא לפי דירוג (חם→קר) כך שהחמים יקבלו עדיפות בקומבינציות הראשונות.
-            const allStrongSorted = [...(strongHot || []), ...(strongMedium || []), ...(strongCold || [])]
-                .filter(s => s && s.number >= 1 && s.number <= 7);
-            const seenStrong = new Set(allStrongSorted.map(s => s.number));
-            for (let i = 1; i <= 7; i++) {
-                if (!seenStrong.has(i)) allStrongSorted.push({ number: i, count: 0 });
-            }
-            const strongRotation = [];
-            for (let i = 0; i < 14; i++) {
-                strongRotation.push(allStrongSorted[i % 7].number);
-            }
-
-            const create = (nums, strong, num) => createCombo(nums.map(n => typeof n === 'number' ? { number: n } : n), strong, num, String(num));
+            const create = (nums, strong, num) => createCombo(
+                nums.map(n => typeof n === 'number' ? { number: n } : n),
+                strong,
+                num,
+                FORM2_STRATEGY_LABELS[num - 1] || String(num)
+            );
             
             // עזר: פער מהופעה אחרונה (אינדקס נמוך = הופיע לאחרונה)
             const lastSeen = {};
@@ -2365,7 +2640,7 @@
                 return { number: s.number, score: s.count + dueBonus };
             }).sort((a, b) => b.score - a.score).slice(0, 6);
             const combo1Nums = combo1Due.length ? combo1Due : pickTop(hot, 6);
-            combos.push(createCombo(combo1Nums, 1, 1, 'בשלים + תדירות (פער 4–16)'));
+            combos.push(create(combo1Nums, 1, 1));
             
             // 2. פריצת קור – קרים עם תדירות היסטורית גבוהה (בשלים)
             const coldBreak = (cold || []).slice(0, 15).map(c => ({ number: c.number, score: (mainStats.find(s => s.number === c.number)?.count || 0) + getGap(c.number) * 0.5 })).sort((a, b) => b.score - a.score).slice(0, 6);
@@ -2442,7 +2717,7 @@
                 return { number: s.number, score: s.count + dueBonus };
             }).sort((a, b) => b.score - a.score).slice(0, 6);
             const dueNums = dueScores.length ? dueScores : pickTop(hot, 6);
-            combos.push(createCombo(dueNums, strongHot[0]?.number || 1, 10, 'מספרים בשלים (פער 5–16 + תדירות)'));
+            combos.push(create(dueNums, strongHot[0]?.number || 1, 10));
             
             // 11. תנודה – שונות בין חלונות (חם בחלון אחד, קר באחר)
             const v1 = (limited || []).slice(0, 25);
@@ -2484,13 +2759,18 @@
             })).sort((a, b) => b.score - a.score).slice(0, 6);
             combos.push(create(weighted.length ? weighted : pickTop(hot, 6), strongHot[0]?.number || 1, 14));
 
-            // === החלת רוטציית המספר החזק על כל 14 הקומבינציות ===
-            // מבטיח: כל אחד מהמספרים 1-7 מופיע בדיוק ב-2 כרטיסים.
-            combos.forEach((combo, i) => {
-                combo.strong = strongRotation[i];
+            const candidatePriority = buildForm2CandidatePriority(mainStats, hot, medium, cold);
+            const diversified = diversifyForm2Combinations(combos, candidatePriority, {
+                minimumCoverage: 30,
+                maximumExposure: 7,
+                maximumOverlap: 4
+            });
+            const strongRotation = buildForm2StrongRotation(strongHot, strongMedium, strongCold);
+            diversified.forEach((combo, index) => {
+                combo.strong = strongRotation[index];
             });
 
-            return combos;
+            return diversified;
         }
         
         // שילוב חכם - זוג מוביל + שלישייה שנייה (ללא חפיפה)
@@ -2948,6 +3228,7 @@
                     '</div></div>';
             }).join('');
             document.getElementById('combinationsForm2').innerHTML = form2Html;
+            renderForm2DiversitySummary(form2);
         }
         
         async function saveCombosOnly() {
