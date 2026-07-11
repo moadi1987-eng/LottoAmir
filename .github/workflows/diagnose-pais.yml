@@ -41,3 +41,30 @@ jobs:
             'https://www.pais.co.il/Lotto/lotto_resultsDownload.aspx'
           echo "csv_exit=$?"
           wc -c /tmp/Lotto.csv 2>/dev/null
+
+          echo "Alternate official host DNS"
+          getent ahostsv4 pais.co.il
+
+          echo "Alternate official host CSV"
+          curl --ipv4 --http1.1 --silent --show-error --location \
+            --connect-timeout 15 --max-time 30 \
+            --user-agent 'Mozilla/5.0 (compatible; LottoAmir-Updater/1.0)' \
+            --referer 'https://pais.co.il/lotto/archive.aspx' \
+            --output /tmp/Lotto-alternate.csv \
+            --write-out 'alternate_http=%{http_code} remote=%{remote_ip} connect=%{time_connect} total=%{time_total} bytes=%{size_download}\n' \
+            'https://pais.co.il/Lotto/lotto_resultsDownload.aspx'
+          echo "alternate_exit=$?"
+          wc -c /tmp/Lotto-alternate.csv 2>/dev/null
+
+          echo "Pinned alternate server"
+          curl --ipv4 --http1.1 --silent --show-error --location \
+            --resolve 'pais.co.il:443:62.0.65.165' \
+            --connect-timeout 15 --max-time 30 \
+            --user-agent 'Mozilla/5.0 (compatible; LottoAmir-Updater/1.0)' \
+            --referer 'https://pais.co.il/lotto/archive.aspx' \
+            --output /tmp/Lotto-pinned.csv \
+            --write-out 'pinned_http=%{http_code} remote=%{remote_ip} connect=%{time_connect} total=%{time_total} bytes=%{size_download}\n' \
+            'https://pais.co.il/Lotto/lotto_resultsDownload.aspx'
+          echo "pinned_exit=$?"
+          wc -c /tmp/Lotto-pinned.csv 2>/dev/null
+          true
