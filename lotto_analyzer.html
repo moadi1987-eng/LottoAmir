@@ -90,11 +90,17 @@
         }
         .upload-section h2 { color: var(--text); margin-bottom: 10px; font-size: 14px; font-weight: 700; }
 
-        .file-input-wrapper { position: relative; display: inline-block; }
+        .file-input-wrapper {
+            display: flex;
+            position: relative;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
         .file-input-wrapper input[type="file"] { display: none; }
 
         .file-input-label {
-            display: inline-block;
+            display: inline-flex;
             padding: 11px 28px;
             background: var(--accent);
             color: white;
@@ -102,8 +108,11 @@
             cursor: pointer;
             font-weight: 700;
             font-size: 14px;
+            min-height: 42px;
             transition: all 0.15s;
             border: 1px solid transparent;
+            align-items: center;
+            justify-content: center;
         }
         .file-input-label:hover {
             background: var(--accent-hover);
@@ -137,6 +146,7 @@
             border-radius: 10px;
             padding: 14px 16px;
             margin-bottom: 12px;
+            overflow: hidden;
         }
 
         .card-header {
@@ -219,6 +229,8 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 12px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
         .numbers-table th {
             background: var(--bg-elevated);
@@ -608,7 +620,15 @@
 
             .upload-section { padding: 10px; }
             .upload-section h2 { font-size: 13px; }
-            .file-input-label, .analyze-btn { padding: 10px 20px; font-size: 13px; }
+            .file-input-wrapper { width: 100%; gap: 8px; }
+            .file-input-label {
+                flex: 1 1 180px;
+                max-width: 260px;
+                padding: 10px 14px;
+                font-size: 13px;
+                display: inline-flex;
+            }
+            .analyze-btn { padding: 10px 20px; font-size: 13px; min-height: 42px; }
 
             .card { padding: 10px 12px; }
             .card-header { font-size: 12px; }
@@ -630,7 +650,14 @@
             .combo-buttons { grid-template-columns: 1fr; gap: 3px; }
             .transfer-btn, .copy-btn { padding: 6px 4px; font-size: 10px; }
 
-            .numbers-table { font-size: 12px; display: block; overflow-x: auto; white-space: nowrap; }
+            .numbers-table {
+                font-size: 12px;
+                display: block;
+                max-width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                white-space: nowrap;
+            }
             .numbers-table th, .numbers-table td { padding: 8px 6px; font-size: 12px; }
 
             .number-badge { padding: 5px 9px; font-size: 12px; margin: 3px; }
@@ -640,6 +667,44 @@
             .row-selector input { padding: 9px 10px; font-size: 13px; }
 
             .banner { padding: 10px; }
+
+            .comparison-control-row {
+                display: grid !important;
+                grid-template-columns: 1fr 96px 1fr;
+                gap: 8px !important;
+                align-items: center !important;
+            }
+            .comparison-control-row label {
+                grid-column: 1 / -1;
+                text-align: center;
+            }
+            .comparison-control-row input[type="number"] {
+                width: 100% !important;
+                min-height: 42px;
+            }
+            .comparison-control-row .btn {
+                width: 100%;
+                min-height: 42px;
+            }
+            .quick-compare-row {
+                display: grid !important;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px !important;
+            }
+            .quick-compare-row .pill-btn { width: 100%; }
+            .quick-compare-row span { display: none; }
+            .compare-form-row {
+                display: grid !important;
+                grid-template-columns: 1fr;
+                gap: 8px !important;
+            }
+            .compare-form-row span {
+                text-align: center;
+            }
+            .compare-form-row .btn {
+                width: 100%;
+                min-height: 42px;
+            }
 
             .btn { padding: 9px 16px; font-size: 13px; }
             .fill-all-btn { padding: 11px; font-size: 13px; margin-top: 12px; }
@@ -661,6 +726,9 @@
             .combo-number { width: 28px; height: 28px; font-size: 12px; }
             .stats-grid { grid-template-columns: 1fr; }
             .info-note { font-size: 12px; padding: 8px 10px; }
+            .file-input-label { flex-basis: 100%; max-width: none; }
+            .comparison-control-row { grid-template-columns: 1fr; }
+            .quick-compare-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -755,7 +823,7 @@
 
                     <!-- בורר שורה להשוואה -->
                     <div class="banner">
-                        <div style="display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <div class="comparison-control-row" style="display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap;">
                             <label style="font-weight: 700; color: var(--text); font-size: 14px;">🎲 השווה להגרלה:</label>
                             <input type="number" id="savedCompareRowInput" value="1" min="1" onkeypress="if(event.key==='Enter') renderSavedVsDrawComparison()" style="width: 90px; padding: 9px; border-radius: 7px; font-size: 16px; font-weight: 700; text-align: center;">
                             <button class="btn btn-primary" onclick="renderSavedVsDrawComparison()" style="padding: 9px 20px; font-size: 13px;">🔄 עדכן</button>
@@ -791,7 +859,7 @@
 
                     <!-- בורר שורה להשוואה -->
                     <div class="banner">
-                        <div style="display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <div class="comparison-control-row" style="display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap;">
                             <label style="font-weight: 700; color: var(--text); font-size: 14px;">🎲 השווה לשורה:</label>
                             <input type="number" id="comparisonRowInput" value="1" min="1" onkeypress="if(event.key==='Enter') updateComparison()" style="width: 90px; padding: 9px; border-radius: 7px; font-size: 16px; font-weight: 700; text-align: center;">
                             <button class="btn btn-primary" onclick="updateComparison()" style="padding: 9px 20px; font-size: 13px;">
@@ -799,7 +867,7 @@
                             </button>
                             <span id="rowRangeInfo" style="font-size: 12px; color: var(--text-muted);"></span>
                         </div>
-                        <div style="display: flex; gap: 6px; justify-content: center; margin-top: 14px; flex-wrap: wrap;">
+                        <div class="quick-compare-row" style="display: flex; gap: 6px; justify-content: center; margin-top: 14px; flex-wrap: wrap;">
                             <button class="pill-btn" onclick="quickCompare(1)">1️⃣ אחרונה</button>
                             <button class="pill-btn" onclick="quickCompare(2)">2️⃣ לפני אחרונה</button>
                             <button class="pill-btn" onclick="quickCompare(3)">3️⃣ לפני 2</button>
@@ -808,7 +876,7 @@
                             <span style="align-self: center; color: var(--text-subtle); font-size: 13px;">|</span>
                             <button type="button" class="pill-btn" id="twoLastRowsBtn" onclick="toggleTwoLastRows()">2 שורות אחרונות</button>
                         </div>
-                        <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center;">
+                        <div class="compare-form-row" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center;">
                             <span style="font-weight: 600; color: var(--text-muted); font-size: 13px;">השוואה לפי טופס:</span>
                             <button type="button" class="btn btn-primary" id="compareForm1Btn" onclick="setCompareFormAndUpdate('main')" style="font-size: 13px; padding: 9px 18px;">✨ טופס ראשון – 14 קומבינציות מומלצות</button>
                             <button type="button" class="btn btn-secondary" id="compareForm2Btn" onclick="setCompareFormAndUpdate('form2')" style="font-size: 13px; padding: 9px 18px;">📋 טופס שני – 14 קומבינציות (1 עד 14)</button>
