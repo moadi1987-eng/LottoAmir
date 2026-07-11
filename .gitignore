@@ -3,6 +3,7 @@ backup_2025-02-18/
 
 # Local data and generated analysis files
 *.xlsx
+!NUMBERS.xlsx
 *.json
 *.png
 !10.png

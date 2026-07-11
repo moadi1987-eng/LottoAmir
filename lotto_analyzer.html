@@ -677,6 +677,7 @@
                 <div class="file-input-wrapper">
                     <input type="file" id="fileInput" accept=".xlsx,.xls">
                     <label for="fileInput" class="file-input-label">📤 בחר קובץ</label>
+                    <button type="button" id="defaultDataBtn" class="file-input-label" style="border: 0; cursor: pointer;">📥 טען NUMBERS.xlsx</button>
                 </div>
                 <div id="fileName" style="color: var(--text-muted); margin-top: 10px; font-weight: 600; font-size: 13px;"></div>
 
@@ -960,6 +961,9 @@
         let currentCombinationsForm2 = [];
         var comparisonFormSource = 'main';
         let currentData = null;
+        const DEFAULT_NUMBERS_FILE = 'NUMBERS.xlsx';
+        const DEFAULT_NUMBERS_LABEL = 'קובץ מספרים קבוע (NUMBERS.xlsx)';
+        let loadedExcelRows = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
         
         function detectDataFormat(data) {
@@ -1001,16 +1005,52 @@
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
+                loadedExcelRows = null;
                 document.getElementById('fileName').textContent = `✓ ${file.name}`;
                 document.getElementById('analyzeBtn').disabled = false;
             }
         });
+
+        document.getElementById('defaultDataBtn').addEventListener('click', loadDefaultNumbersFile);
         
         document.getElementById('analyzeBtn').addEventListener('click', function() {
             const file = document.getElementById('fileInput').files[0];
-            if (file) runAnalysisWithFile(file);
+            if (loadedExcelRows) runAnalysisWithRows(loadedExcelRows);
+            else if (file) runAnalysisWithFile(file);
             else showError('אנא בחר קובץ תחילה');
         });
+
+        async function loadDefaultNumbersFile() {
+            const btn = document.getElementById('defaultDataBtn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'טוען...';
+            document.getElementById('fileName').textContent = `טוען ${DEFAULT_NUMBERS_LABEL}...`;
+
+            try {
+                const response = await fetch(DEFAULT_NUMBERS_FILE, { cache: 'no-store' });
+                if (!response.ok) {
+                    throw new Error(`לא ניתן לטעון את ${DEFAULT_NUMBERS_FILE}`);
+                }
+
+                const data = readExcelArrayBuffer(await response.arrayBuffer());
+                if (!data || data.length === 0) {
+                    throw new Error('קובץ המספרים הקבוע ריק');
+                }
+
+                loadedExcelRows = data;
+                document.getElementById('fileInput').value = '';
+                document.getElementById('fileName').textContent = `✓ ${DEFAULT_NUMBERS_LABEL} נטען (${data.length} שורות)`;
+                document.getElementById('analyzeBtn').disabled = false;
+            } catch (error) {
+                loadedExcelRows = null;
+                document.getElementById('fileName').textContent = '';
+                showError('שגיאה בטעינת קובץ המספרים הקבוע: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
         
         // פונקציה לבחירה מהירה של טווח שורות
         function setRowSelection(value) {
@@ -1024,46 +1064,58 @@
         }
         
         async function runAnalysisWithFile(file) {
+            return runAnalysisFromSource(() => readExcelFile(file));
+        }
+
+        async function runAnalysisWithRows(rows) {
+            return runAnalysisFromSource(() => rows);
+        }
+
+        async function runAnalysisFromSource(loadRows) {
             document.getElementById('loading').style.display = 'block';
             document.getElementById('error').style.display = 'none';
             document.getElementById('results').style.display = 'none';
-            
+
             try {
-                var data = await readExcelFile(file);
-                data = normalizeData(data);
-                currentData = data;
-                
-                const rowSelection = document.getElementById('rowSelection').value.trim();
-                selectedData = rowSelection ? selectRows(data, rowSelection) : data;
-                
-                if (!selectedData || selectedData.length === 0) {
-                    showError('לא נמצאו שורות תקינות לניתוח. בדוק את הבחירה או השאר את השדה ריק.');
-                    document.getElementById('loading').style.display = 'none';
-                    return;
-                }
-                
-                const selectionInfo = rowSelection ? 
-                    `נבחרו ${selectedData.length} שורות מתוך ${currentData.length}` : 
-                    `ניתוח כל ${selectedData.length} השורות`;
-                console.log(selectionInfo);
-                
-                const analysis = await analyzeData(selectedData);
-                lastAnalysis = analysis;
-                displayResults(analysis);
-                
-                if (savedAnalysis) renderSavedVsCurrentComparison();
-                
-                document.getElementById('sideNav').classList.add('show');
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('results').style.display = 'block';
-                document.getElementById('rowRangeInfo').textContent = `(טווח: 1-${currentData.length} מהקובץ המקורי)`;
-                document.getElementById('comparisonRowInput').max = currentData.length;
-                updateComparison();
+                const data = await loadRows();
+                await processAnalysisRows(data);
             } catch (error) {
                 console.error('Error:', error);
                 showError('שגיאה בניתוח הקובץ: ' + error.message);
                 document.getElementById('loading').style.display = 'none';
             }
+        }
+
+        async function processAnalysisRows(rawData) {
+            var data = normalizeData(rawData);
+            currentData = data;
+
+            const rowSelection = document.getElementById('rowSelection').value.trim();
+            selectedData = rowSelection ? selectRows(data, rowSelection) : data;
+
+            if (!selectedData || selectedData.length === 0) {
+                showError('לא נמצאו שורות תקינות לניתוח. בדוק את הבחירה או השאר את השדה ריק.');
+                document.getElementById('loading').style.display = 'none';
+                return;
+            }
+
+            const selectionInfo = rowSelection ?
+                `נבחרו ${selectedData.length} שורות מתוך ${currentData.length}` :
+                `ניתוח כל ${selectedData.length} השורות`;
+            console.log(selectionInfo);
+
+            const analysis = await analyzeData(selectedData);
+            lastAnalysis = analysis;
+            displayResults(analysis);
+
+            if (savedAnalysis) renderSavedVsCurrentComparison();
+
+            document.getElementById('sideNav').classList.add('show');
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('rowRangeInfo').textContent = `(טווח: 1-${currentData.length} מהקובץ המקורי)`;
+            document.getElementById('comparisonRowInput').max = currentData.length;
+            updateComparison();
         }
         
         function selectRows(data, selection) {
@@ -1122,21 +1174,23 @@
             }
         }
         
+        function readExcelArrayBuffer(arrayBuffer) {
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+            return data.filter(row =>
+                row.some(cell => cell !== '' && cell !== null && cell !== undefined)
+            );
+        }
+
         function readExcelFile(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 
                 reader.onload = function(e) {
                     try {
-                        const workbook = XLSX.read(e.target.result, { type: 'array' });
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
-                        
-                        const filteredData = data.filter(row => 
-                            row.some(cell => cell !== '' && cell !== null && cell !== undefined)
-                        );
-                        
-                        resolve(filteredData);
+                        resolve(readExcelArrayBuffer(e.target.result));
                     } catch (error) {
                         reject(error);
                     }
