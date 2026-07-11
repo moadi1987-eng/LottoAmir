@@ -1,0 +1,26 @@
+.vscode/
+backup_2025-02-18/
+
+# Local data and generated analysis files
+*.xlsx
+*.json
+*.png
+
+# Python helper scripts are kept local for now
+*.py
+requirements.txt
+
+# Older HTML versions not included in the first LottoAmir publish
+Lottery_Numbers_Picker_Updated_V35.html
+Lottery_V38_Manual_Fixed.html
+lotto_analyzer_full.html
+lotto_system.html
+
+# Older local notes
+ANALYZER_GUIDE.md
+COMPARISON_FEATURE.md
+HOW_TO_GET_DATA.md
+IMPROVEMENTS.md
+QUICK_START.md
+README.md
+הסבר_קומבינציות_ניתוח_לוטו.md
