@@ -4,9 +4,9 @@
 
 **Goal:** Build the first publishable LottoAmir static site entry point with three clear tool links.
 
-**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Add GitLab Pages configuration after the home page is verified, using a static artifact copy from the repository root.
+**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Add GitHub Pages configuration after the home page is verified, using a static artifact upload from the repository root.
 
-**Tech Stack:** Static HTML, CSS, JavaScript-free navigation, Git, GitLab Pages.
+**Tech Stack:** Static HTML, CSS, JavaScript-free navigation, Git, GitHub Pages.
 
 ## Global Constraints
 
@@ -16,7 +16,8 @@
 - Do not merge or rewrite existing tool logic in the first step.
 - Do not embed the tools in iframes in the first step.
 - Use Hebrew right-to-left layout.
-- The site must be static and suitable for GitLab Pages.
+- The site must be static and suitable for GitHub Pages.
+- The GitHub owner is `moadi1987-eng`.
 
 ---
 
@@ -104,7 +105,7 @@ Expected: commit succeeds.
 
 **Interfaces:**
 - Consumes: existing local tool pages.
-- Produces: committed tool pages that GitLab Pages can publish.
+- Produces: committed tool pages that GitHub Pages can publish.
 
 - [ ] **Step 1: Confirm all three tool pages are untracked or modified**
 
@@ -129,35 +130,58 @@ Expected: commit succeeds.
 
 ---
 
-### Task 3: Add GitLab Pages Static Publishing Config
+### Task 3: Add GitHub Pages Static Publishing Config
 
 **Files:**
-- Create: `.gitlab-ci.yml`
+- Create: `.github/workflows/pages.yml`
 
 **Interfaces:**
 - Consumes: static files in the project root.
-- Produces: GitLab Pages artifact under `public/`.
+- Produces: GitHub Pages deployment from the repository root.
 
-- [ ] **Step 1: Create `.gitlab-ci.yml`**
+- [ ] **Step 1: Create `.github/workflows/pages.yml`**
 
-Use a static Pages job that copies the publishable site files:
+Use a static GitHub Pages workflow that uploads the repository root:
 
 ```yaml
-pages:
-  stage: deploy
-  script:
-    - mkdir -p public
-    - cp index.html public/
-    - cp Lottery_V41_Final.html public/
-    - cp Lotto_All_In_One.html public/
-    - cp lotto_analyzer.html public/
-    - cp -f *.png public/ 2>/dev/null || true
-    - cp -f *.json public/ 2>/dev/null || true
-  artifacts:
-    paths:
-      - public
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 ```
 
 - [ ] **Step 2: Verify config mentions required files**
@@ -165,32 +189,32 @@ pages:
 Run:
 
 ```powershell
-Select-String -Path .\.gitlab-ci.yml -Pattern 'index.html','Lottery_V41_Final.html','Lotto_All_In_One.html','lotto_analyzer.html'
+Select-String -Path .\.github\workflows\pages.yml -Pattern 'actions/configure-pages','actions/upload-pages-artifact','actions/deploy-pages'
 ```
 
-Expected: output contains all four file names.
+Expected: output contains the three GitHub Pages actions.
 
 - [ ] **Step 3: Commit**
 
 Run:
 
 ```powershell
-git add .gitlab-ci.yml
-git commit -m "ci: add GitLab Pages publishing"
+git add .github/workflows/pages.yml
+git commit -m "ci: add GitHub Pages publishing"
 ```
 
 Expected: commit succeeds.
 
 ---
 
-### Task 4: Prepare GitLab Remote Handoff
+### Task 4: Prepare GitHub Remote Handoff
 
 **Files:**
 - Modify: none.
 
 **Interfaces:**
 - Consumes: the committed static site.
-- Produces: a clean local Git repository ready for a GitLab remote once the project exists.
+- Produces: a clean local Git repository ready for a GitHub remote once the project exists.
 
 - [ ] **Step 1: Check repository status**
 
@@ -201,16 +225,16 @@ git status --short
 git log --oneline -3
 ```
 
-Expected: working tree is clean after commits, and the latest commits include the homepage and GitLab Pages configuration.
+Expected: working tree is clean after commits, and the latest commits include the homepage and GitHub Pages configuration.
 
-- [ ] **Step 2: Record GitLab remote requirement**
+- [ ] **Step 2: Record GitHub remote requirement**
 
-There is no GitLab CLI available in this workspace at plan time. After the GitLab project is created, connect the local repository to the exact GitLab clone URL shown by GitLab.
+There is no GitHub CLI available in this workspace at plan time. After the GitHub repository is created under `moadi1987-eng`, connect the local repository to the exact GitHub clone URL shown by GitHub.
 
-Expected: the next execution stage either uses an authenticated GitLab tool, installs `glab`, or receives the exact GitLab clone URL from the user before running remote/push commands.
+Expected: the next execution stage either installs/authenticates `gh`, uses an authenticated GitHub connector, or receives the exact GitHub clone URL from the user before running remote/push commands.
 
 ## Self-Review
 
-- Spec coverage: Task 1 creates the LottoAmir home page with the three approved tools. Task 2 tracks the three tool pages so GitLab can publish them. Task 3 prepares static GitLab Pages publishing. Task 4 covers GitLab remote connection.
-- Specificity scan: GitLab remote creation is intentionally left to the execution stage because no GitLab CLI is available locally and no exact clone URL exists yet.
+- Spec coverage: Task 1 creates the LottoAmir home page with the three approved tools. Task 2 tracks the three tool pages so GitHub can publish them. Task 3 prepares static GitHub Pages publishing. Task 4 covers GitHub remote connection.
+- Specificity scan: GitHub remote creation is intentionally left to the execution stage because no GitHub CLI is available locally and no exact clone URL exists yet.
 - Scope check: The plan does not rewrite V41, All-In-One, or analyzer logic.

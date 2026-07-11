@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create a clean static website named **LottoAmir** that can be published through GitLab Pages. The site should present only the three important tools and avoid exposing the older historical versions as primary choices.
+Create a clean static website named **LottoAmir** that can be published through GitHub Pages under the GitHub account `moadi1987-eng`. The site should present only the three important tools and avoid exposing the older historical versions as primary choices.
 
 ## Primary Experience
 
@@ -35,11 +35,11 @@ The home page should feel like a compact professional tool hub, not a marketing 
 
 The V41 card should be visually emphasized as the recommended/default entry. The other two tools should be equal secondary actions.
 
-## GitLab Publishing
+## GitHub Publishing
 
-The project will be initialized as a Git repository locally, then connected to a new GitLab project. A GitLab Pages configuration can be added after the home page works locally.
+The project will be initialized as a Git repository locally, then connected to a new GitHub repository owned by `moadi1987-eng`. A GitHub Pages workflow can publish the site after the home page works locally.
 
-Because the site is static HTML, GitLab Pages can publish it without a build step. The likely Pages setup will copy the root HTML files into the public Pages artifact.
+Because the site is static HTML, GitHub Pages can publish it without a build step. The Pages workflow should upload the repository root as the static site artifact, with `index.html` at the artifact root.
 
 ## Out of Scope For First Step
 
