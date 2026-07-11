@@ -4,7 +4,7 @@
 
 **Goal:** Build the first publishable LottoAmir static site entry point with three clear tool links.
 
-**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Add GitLab Pages configuration after the home page is verified, using a static artifact copy from the repository root.
+**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Add GitLab Pages configuration after the home page is verified, using a static artifact copy from the repository root.
 
 **Tech Stack:** Static HTML, CSS, JavaScript-free navigation, Git, GitLab Pages.
 
@@ -95,7 +95,41 @@ Expected: commit succeeds.
 
 ---
 
-### Task 2: Add GitLab Pages Static Publishing Config
+### Task 2: Track The Published Tool Pages
+
+**Files:**
+- Add: `Lottery_V41_Final.html`
+- Add: `Lotto_All_In_One.html`
+- Add: `lotto_analyzer.html`
+
+**Interfaces:**
+- Consumes: existing local tool pages.
+- Produces: committed tool pages that GitLab Pages can publish.
+
+- [ ] **Step 1: Confirm all three tool pages are untracked or modified**
+
+Run:
+
+```powershell
+git status --short -- Lottery_V41_Final.html Lotto_All_In_One.html lotto_analyzer.html
+```
+
+Expected: output lists the three files.
+
+- [ ] **Step 2: Commit the three publishable tools**
+
+Run:
+
+```powershell
+git add Lottery_V41_Final.html Lotto_All_In_One.html lotto_analyzer.html
+git commit -m "feat: add published LottoAmir tools"
+```
+
+Expected: commit succeeds.
+
+---
+
+### Task 3: Add GitLab Pages Static Publishing Config
 
 **Files:**
 - Create: `.gitlab-ci.yml`
@@ -149,7 +183,7 @@ Expected: commit succeeds.
 
 ---
 
-### Task 3: Prepare GitLab Remote Handoff
+### Task 4: Prepare GitLab Remote Handoff
 
 **Files:**
 - Modify: none.
@@ -177,6 +211,6 @@ Expected: the next execution stage either uses an authenticated GitLab tool, ins
 
 ## Self-Review
 
-- Spec coverage: Task 1 creates the LottoAmir home page with the three approved tools. Task 2 prepares static GitLab Pages publishing. Task 3 covers GitLab remote connection.
+- Spec coverage: Task 1 creates the LottoAmir home page with the three approved tools. Task 2 tracks the three tool pages so GitLab can publish them. Task 3 prepares static GitLab Pages publishing. Task 4 covers GitLab remote connection.
 - Specificity scan: GitLab remote creation is intentionally left to the execution stage because no GitLab CLI is available locally and no exact clone URL exists yet.
 - Scope check: The plan does not rewrite V41, All-In-One, or analyzer logic.
