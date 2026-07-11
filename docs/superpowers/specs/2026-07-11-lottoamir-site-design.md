@@ -37,9 +37,9 @@ The V41 card should be visually emphasized as the recommended/default entry. The
 
 ## GitHub Publishing
 
-The project will be initialized as a Git repository locally, then connected to a new GitHub repository owned by `moadi1987-eng`. A GitHub Pages workflow can publish the site after the home page works locally.
+The project will be initialized as a Git repository locally, then connected to a new GitHub repository owned by `moadi1987-eng`. GitHub Pages will publish directly from the `main` branch root after the home page works locally.
 
-Because the site is static HTML, GitHub Pages can publish it without a build step. The Pages workflow should upload the repository root as the static site artifact, with `index.html` at the artifact root.
+Because the site is static HTML, GitHub Pages can publish it without a build step. The Pages source should be `main` with path `/`, and `index.html` should stay at the repository root.
 
 ## Out of Scope For First Step
 

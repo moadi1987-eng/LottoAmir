@@ -4,7 +4,7 @@
 
 **Goal:** Build the first publishable LottoAmir static site entry point with three clear tool links.
 
-**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Add GitHub Pages configuration after the home page is verified, using a static artifact upload from the repository root.
+**Architecture:** Keep the existing tools as separate HTML pages and add one new root `index.html` as the home page. Track the three publishable tool files in Git because this repository was initialized from an existing local folder. Publish through GitHub Pages directly from the `main` branch root.
 
 **Tech Stack:** Static HTML, CSS, JavaScript-free navigation, Git, GitHub Pages.
 
@@ -130,77 +130,44 @@ Expected: commit succeeds.
 
 ---
 
-### Task 3: Add GitHub Pages Static Publishing Config
+### Task 3: Add GitHub Pages Static Publishing Setup
 
 **Files:**
-- Create: `.github/workflows/pages.yml`
+- Create: `.nojekyll`
 
 **Interfaces:**
 - Consumes: static files in the project root.
-- Produces: GitHub Pages deployment from the repository root.
+- Produces: a repository root that GitHub Pages can serve directly.
 
-- [ ] **Step 1: Create `.github/workflows/pages.yml`**
+- [ ] **Step 1: Create `.nojekyll`**
 
-Use a static GitHub Pages workflow that uploads the repository root:
+Create an empty `.nojekyll` file so GitHub Pages serves the static HTML files directly without Jekyll processing.
 
-```yaml
-name: Deploy GitHub Pages
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
-jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload static site
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: .
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+```powershell
+New-Item -ItemType File -Path .\.nojekyll
 ```
 
-- [ ] **Step 2: Verify config mentions required files**
+- [ ] **Step 2: Verify static entry files exist**
 
 Run:
 
 ```powershell
-Select-String -Path .\.github\workflows\pages.yml -Pattern 'actions/configure-pages','actions/upload-pages-artifact','actions/deploy-pages'
+Test-Path .\.nojekyll
+Test-Path .\index.html
+Test-Path .\Lottery_V41_Final.html
+Test-Path .\Lotto_All_In_One.html
+Test-Path .\lotto_analyzer.html
 ```
 
-Expected: output contains the three GitHub Pages actions.
+Expected: five `True` lines.
 
 - [ ] **Step 3: Commit**
 
 Run:
 
 ```powershell
-git add .github/workflows/pages.yml
-git commit -m "ci: add GitHub Pages publishing"
+git add .nojekyll
+git commit -m "chore: prepare GitHub Pages static publishing"
 ```
 
 Expected: commit succeeds.
@@ -225,16 +192,16 @@ git status --short
 git log --oneline -3
 ```
 
-Expected: working tree is clean after commits, and the latest commits include the homepage and GitHub Pages configuration.
+Expected: working tree is clean after commits, and the latest commits include the homepage and static GitHub Pages setup.
 
 - [ ] **Step 2: Record GitHub remote requirement**
 
 There is no GitHub CLI available in this workspace at plan time. After the GitHub repository is created under `moadi1987-eng`, connect the local repository to the exact GitHub clone URL shown by GitHub.
 
-Expected: the next execution stage either installs/authenticates `gh`, uses an authenticated GitHub connector, or receives the exact GitHub clone URL from the user before running remote/push commands.
+Expected: the next execution stage either installs/authenticates `gh`, uses an authenticated GitHub connector, or receives the exact GitHub clone URL from the user before running remote/push commands. After push, GitHub Pages should be configured with source branch `main` and path `/`.
 
 ## Self-Review
 
-- Spec coverage: Task 1 creates the LottoAmir home page with the three approved tools. Task 2 tracks the three tool pages so GitHub can publish them. Task 3 prepares static GitHub Pages publishing. Task 4 covers GitHub remote connection.
+- Spec coverage: Task 1 creates the LottoAmir home page with the three approved tools. Task 2 tracks the three tool pages so GitHub can publish them. Task 3 prepares static GitHub Pages publishing from the repository root. Task 4 covers GitHub remote connection.
 - Specificity scan: GitHub remote creation is intentionally left to the execution stage because no GitHub CLI is available locally and no exact clone URL exists yet.
 - Scope check: The plan does not rewrite V41, All-In-One, or analyzer logic.
