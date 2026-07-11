@@ -964,6 +964,7 @@
         const DEFAULT_NUMBERS_FILE = 'NUMBERS.xlsx';
         const DEFAULT_NUMBERS_LABEL = 'קובץ מספרים קבוע (NUMBERS.xlsx)';
         let loadedExcelRows = null;
+        let comparisonLiveUpdateTimer = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
         
         function detectDataFormat(data) {
@@ -1012,7 +1013,11 @@
         });
 
         document.getElementById('defaultDataBtn').addEventListener('click', loadDefaultNumbersFile);
-        
+        document.getElementById('comparisonRowInput').addEventListener('input', scheduleComparisonLiveUpdate);
+        document.getElementById('comparisonRowInput').addEventListener('change', function() {
+            scheduleComparisonLiveUpdate(0);
+        });
+
         document.getElementById('analyzeBtn').addEventListener('click', function() {
             const file = document.getElementById('fileInput').files[0];
             if (loadedExcelRows) runAnalysisWithRows(loadedExcelRows);
@@ -2649,6 +2654,24 @@
         
         // ========== השוואה ==========
         var compareTwoLastRows = false;
+
+        function resetTwoLastRowsMode() {
+            compareTwoLastRows = false;
+            var btn = document.getElementById('twoLastRowsBtn');
+            if (btn) {
+                btn.style.background = 'rgba(255,255,255,0.2)';
+                btn.style.color = 'white';
+            }
+        }
+
+        function scheduleComparisonLiveUpdate(delay) {
+            if (compareTwoLastRows) resetTwoLastRowsMode();
+            if (comparisonLiveUpdateTimer) clearTimeout(comparisonLiveUpdateTimer);
+
+            comparisonLiveUpdateTimer = setTimeout(function() {
+                updateComparison({ silent: true, scroll: false });
+            }, typeof delay === 'number' ? delay : 250);
+        }
         
         function toggleTwoLastRows() {
             compareTwoLastRows = !compareTwoLastRows;
@@ -2684,9 +2707,7 @@
         }
         
         function quickCompare(rowNumber) {
-            compareTwoLastRows = false;
-            var btn = document.getElementById('twoLastRowsBtn');
-            if (btn) { btn.style.background = 'rgba(255,255,255,0.2)'; btn.style.color = 'white'; }
+            resetTwoLastRowsMode();
             document.getElementById('comparisonRowInput').value = rowNumber;
             updateComparison();
         }
@@ -2734,10 +2755,13 @@
             return { infoHtml, tableHtml };
         }
         
-        function updateComparison() {
+        function updateComparison(options) {
+            options = options || {};
+            var silent = !!options.silent;
+            var shouldScroll = options.scroll !== false;
             var combosToUse = comparisonFormSource === 'form2' ? (currentCombinationsForm2 || []) : (currentCombinations || []);
             if (!currentData || !combosToUse.length) {
-                alert('❌ אנא נתח קובץ תחילה!');
+                if (!silent) alert('❌ אנא נתח קובץ תחילה!');
                 return;
             }
             var formLabel = comparisonFormSource === 'form2' ? '📋 טופס שני (1–14)' : '✨ טופס ראשון (14 מומלצות)';
@@ -2754,14 +2778,14 @@
                 secondBlock.style.display = 'none';
                 const rowNumber = parseInt(document.getElementById('comparisonRowInput').value);
                 if (isNaN(rowNumber) || rowNumber < 1 || rowNumber > currentData.length) {
-                    alert(`❌ מספר שורה לא תקין!\nהזן מספר בין 1 ל-${currentData.length}`);
+                    if (!silent) alert(`❌ מספר שורה לא תקין!\nהזן מספר בין 1 ל-${currentData.length}`);
                     return;
                 }
                 var res = buildOneComparison(combosToUse, currentData[rowNumber - 1], rowNumber, formLabel);
                 document.getElementById('comparisonInfo').innerHTML = res.infoHtml;
                 document.getElementById('comparisonTable').innerHTML = res.tableHtml;
             }
-            document.getElementById('comparisonInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (shouldScroll) document.getElementById('comparisonInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     </script>
 </body>
