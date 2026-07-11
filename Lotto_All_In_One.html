@@ -10,6 +10,8 @@
 
         /* ===== Design Tokens - Dark Pro (תואם למנתח) ===== */
         :root {
+            --app-height: 100vh;
+            --header-height: 78px;
             --bg: #0b1120;
             --bg-elevated: #141d2f;
             --bg-card: #1a2439;
@@ -28,12 +30,18 @@
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        html, body {
+            height: 100%;
+        }
+
         body {
             font-family: 'Assistant', sans-serif;
             background: var(--bg);
-            min-height: 100vh;
+            height: var(--app-height);
+            min-height: var(--app-height);
             color: var(--text);
             overflow-x: hidden;
+            overflow-y: hidden;
         }
 
         /* ========== MAIN HEADER - קומפקטי ונקי ========== */
@@ -101,6 +109,12 @@
             border-color: var(--accent);
             color: white;
         }
+        .main-header .nav-btn.active {
+            background: var(--accent);
+            border-color: var(--accent-hover);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
         .main-header .nav-btn.primary:hover {
             background: var(--accent-hover);
             color: white;
@@ -115,17 +129,27 @@
             gap: 14px;
             width: 100%;
             max-width: 1600px;
+            height: calc(var(--app-height) - var(--header-height));
             margin: 0 auto;
+            overflow: hidden;
         }
 
         /* ========== SECTION STYLING ========== */
         .section-container {
+            display: none;
             background: var(--bg-elevated);
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 12px;
             overflow: hidden;
             scroll-margin-top: 86px;
+            min-height: 0;
+            height: 100%;
+        }
+
+        .section-container.is-active {
+            display: flex;
+            flex-direction: column;
         }
 
         .section-title {
@@ -162,6 +186,9 @@
             display: block;
             width: 100%;
             max-width: 100%;
+            flex: 1 1 auto;
+            height: auto !important;
+            min-height: 0 !important;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
         }
@@ -251,7 +278,7 @@
             .main-header p { font-size: 10px; margin-bottom: 8px; }
             .main-header .nav-buttons {
                 display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 6px;
                 width: min(100%, 520px);
                 margin: 0 auto;
@@ -262,14 +289,20 @@
                 padding: 7px 10px;
                 font-size: 11px;
             }
-            .main-header .nav-btn.print-nav { grid-column: 1 / -1; }
 
-            .content-wrapper { padding: 8px; gap: 10px; }
+            .content-wrapper {
+                height: calc(var(--app-height) - var(--header-height));
+                padding: 8px;
+                gap: 10px;
+            }
             .section-container { padding: 7px; border-radius: 8px; scroll-margin-top: 118px; }
             .section-title { font-size: 12px; padding: 4px 8px 8px; margin-bottom: 8px; }
 
-            #formIframe { height: calc(100vh - 136px) !important; min-height: 680px; }
-            #analyzerIframe { height: calc(100vh - 136px) !important; min-height: 680px; }
+            #formIframe,
+            #analyzerIframe {
+                height: auto !important;
+                min-height: 0 !important;
+            }
 
             .transfer-notification {
                 top: 8px;
@@ -294,11 +327,14 @@
 
         @media (max-width: 480px) {
             .main-header h1 { font-size: 13px; }
-            .main-header .nav-buttons { flex-direction: column; }
-            .main-header .nav-buttons { grid-template-columns: 1fr; }
+            .main-header p { display: none; }
+            .main-header .nav-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .main-header .nav-btn { width: 100%; }
-            #formIframe { height: calc(100vh - 136px) !important; min-height: 620px; }
-            #analyzerIframe { height: calc(100vh - 136px) !important; min-height: 620px; }
+            #formIframe,
+            #analyzerIframe {
+                height: auto !important;
+                min-height: 0 !important;
+            }
         }
     </style>
 </head>
@@ -308,9 +344,10 @@
         <h1>🎰 מערכת לוטו מלאה ALL-IN-ONE</h1>
         <p>מילוי טפסים אוטומטי + ניתוח תוצאות מתקדם במקום אחד!</p>
         <div class="nav-buttons">
-            <button class="nav-btn primary" onclick="scrollToSection('form')">📝 מילוי טפסים</button>
-            <button class="nav-btn" onclick="scrollToSection('analyzer')">📊 ניתוח תוצאות</button>
-            <button class="nav-btn print-nav" onclick="printForm()">🖨️ טופס להדפסה</button>
+            <button class="nav-btn primary active" id="navFormBtn" onclick="setActiveSection('form')" aria-pressed="true">📝 טפסים</button>
+            <button class="nav-btn" id="navAnalyzerBtn" onclick="setActiveSection('analyzer')" aria-pressed="false">📊 ניתוח</button>
+            <button class="nav-btn" id="navCompareBtn" onclick="openComparisonView()" aria-pressed="false">🎯 השוואה</button>
+            <button class="nav-btn print-nav" id="navPrintBtn" onclick="printForm()">🖨️ הדפסה</button>
         </div>
     </div>
     
@@ -326,7 +363,7 @@
     
     <div class="content-wrapper">
         <!-- ========== FORM FILLER SECTION ========== -->
-        <div class="section-container" id="formSection">
+        <div id="formSection" class="section-container is-active">
             <div class="section-title">📝 מילוי טפסים אוטומטי</div>
             <iframe
                 src="Lottery_V41_Final.html"
@@ -337,7 +374,7 @@
         </div>
         
         <!-- ========== ANALYZER SECTION ========== -->
-        <div class="section-container" id="analyzerSection">
+        <div id="analyzerSection" class="section-container">
             <div class="section-title analyzer">📊 ניתוח תוצאות מתקדם</div>
             <iframe 
                 src="lotto_analyzer.html" 
@@ -350,11 +387,79 @@
     
     <script>
         // ========== GLOBAL FUNCTIONS ==========
+        let activeShellSection = 'form';
+
+        function updateViewportMetrics() {
+            const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+            const header = document.querySelector('.main-header');
+            const headerHeight = header ? Math.ceil(header.getBoundingClientRect().height) : 78;
+            document.documentElement.style.setProperty('--app-height', `${Math.round(viewportHeight)}px`);
+            document.documentElement.style.setProperty('--header-height', `${headerHeight}px`);
+        }
+
+        function setActiveSection(section, options) {
+            options = options || {};
+            const normalized = section === 'analyzer' || section === 'compare' ? 'analyzer' : 'form';
+            const activeNav = options.navTarget || (section === 'compare' ? 'compare' : normalized);
+            activeShellSection = normalized;
+
+            document.getElementById('formSection').classList.toggle('is-active', normalized === 'form');
+            document.getElementById('analyzerSection').classList.toggle('is-active', normalized === 'analyzer');
+
+            const navMap = {
+                form: document.getElementById('navFormBtn'),
+                analyzer: document.getElementById('navAnalyzerBtn'),
+                compare: document.getElementById('navCompareBtn')
+            };
+
+            Object.keys(navMap).forEach(key => {
+                const btn = navMap[key];
+                if (!btn) return;
+                const isActive = key === activeNav;
+                btn.classList.toggle('active', isActive);
+                btn.classList.toggle('primary', isActive);
+                btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            });
+
+            updateViewportMetrics();
+            if (!options.preserveScroll) {
+                window.scrollTo({ top: 0, behavior: options.smooth ? 'smooth' : 'auto' });
+            }
+        }
+
+        function focusAnalyzerComparison() {
+            setTimeout(() => {
+                const analyzerIframe = document.getElementById('analyzerIframe');
+                if (!analyzerIframe || !analyzerIframe.contentWindow) return;
+
+                try {
+                    if (typeof analyzerIframe.contentWindow.scrollToSection === 'function') {
+                        analyzerIframe.contentWindow.scrollToSection('comparisonCard');
+                        return;
+                    }
+
+                    const comparisonCard = analyzerIframe.contentWindow.document.getElementById('comparisonCard');
+                    if (comparisonCard) {
+                        comparisonCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } catch (e) {
+                    console.log('Comparison focus skipped:', e);
+                }
+            }, 180);
+        }
+
+        function openComparisonView() {
+            setActiveSection('compare', { navTarget: 'compare', smooth: true });
+            focusAnalyzerComparison();
+        }
         
         // Scroll to section
         function scrollToSection(section) {
-            const element = document.getElementById(section === 'form' ? 'formSection' : 'analyzerSection');
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (section === 'analyzer') {
+                setActiveSection('analyzer', { smooth: true });
+            } else {
+                setActiveSection('form', { smooth: true });
+            }
         }
         
         // Scroll to top
@@ -413,7 +518,7 @@
             
             // Scroll to form
             setTimeout(() => {
-                scrollToSection('form');
+                setActiveSection('form', { smooth: true });
             }, 1000);
             
             // Auto-close notification
@@ -468,7 +573,7 @@
             
             // Scroll to form
             setTimeout(() => {
-                scrollToSection('form');
+                setActiveSection('form', { smooth: true });
             }, 500);
             
             // Auto-close notification
@@ -478,6 +583,15 @@
         }
         
         // Initialize system
+        updateViewportMetrics();
+        setActiveSection(activeShellSection, { preserveScroll: true });
+        window.addEventListener('resize', updateViewportMetrics);
+        window.addEventListener('orientationchange', updateViewportMetrics);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateViewportMetrics);
+            window.visualViewport.addEventListener('scroll', updateViewportMetrics);
+        }
+        window.addEventListener('load', updateViewportMetrics);
         console.log('🎰 Lotto All-In-One System Ready!');
     </script>
 </body>
