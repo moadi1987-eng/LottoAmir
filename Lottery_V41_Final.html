@@ -1,0 +1,1912 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>מערכת לוטו PRO - V41 (משופר)</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&display=swap');
+
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Assistant', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            padding: 10px;
+            gap: 15px;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 400px;
+            background: #fff;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            height: 100%;
+            overflow-y: auto;
+            flex-shrink: 0;
+            z-index: 200;
+        }
+
+        h1 { 
+            margin: 0; 
+            font-size: 22px; 
+            text-align: center; 
+            color: #e74c3c; 
+            margin-bottom: 5px;
+        }
+
+        .section {
+            border: 1px solid #e0e0e0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #fafafa;
+            margin-bottom: 5px;
+        }
+        .section.highlight {
+            background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
+            border-color: #e74c3c;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button {
+            width: 100%; 
+            padding: 10px; 
+            border: none; 
+            border-radius: 6px;
+            font-size: 14px; 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: all 0.2s; 
+            font-family: inherit;
+        }
+        button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        button:active { transform: translateY(0); }
+
+        .btn-primary { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; }
+        .btn-success { background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); color: white; }
+        .btn-warning { background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; }
+        .btn-secondary { background: #95a5a6; color: white; }
+        .btn-small { padding: 6px 12px; font-size: 12px; width: auto; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+        .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px; }
+
+        /* בורר סוג טופס */
+        .form-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .form-option {
+            border: 3px solid #ddd;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f8f9fa;
+        }
+        .form-option:hover { border-color: #e74c3c; transform: scale(1.02); }
+        .form-option.active { 
+            border-color: #e74c3c; 
+            background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.2);
+        }
+        .form-option .icon { font-size: 28px; margin-bottom: 5px; }
+        .form-option .title { font-weight: 700; font-size: 14px; color: #333; }
+        .form-option .desc { font-size: 11px; color: #666; margin-top: 3px; }
+        .form-option .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .form-option .status-dot.has-image { background: #27ae60; }
+        .form-option .status-dot.no-image { background: #e74c3c; }
+
+        textarea { 
+            width: 100%; 
+            height: 50px; 
+            border: 2px solid #e0e0e0; 
+            border-radius: 6px; 
+            padding: 8px; 
+            font-size: 13px; 
+            font-family: monospace;
+            resize: none;
+        }
+        textarea:focus { border-color: #e74c3c; outline: none; }
+        
+        .status { 
+            font-size: 12px; 
+            font-weight: 600; 
+            min-height: 18px; 
+            margin-top: 4px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .status.error { background: #ffebee; color: #c62828; }
+        .status.info { background: #e3f2fd; color: #1565c0; }
+
+        /* טבלאות */
+        .tables-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .tbl-btn {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid;
+            position: relative;
+        }
+        .tbl-btn.off { background: #e9ecef; border-color: #adb5bd; color: #6c757d; }
+        .tbl-btn.on { background: #d4edda; border-color: #28a745; color: #155724; }
+        .tbl-btn.manual { background: #fff3cd; border-color: #ffc107; color: #856404; }
+        .tbl-btn:hover { transform: scale(1.1); z-index: 10; }
+        .tbl-btn .edit-icon {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            font-size: 10px;
+            background: #ffc107;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .tbl-btn.manual .edit-icon { display: flex; }
+
+        /* בורר מספרים ידני */
+        .manual-picker-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        .manual-picker-overlay.active { display: flex; }
+        
+        .manual-picker {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            max-width: 450px;
+            width: 95%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .picker-title {
+            font-size: 18px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .picker-subtitle {
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .picker-selected {
+            background: #fff5f5;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .picker-selected .num {
+            background: #e74c3c;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .picker-selected .strong {
+            background: #9b59b6;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        .numbers-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 5px;
+            margin-bottom: 20px;
+        }
+        .num-btn {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 2px solid #ddd;
+            background: #f8f9fa;
+            color: #333;
+        }
+        .num-btn:hover { 
+            transform: scale(1.1); 
+            border-color: #e74c3c;
+            z-index: 5;
+        }
+        .num-btn.selected {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            border-color: #c0392b;
+            box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
+        }
+        .num-btn.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .strong-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #eee;
+        }
+        .strong-label {
+            font-size: 14px;
+            font-weight: 700;
+            color: #9b59b6;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .strong-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+        .strong-btn {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 3px solid #e0e0e0;
+            background: #fafafa;
+            color: #9b59b6;
+        }
+        .strong-btn:hover {
+            transform: scale(1.15);
+            border-color: #9b59b6;
+        }
+        .strong-btn.selected {
+            background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+            color: white;
+            border-color: #8e44ad;
+            box-shadow: 0 2px 8px rgba(155, 89, 182, 0.4);
+        }
+        
+        .picker-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .picker-buttons button { flex: 1; }
+
+        /* כיול */
+        .calib-grid {
+            display: grid;
+            grid-template-columns: 1fr 70px;
+            gap: 6px;
+            align-items: center;
+            font-size: 12px;
+        }
+        .calib-grid label { margin: 0; font-weight: 500; }
+        .calib-grid input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .calib-grid input:focus { border-color: #e74c3c; outline: none; }
+
+        /* תצוגה */
+        .preview-wrapper {
+            flex: 1;
+            background: #0f0f1a;
+            display: flex;
+            justify-content: center;
+            overflow: auto;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .page-base {
+            width: 210mm; 
+            height: 297mm; 
+            background: white;
+            position: relative;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            flex-shrink: 0;
+            overflow: visible;
+        }
+
+        #lottoForm {
+            position: absolute;
+            top: 0; left: 0;
+            width: 8.2cm;
+            height: 24.5cm;
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+        }
+        .no-bg { background-image: none !important; outline: 2px dashed #e74c3c; }
+
+        .mark {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+            pointer-events: none;
+        }
+        .mark.debug {
+            border-radius: 50%;
+            border: 1px solid black;
+            opacity: 0.85;
+        }
+        .mark.debug.regular { background: #00ff00; }
+        .mark.debug.strong { background: #9b59b6; }
+        .mark.final {
+            background: black;
+            border-radius: 0;
+        }
+
+        /* רשימת כרטיסים */
+        .tickets-list {
+            max-height: 110px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 6px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        .ticket-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 6px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .ticket-row:hover { background: #fff5f5; }
+        .ticket-row:last-child { border-bottom: none; }
+        .ticket-row.manual { background: #fff3cd; }
+        .ticket-nums { color: #2c3e50; font-weight: 600; }
+        .ticket-strong { color: #9b59b6; font-weight: 700; }
+        .ticket-edit { font-size: 10px; color: #999; margin-right: 5px; }
+
+        @media print {
+            @page { margin: 0; }
+            body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: white; }
+            .sidebar, .manual-picker-overlay { display: none !important; }
+            .preview-wrapper { display: block; padding: 0; margin: 0; overflow: visible; width: 100%; height: 100%; }
+            .page-base { box-shadow: none; margin: 0; width: 100%; height: 100%; position: absolute; top: 0; left: 0; overflow: visible; }
+            #lottoForm { outline: none; border: none; } 
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .mark.debug { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h1>🎰 לוטו PRO V41</h1>
+        
+        <!-- בחירת סוג טופס -->
+        <div class="section">
+            <div class="section-title">📄 בחר סוג טופס</div>
+            <div class="form-selector">
+                <div class="form-option active" id="optLong" onclick="setFormType('long')">
+                    <div class="icon">📋</div>
+                    <div class="title">לוטו רגיל</div>
+                    <div class="desc">14 טבלאות</div>
+                    <div class="desc"><span class="status-dot no-image" id="dotLong"></span>תמונה</div>
+                </div>
+                <div class="form-option" id="optShort" onclick="setFormType('short')">
+                    <div class="icon">📑</div>
+                    <div class="title">דאבל לוטו</div>
+                    <div class="desc">10 טבלאות</div>
+                    <div class="desc"><span class="status-dot no-image" id="dotShort"></span>תמונה</div>
+                </div>
+            </div>
+            <div class="grid-2" style="margin-top:10px;">
+                <button class="btn-small btn-primary" onclick="uploadFormImage()">📤 העלה תמונת טופס</button>
+                <button class="btn-small btn-secondary" onclick="toggleBg()">👁️ הצג/הסתר</button>
+            </div>
+            <input type="file" id="fileFormImage" hidden accept="image/*" onchange="handleFormImage(this)">
+        </div>
+
+        <!-- בחירת טבלאות -->
+        <div class="section">
+            <div class="section-title">📋 טבלאות <span style="font-size:10px; color:#888;">(לחץ=מצב, כפול=עריכה)</span></div>
+            <div id="tableSelectors" class="tables-grid"></div>
+            <div class="grid-3" style="margin-top:8px;">
+                <button class="btn-small btn-success" onclick="toggleAllTables(1)">✓ הכל</button>
+                <button class="btn-small btn-secondary" onclick="toggleAllTables(0)">✗ כבוי</button>
+                <button class="btn-small btn-warning" onclick="toggleAllTables(2)">✋ ידני</button>
+            </div>
+        </div>
+
+        <!-- מספרים -->
+        <div class="section highlight">
+            <div class="section-title">🔢 מספרים (למילוי אוטומטי)</div>
+            <textarea id="inputReg" placeholder="מספרים רגילים: 1,5,12,18,25,31..."></textarea>
+            <textarea id="inputStrong" placeholder="מספר חזק: 1,3,5,7..." style="height:30px; margin-top:5px;"></textarea>
+            <div class="grid-2" style="margin-top:5px;">
+                <button class="btn-small btn-primary" onclick="loadExcelFile('reg')">📂 אקסל רגיל</button>
+                <button class="btn-small" style="background:#9b59b6;color:white;" onclick="loadExcelFile('strong')">📂 אקסל חזק</button>
+            </div>
+            <div id="statusReg" class="status info">מוכן</div>
+            <input type="file" id="fileReg" hidden accept=".xlsx,.xls" onchange="handleExcel(this, 'reg')">
+            <input type="file" id="fileStrong" hidden accept=".xlsx,.xls" onchange="handleExcel(this, 'strong')">
+        </div>
+
+        <!-- פעולות -->
+        <div class="section">
+            <button class="btn-success" onclick="generateTickets()" style="font-size:16px;">
+                🎲 מלא אוטומטי
+            </button>
+            <div class="grid-2" style="margin-top:8px;">
+                <button class="btn-primary" onclick="window.print()">🖨️ הדפס</button>
+                <button class="btn-secondary" onclick="resetAll()">🔄 איפוס</button>
+            </div>
+        </div>
+
+        <!-- כיול -->
+        <div class="section">
+            <div class="section-title">⚙️ כיול</div>
+            <div style="font-size:10px; color:#666; margin-bottom:8px; background:#f8f9fa; padding:6px; border-radius:4px;">
+                💡 <b>טיפים:</b> לחץ בדיוק על <b>מרכז</b> העיגולים | Backspace=בטל לחיצה | Esc=ביטול כיול
+            </div>
+            
+            <!-- כפתור כיול אוטומטי -->
+            <button class="btn-primary" id="btnAutoCalib" onclick="startAutoCalibration()" style="margin-bottom:10px; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);" title="כיול אוטומטי של כל הפרמטרים - 5 לחיצות">
+                🎯 כיול אוטומטי (5 לחיצות)
+            </button>
+            <button class="btn-warning btn-small" id="btnUndoCalib" onclick="undoLastCalibPoint()" style="display:none; margin-bottom:10px;">
+                ↩️ בטל לחיצה אחרונה
+            </button>
+            <div id="calibStatus" style="display:none; background:#fff3cd; padding:8px; border-radius:6px; margin-bottom:10px; font-size:12px; text-align:center; font-weight:600;"></div>
+            
+            <div class="grid-4" style="margin-bottom:8px;">
+                <button class="btn-small" id="btnDebug" onclick="toggleDebug()">👁️</button>
+                <button class="btn-small btn-success" onclick="saveCalibration()">💾</button>
+                <button class="btn-small btn-secondary" onclick="loadCalibration()">📥</button>
+                <button class="btn-small btn-warning" onclick="clearSavedImages()">🗑️</button>
+            </div>
+            
+            <details open>
+                <summary style="cursor:pointer; font-weight:600; padding:5px; font-size:12px;">📐 הגדרות מתקדמות</summary>
+                
+                <!-- גודל ומיקום דף -->
+                <div style="background:#e3f2fd; padding:8px; border-radius:6px; margin-top:8px; margin-bottom:10px;">
+                    <label style="font-size:11px; color:#1565c0; font-weight:700;">📄 גודל דף (מ"מ)</label>
+                    <div class="calib-grid" style="margin-top:5px;">
+                        <label>רוחב דף:</label>
+                        <input type="number" id="pageW" value="210" step="1" oninput="updatePageSize()">
+                        <label>גובה דף:</label>
+                        <input type="number" id="pageH" value="297" step="1" oninput="updatePageSize()">
+                    </div>
+                </div>
+                
+                <!-- מיקום וגודל טופס -->
+                <div style="background:#fff3e0; padding:8px; border-radius:6px; margin-bottom:10px;">
+                    <label style="font-size:11px; color:#e65100; font-weight:700;">📋 מיקום וגודל טופס (ס"מ)</label>
+                    <div style="font-size:10px; color:#999; margin-top:2px; margin-bottom:6px;">השתמש בחיצים להזיז (0.1 ס"מ לכל לחיצה) | טיפ: Shift+חיצי מקלדת</div>
+                    
+                    <!-- כפתורי חיצים לניווט -->
+                    <div style="display:flex; justify-content:center; gap:4px; margin:8px 0;">
+                        <button class="btn-small btn-secondary" onclick="moveForm('up')" style="padding:8px 12px; width:auto;" title="הזז למעלה">⬆️</button>
+                    </div>
+                    <div style="display:flex; justify-content:center; gap:4px; margin-bottom:8px;">
+                        <button class="btn-small btn-secondary" onclick="moveForm('left')" style="padding:8px 12px; width:auto;" title="הזז שמאלה">⬅️</button>
+                        <button class="btn-small btn-warning" onclick="resetFormPosition()" style="padding:8px 12px; width:auto;" title="אפס למיקום התחלתי">🎯</button>
+                        <button class="btn-small btn-secondary" onclick="moveForm('right')" style="padding:8px 12px; width:auto;" title="הזז ימינה">➡️</button>
+                    </div>
+                    <div style="display:flex; justify-content:center; gap:4px; margin-bottom:10px;">
+                        <button class="btn-small btn-secondary" onclick="moveForm('down')" style="padding:8px 12px; width:auto;" title="הזז למטה">⬇️</button>
+                    </div>
+                    
+                    <div class="calib-grid" style="margin-top:5px;">
+                        <label>X טופס:</label>
+                        <input type="number" id="formX" value="0" step="0.1" oninput="updateFormPosition()">
+                        <label>Y טופס:</label>
+                        <input type="number" id="formY" value="0" step="0.1" oninput="updateFormPosition()">
+                        <label>רוחב טופס:</label>
+                        <input type="number" id="formW" value="8.2" step="0.1" oninput="updateFormSize()">
+                        <label>גובה טופס:</label>
+                        <input type="number" id="formH" value="24.5" step="0.1" oninput="updateFormSize()">
+                    </div>
+                </div>
+                
+                <!-- כיול סימונים -->
+                <div style="background:#f3e5f5; padding:8px; border-radius:6px;">
+                    <label style="font-size:11px; color:#7b1fa2; font-weight:700;">🎯 כיול סימונים (פיקסלים)</label>
+                    <div class="calib-grid" style="margin-top:5px;">
+                        <label>Y התחלה:</label>
+                        <input type="number" id="cy" value="77" step="0.5" oninput="draw()">
+                        
+                        <label>X התחלה:</label>
+                        <input type="number" id="cx" value="243" step="1" oninput="draw()">
+                        
+                        <label>מרווח טבלאות:</label>
+                        <input type="number" id="gt" value="62.5" step="0.1" oninput="draw()">
+                        
+                        <label>מרווח שורות:</label>
+                        <input type="number" id="gapY" value="14.8" step="0.1" oninput="draw()">
+                        
+                        <label>מרווח טורים:</label>
+                        <input type="number" id="gx" value="24.3" step="0.1" oninput="draw()">
+                        
+                        <label>תיקון שורה 1:</label>
+                        <input type="number" id="topRowFix" value="0" step="0.1" oninput="draw()">
+                        
+                        <label>תוספת אמצע:</label>
+                        <input type="number" id="midGap" value="10.5" step="0.5" oninput="draw()">
+                        
+                        <label>תוספת זוגות:</label>
+                        <input type="number" id="pairGap" value="12" step="0.5" oninput="draw()">
+                        
+                        <label style="color:#9b59b6;">X חזק:</label>
+                        <input type="number" id="scx" value="280" step="1" oninput="draw()">
+                    </div>
+                </div>
+                
+                <!-- גודל סימון -->
+                <div style="background:#e8f5e9; padding:8px; border-radius:6px; margin-top:10px;">
+                    <label style="font-size:11px; color:#2e7d32; font-weight:700;">📍 גודל סימון</label>
+                    <div class="calib-grid" style="margin-top:5px;">
+                        <label>רוחב סימון:</label>
+                        <input type="number" id="markW" value="10" step="0.5" oninput="draw()">
+                        
+                        <label>גובה סימון:</label>
+                        <input type="number" id="markH" value="5" step="0.5" oninput="draw()">
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- רשימת כרטיסים -->
+        <div class="section">
+            <div class="section-title">🎫 כרטיסים</div>
+            <div id="ticketsList" class="tickets-list">
+                <div style="text-align:center; color:#999; padding:15px;">בחר טבלאות</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- בורר מספרים ידני -->
+    <div class="manual-picker-overlay" id="pickerOverlay">
+        <div class="manual-picker">
+            <div class="picker-title">✏️ עריכת טבלה <span id="pickerTableNum">1</span></div>
+            <div class="picker-subtitle">בחר 6 מספרים (1-37) ומספר חזק (1-7)</div>
+            
+            <div class="picker-selected" id="pickerSelected">
+                <span style="color:#999;">בחר מספרים...</span>
+            </div>
+            
+            <!-- אופציית הדבקה -->
+            <div style="margin:12px 0; padding:12px; background:#fff3e0; border-radius:8px; border:2px dashed #ff9800;">
+                <div style="font-weight:600; font-size:13px; margin-bottom:8px; color:#e65100;">📋 הדבק מספרים מהלוח</div>
+                <input type="text" id="pasteInput" placeholder="הדבק כאן: 1, 5, 12, 23, 28, 34 (ואופציונלי מספר חזק)" style="width:100%; padding:8px; border:1px solid #ff9800; border-radius:6px; font-size:13px; font-family:'Assistant',sans-serif;">
+                <button onclick="pasteNumbers()" style="width:100%; margin-top:6px; padding:8px; background:linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">
+                    ⚡ מלא מהלוח
+                </button>
+            </div>
+            
+            <div class="numbers-grid" id="numbersGrid"></div>
+            
+            <div class="strong-section">
+                <div class="strong-label">💪 מספר חזק</div>
+                <div class="strong-grid" id="strongGrid"></div>
+            </div>
+            
+            <div class="picker-buttons">
+                <button class="btn-secondary" onclick="closePicker()">ביטול</button>
+                <button class="btn-warning" onclick="clearPickerSelection()">נקה</button>
+                <button class="btn-primary" onclick="savePicker()">✓ שמור</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="preview-wrapper">
+        <div id="pageBase" class="page-base">
+            <div id="lottoForm"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script>
+        // ========== קונפיגורציה ==========
+        const CONFIG = {
+            MAIN_MIN: 1,
+            MAIN_MAX: 37,
+            STRONG_MIN: 1,
+            STRONG_MAX: 7,
+            NUMBERS_PER_TICKET: 6,
+            GRID_COLS: 10,
+            GRID_OFFSET: 3
+        };
+
+        // פרסטים מותאמים לטפסים
+        const PRESETS = {
+            long: {
+                name: 'לוטו רגיל',
+                tables: 14,
+                logic: 'split',
+                // גודל דף (מ"מ)
+                pageW: 210,
+                pageH: 297,
+                // מיקום וגודל טופס (ס"מ)
+                formX: 0,
+                formY: 0,
+                formW: 8.2,
+                formH: 25.2,
+                // כיול סימונים
+                cy: 98.5,
+                cx: 238,
+                gt: 55.5,
+                gapY: 13.5,
+                gx: 23.7,
+                midGap: 10.5,
+                pairGap: 0,
+                scx: 273,
+                topRowFix: 0,
+                // גודל סימון
+                markW: 13.5,
+                markH: 7
+            },
+            short: {
+                name: 'דאבל לוטו',
+                tables: 10,
+                logic: 'pairs',
+                // גודל דף (מ"מ)
+                pageW: 210,
+                pageH: 297,
+                // מיקום וגודל טופס (ס"מ)
+                formX: 0,
+                formY: 0,
+                formW: 8.2,
+                formH: 25.2,
+                // כיול סימונים
+                cy: 271,
+                cx: 238,
+                gt: 53.8,
+                gapY: 14.5,
+                gx: 23.7,
+                midGap: 0,
+                pairGap: 12.5,
+                scx: 274,
+                topRowFix: 0.6,
+                // גודל סימון
+                markW: 13,
+                markH: 6.5
+            }
+        };
+
+        // מפתחות לשמירת תמונות
+        const STORAGE_KEYS = {
+            imageLong: 'lottoFormImageLong',
+            imageShort: 'lottoFormImageShort',
+            calibration: 'lottoCalibV41'
+        };
+
+        // ========== מצב ==========
+        let state = {
+            formType: 'long',
+            maxTables: 14,
+            tables: [],
+            poolReg: [],
+            poolStrong: [],
+            tickets: [],
+            isDebug: false,
+            editingTable: -1
+        };
+
+        // ========== אתחול ==========
+        function init() {
+            loadCalibration();
+            loadSavedImages();
+            setFormType('long');
+            buildPickerGrids();
+            updateImageStatusDots();
+            console.log('✅ V41 מוכנה!');
+        }
+
+        // ========== ניהול תמונות ==========
+        function uploadFormImage() {
+            document.getElementById('fileFormImage').click();
+        }
+
+        function handleFormImage(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const imageData = e.target.result;
+                
+                // שמור בהתאם לסוג הטופס הנוכחי
+                const key = state.formType === 'long' ? STORAGE_KEYS.imageLong : STORAGE_KEYS.imageShort;
+                
+                try {
+                    localStorage.setItem(key, imageData);
+                    setFormImage(imageData);
+                    updateImageStatusDots();
+                    showStatus(`✓ תמונת ${PRESETS[state.formType].name} נשמרה!`);
+                } catch (e) {
+                    // אם LocalStorage מלא, השתמש רק בזיכרון
+                    setFormImage(imageData);
+                    showStatus('⚠️ התמונה גדולה מדי לשמירה קבועה', 'error');
+                }
+            };
+            reader.readAsDataURL(file);
+            input.value = '';
+        }
+
+        function loadSavedImages() {
+            // טען תמונות שמורות אם קיימות
+            const longImage = localStorage.getItem(STORAGE_KEYS.imageLong);
+            const shortImage = localStorage.getItem(STORAGE_KEYS.imageShort);
+            
+            if (longImage || shortImage) {
+                console.log('נטענו תמונות שמורות');
+            }
+        }
+
+        function setFormImage(imageData) {
+            document.getElementById('lottoForm').style.backgroundImage = `url('${imageData}')`;
+        }
+
+        function updateImageStatusDots() {
+            const hasLong = localStorage.getItem(STORAGE_KEYS.imageLong) !== null;
+            const hasShort = localStorage.getItem(STORAGE_KEYS.imageShort) !== null;
+            
+            document.getElementById('dotLong').classList.toggle('has-image', hasLong);
+            document.getElementById('dotLong').classList.toggle('no-image', !hasLong);
+            document.getElementById('dotShort').classList.toggle('has-image', hasShort);
+            document.getElementById('dotShort').classList.toggle('no-image', !hasShort);
+        }
+
+        function clearSavedImages() {
+            if (confirm('למחוק את כל התמונות השמורות?')) {
+                localStorage.removeItem(STORAGE_KEYS.imageLong);
+                localStorage.removeItem(STORAGE_KEYS.imageShort);
+                updateImageStatusDots();
+                document.getElementById('lottoForm').style.backgroundImage = 'none';
+                showStatus('תמונות נמחקו', 'info');
+            }
+        }
+
+        function toggleBg() {
+            document.getElementById('lottoForm').classList.toggle('no-bg');
+        }
+
+        function updateFormSize() {
+            const form = document.getElementById('lottoForm');
+            const w = document.getElementById('formW').value;
+            const h = document.getElementById('formH').value;
+            form.style.width = w + 'cm';
+            form.style.height = h + 'cm';
+        }
+
+        function updatePageSize() {
+            const pageBase = document.getElementById('pageBase');
+            const w = document.getElementById('pageW').value;
+            const h = document.getElementById('pageH').value;
+            pageBase.style.width = w + 'mm';
+            pageBase.style.height = h + 'mm';
+        }
+
+        function updateFormPosition() {
+            const form = document.getElementById('lottoForm');
+            const x = document.getElementById('formX').value;
+            const y = document.getElementById('formY').value;
+            form.style.marginLeft = x + 'cm';
+            form.style.marginTop = y + 'cm';
+        }
+
+        // ========== הזזת טופס בחיצים ==========
+        function moveForm(direction) {
+            const step = 0.1; // צעד של 1 מ"מ
+            const formX = document.getElementById('formX');
+            const formY = document.getElementById('formY');
+            
+            let x = parseFloat(formX.value) || 0;
+            let y = parseFloat(formY.value) || 0;
+            
+            switch(direction) {
+                case 'up':
+                    y -= step;
+                    break;
+                case 'down':
+                    y += step;
+                    break;
+                case 'left':
+                    x += step; // הפוך - שמאלה = הוסף
+                    break;
+                case 'right':
+                    x -= step; // הפוך - ימינה = הפחת
+                    break;
+            }
+            
+            formX.value = Math.round(x * 10) / 10;
+            formY.value = Math.round(y * 10) / 10;
+            updateFormPosition();
+        }
+
+        function resetFormPosition() {
+            const preset = PRESETS[state.formType];
+            document.getElementById('formX').value = preset.formX;
+            document.getElementById('formY').value = preset.formY;
+            updateFormPosition();
+            showStatus('✓ מיקום אופס', 'info');
+        }
+
+        // הוסף תמיכה בקיצורי מקלדת להזזת הטופס
+        document.addEventListener('keydown', function(e) {
+            // Escape = ביטול כיול
+            if (e.key === 'Escape' && calibMode.active) {
+                e.preventDefault();
+                cancelAutoCalibration();
+                return;
+            }
+            
+            // Backspace = ביטול לחיצה אחרונה בכיול
+            if (e.key === 'Backspace' && calibMode.active && calibMode.step > 0) {
+                e.preventDefault();
+                undoLastCalibPoint();
+                return;
+            }
+            
+            // רק כאשר לא עורכים שדה טקסט
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            // Shift + חיצים = הזזת טופס
+            if (e.shiftKey) {
+                switch(e.key) {
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        moveForm('up');
+                        break;
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        moveForm('down');
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        moveForm('left');
+                        break;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        moveForm('right');
+                        break;
+                }
+            }
+        });
+
+        // ========== סוג טופס ==========
+        function setFormType(type) {
+            state.formType = type;
+            const preset = PRESETS[type];
+            state.maxTables = preset.tables;
+            
+            // עדכון UI
+            document.getElementById('optLong').classList.toggle('active', type === 'long');
+            document.getElementById('optShort').classList.toggle('active', type === 'short');
+            
+            // עדכון גודל דף
+            document.getElementById('pageW').value = preset.pageW;
+            document.getElementById('pageH').value = preset.pageH;
+            
+            // עדכון מיקום וגודל טופס
+            document.getElementById('formX').value = preset.formX;
+            document.getElementById('formY').value = preset.formY;
+            document.getElementById('formW').value = preset.formW;
+            document.getElementById('formH').value = preset.formH;
+            
+            // עדכון ערכי כיול
+            document.getElementById('cy').value = preset.cy;
+            document.getElementById('cx').value = preset.cx;
+            document.getElementById('gt').value = preset.gt;
+            document.getElementById('gapY').value = preset.gapY;
+            document.getElementById('gx').value = preset.gx;
+            document.getElementById('midGap').value = preset.midGap;
+            document.getElementById('pairGap').value = preset.pairGap;
+            document.getElementById('scx').value = preset.scx;
+            document.getElementById('topRowFix').value = preset.topRowFix;
+            
+            // עדכון גודל סימון
+            document.getElementById('markW').value = preset.markW;
+            document.getElementById('markH').value = preset.markH;
+            
+            // טען תמונה שמורה
+            const key = type === 'long' ? STORAGE_KEYS.imageLong : STORAGE_KEYS.imageShort;
+            const savedImage = localStorage.getItem(key);
+            if (savedImage) {
+                setFormImage(savedImage);
+            } else {
+                document.getElementById('lottoForm').style.backgroundImage = 'none';
+            }
+            
+            updatePageSize();
+            updateFormPosition();
+            updateFormSize();
+            renderTableSelectors();
+            draw();
+        }
+
+        // ========== בורר טבלאות ==========
+        function renderTableSelectors() {
+            const container = document.getElementById('tableSelectors');
+            container.innerHTML = '';
+            state.tables = [];
+            state.tickets = [];
+            
+            for (let i = 0; i < state.maxTables; i++) {
+                state.tables[i] = 1;
+                state.tickets[i] = null;
+                
+                const btn = document.createElement('div');
+                btn.className = 'tbl-btn on';
+                btn.innerHTML = `${i+1}<span class="edit-icon">✏️</span>`;
+                btn.setAttribute('data-idx', i);
+                
+                btn.onclick = (e) => {
+                    if (e.detail === 1) {
+                        setTimeout(() => {
+                            if (!btn.dataset.dblclick) cycleTableState(i);
+                            btn.dataset.dblclick = '';
+                        }, 200);
+                    }
+                };
+                
+                btn.ondblclick = () => {
+                    btn.dataset.dblclick = 'true';
+                    state.tables[i] = 2;
+                    updateTableUI(i);
+                    openPicker(i);
+                };
+                
+                container.appendChild(btn);
+            }
+        }
+
+        function cycleTableState(idx) {
+            state.tables[idx] = (state.tables[idx] + 1) % 3;
+            if (state.tables[idx] === 2) openPicker(idx);
+            updateTableUI(idx);
+            draw();
+        }
+
+        function updateTableUI(idx) {
+            const btn = document.querySelector(`[data-idx="${idx}"]`);
+            if (!btn) return;
+            btn.classList.remove('off', 'on', 'manual');
+            btn.classList.add(['off', 'on', 'manual'][state.tables[idx]]);
+        }
+
+        function toggleAllTables(newState) {
+            for (let i = 0; i < state.maxTables; i++) {
+                state.tables[i] = newState;
+                if (newState === 0) state.tickets[i] = null;
+                updateTableUI(i);
+            }
+            draw();
+            updateTicketsList();
+        }
+
+        // ========== בורר מספרים ידני ==========
+        function buildPickerGrids() {
+            const numGrid = document.getElementById('numbersGrid');
+            numGrid.innerHTML = '';
+            for (let n = 1; n <= CONFIG.MAIN_MAX; n++) {
+                const btn = document.createElement('div');
+                btn.className = 'num-btn';
+                btn.textContent = n;
+                btn.setAttribute('data-num', n);
+                btn.onclick = () => toggleNumber(n);
+                numGrid.appendChild(btn);
+            }
+            for (let n = 38; n <= 40; n++) {
+                const empty = document.createElement('div');
+                empty.style.visibility = 'hidden';
+                numGrid.appendChild(empty);
+            }
+            
+            const strongGrid = document.getElementById('strongGrid');
+            strongGrid.innerHTML = '';
+            for (let n = 1; n <= CONFIG.STRONG_MAX; n++) {
+                const btn = document.createElement('div');
+                btn.className = 'strong-btn';
+                btn.textContent = n;
+                btn.setAttribute('data-strong', n);
+                btn.onclick = () => toggleStrong(n);
+                strongGrid.appendChild(btn);
+            }
+        }
+
+        function openPicker(tableIdx) {
+            state.editingTable = tableIdx;
+            document.getElementById('pickerTableNum').textContent = tableIdx + 1;
+            
+            const ticket = state.tickets[tableIdx];
+            document.querySelectorAll('.num-btn').forEach(btn => btn.classList.remove('selected', 'disabled'));
+            document.querySelectorAll('.strong-btn').forEach(btn => btn.classList.remove('selected'));
+            
+            if (ticket && ticket.nums) {
+                ticket.nums.forEach(n => {
+                    const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
+                    if (btn) btn.classList.add('selected');
+                });
+            }
+            if (ticket && ticket.strong) {
+                const btn = document.querySelector(`.strong-btn[data-strong="${ticket.strong}"]`);
+                if (btn) btn.classList.add('selected');
+            }
+            
+            updatePickerDisplay();
+            updateNumbersAvailability();
+            document.getElementById('pickerOverlay').classList.add('active');
+        }
+
+        function closePicker() {
+            document.getElementById('pickerOverlay').classList.remove('active');
+            state.editingTable = -1;
+        }
+
+        function toggleNumber(num) {
+            const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+            if (!btn || btn.classList.contains('disabled')) return;
+            
+            const selected = document.querySelectorAll('.num-btn.selected');
+            if (btn.classList.contains('selected')) {
+                btn.classList.remove('selected');
+            } else {
+                if (selected.length >= CONFIG.NUMBERS_PER_TICKET) return;
+                btn.classList.add('selected');
+            }
+            
+            updatePickerDisplay();
+            updateNumbersAvailability();
+        }
+
+        function toggleStrong(num) {
+            document.querySelectorAll('.strong-btn').forEach(btn => btn.classList.remove('selected'));
+            document.querySelector(`.strong-btn[data-strong="${num}"]`)?.classList.add('selected');
+            updatePickerDisplay();
+        }
+
+        function updatePickerDisplay() {
+            const display = document.getElementById('pickerSelected');
+            const nums = [];
+            document.querySelectorAll('.num-btn.selected').forEach(btn => nums.push(parseInt(btn.getAttribute('data-num'))));
+            nums.sort((a, b) => a - b);
+            
+            const strongBtn = document.querySelector('.strong-btn.selected');
+            const strong = strongBtn ? parseInt(strongBtn.getAttribute('data-strong')) : null;
+            
+            let html = '';
+            nums.forEach(n => html += `<span class="num">${n}</span>`);
+            if (strong) html += `<span class="strong">${strong}</span>`;
+            display.innerHTML = html || '<span style="color:#999;">בחר מספרים...</span>';
+        }
+
+        function updateNumbersAvailability() {
+            const selected = document.querySelectorAll('.num-btn.selected').length;
+            const isFull = selected >= CONFIG.NUMBERS_PER_TICKET;
+            document.querySelectorAll('.num-btn').forEach(btn => {
+                if (!btn.classList.contains('selected')) btn.classList.toggle('disabled', isFull);
+            });
+        }
+
+        function clearPickerSelection() {
+            document.querySelectorAll('.num-btn').forEach(btn => btn.classList.remove('selected', 'disabled'));
+            document.querySelectorAll('.strong-btn').forEach(btn => btn.classList.remove('selected'));
+            updatePickerDisplay();
+        }
+
+        function savePicker() {
+            const nums = [];
+            document.querySelectorAll('.num-btn.selected').forEach(btn => nums.push(parseInt(btn.getAttribute('data-num'))));
+            nums.sort((a, b) => a - b);
+            
+            const strongBtn = document.querySelector('.strong-btn.selected');
+            const strong = strongBtn ? parseInt(strongBtn.getAttribute('data-strong')) : 0;
+            
+            state.tickets[state.editingTable] = (nums.length === 0 && !strong) ? null : { nums, strong, manual: true };
+            
+            closePicker();
+            updateTicketsList();
+            draw();
+            saveFormState(); // Auto-save
+        }
+
+        // ========== טעינת Excel ==========
+        function loadExcelFile(type) {
+            document.getElementById(type === 'reg' ? 'fileReg' : 'fileStrong').click();
+        }
+
+        function handleExcel(input, type) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    if (typeof XLSX === 'undefined') throw new Error('ספריית Excel לא נטענה');
+                    
+                    const wb = XLSX.read(e.target.result, { type: 'array' });
+                    const sheet = wb.Sheets[wb.SheetNames[0]];
+                    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                    const numbers = data.flat().filter(x => x !== '');
+                    
+                    if (type === 'reg') {
+                        state.poolReg = normalizeNumbers(numbers, CONFIG.MAIN_MIN, CONFIG.MAIN_MAX);
+                        showStatus(`✓ ${state.poolReg.length} מספרים רגילים`);
+                    } else {
+                        state.poolStrong = normalizeNumbers(numbers, CONFIG.STRONG_MIN, CONFIG.STRONG_MAX);
+                        showStatus(`✓ ${state.poolStrong.length} מספרים חזקים`);
+                    }
+                } catch (err) {
+                    showStatus('❌ ' + err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function showStatus(msg, type = 'success') {
+            const el = document.getElementById('statusReg');
+            el.textContent = msg;
+            el.className = 'status ' + (type === 'error' ? 'error' : type === 'info' ? 'info' : '');
+        }
+
+        function normalizeNumbers(arr, min, max) {
+            const valid = [];
+            arr.forEach(n => {
+                const num = parseInt(n);
+                if (!isNaN(num) && num >= min && num <= max && !valid.includes(num)) valid.push(num);
+            });
+            return valid;
+        }
+
+        function parseInput(text) {
+            return text.replace(/[\n\r,;]+/g, ' ').split(/\s+/).filter(x => x.trim() !== '');
+        }
+
+        // ========== מילוי אוטומטי ==========
+        function generateTickets() {
+            const manualReg = parseInput(document.getElementById('inputReg').value);
+            const manualStrong = parseInput(document.getElementById('inputStrong').value);
+            
+            const allReg = [...state.poolReg, ...normalizeNumbers(manualReg, CONFIG.MAIN_MIN, CONFIG.MAIN_MAX)];
+            const allStrong = [...state.poolStrong, ...normalizeNumbers(manualStrong, CONFIG.STRONG_MIN, CONFIG.STRONG_MAX)];
+            
+            let count = 0;
+            for (let i = 0; i < state.maxTables; i++) {
+                if (state.tables[i] !== 1) continue;
+                
+                const nums = pickUniqueNumbers(allReg, CONFIG.NUMBERS_PER_TICKET, CONFIG.MAIN_MIN, CONFIG.MAIN_MAX);
+                const strong = pickSingleNumber(allStrong, CONFIG.STRONG_MIN, CONFIG.STRONG_MAX);
+                
+                state.tickets[i] = { nums: nums.sort((a,b) => a-b), strong, manual: false };
+                count++;
+            }
+            
+            updateTicketsList();
+            draw();
+            saveFormState(); // Auto-save
+            showStatus(count > 0 ? `✓ ${count} כרטיסים!` : '⚠️ אין טבלאות ירוקות', count > 0 ? 'success' : 'error');
+        }
+
+        function pickUniqueNumbers(pool, count, min, max) {
+            const result = [];
+            const available = pool.length > 0 ? [...pool] : null;
+            
+            while (result.length < count) {
+                let num;
+                if (available && available.length > 0) {
+                    const idx = Math.floor(Math.random() * available.length);
+                    num = available[idx];
+                    available.splice(idx, 1);
+                } else {
+                    num = Math.floor(Math.random() * (max - min + 1)) + min;
+                }
+                if (!result.includes(num)) result.push(num);
+            }
+            return result;
+        }
+
+        function pickSingleNumber(pool, min, max) {
+            return pool.length > 0 
+                ? pool[Math.floor(Math.random() * pool.length)]
+                : Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function updateTicketsList() {
+            const list = document.getElementById('ticketsList');
+            list.innerHTML = '';
+            
+            let count = 0;
+            for (let i = 0; i < state.maxTables; i++) {
+                const ticket = state.tickets[i];
+                if (state.tables[i] === 0) continue;
+                
+                count++;
+                const row = document.createElement('div');
+                row.className = 'ticket-row' + (state.tables[i] === 2 ? ' manual' : '');
+                row.onclick = () => { state.tables[i] = 2; updateTableUI(i); openPicker(i); };
+                
+                row.innerHTML = ticket && ticket.nums && ticket.nums.length > 0
+                    ? `<span class="ticket-edit">✏️</span><span>${i+1}.</span><span class="ticket-nums">${ticket.nums.join(', ')}</span><span class="ticket-strong">${ticket.strong || '-'}</span>`
+                    : `<span class="ticket-edit">✏️</span><span>${i+1}.</span><span style="color:#999;">לחץ</span><span></span>`;
+                
+                list.appendChild(row);
+            }
+            
+            if (count === 0) list.innerHTML = '<div style="text-align:center; color:#999; padding:15px;">בחר טבלאות</div>';
+        }
+
+        // ========== ציור ==========
+        function draw() {
+            const form = document.getElementById('lottoForm');
+            form.querySelectorAll('.mark').forEach(m => m.remove());
+            
+            const preset = PRESETS[state.formType];
+            const calib = {
+                startY: parseFloat(document.getElementById('cy').value),
+                startX: parseFloat(document.getElementById('cx').value),
+                step: parseFloat(document.getElementById('gt').value),
+                gapY: parseFloat(document.getElementById('gapY').value),
+                gapX: parseFloat(document.getElementById('gx').value),
+                midGap: parseFloat(document.getElementById('midGap').value),
+                pairGap: parseFloat(document.getElementById('pairGap').value),
+                scx: parseFloat(document.getElementById('scx').value),
+                topRowFix: parseFloat(document.getElementById('topRowFix').value)
+            };
+            
+            for (let i = 0; i < state.maxTables; i++) {
+                if (state.tables[i] === 0) continue;
+                
+                let tableY = calib.startY + (i * calib.step);
+                
+                if (preset.logic === 'split' && i >= 7) {
+                    tableY += calib.midGap;
+                } else if (preset.logic === 'pairs') {
+                    tableY += Math.floor(i / 2) * calib.pairGap;
+                }
+                
+                if (state.isDebug) {
+                    drawNumbers(form, [...Array(37)].map((_, j) => j+1), tableY, calib, true);
+                    drawStrong(form, [1,2,3,4,5,6,7], tableY, calib, true);
+                } else if (state.tickets[i] && state.tickets[i].nums && state.tickets[i].nums.length > 0) {
+                    drawNumbers(form, state.tickets[i].nums, tableY, calib, false);
+                    if (state.tickets[i].strong) drawStrong(form, [state.tickets[i].strong], tableY, calib, false);
+                }
+            }
+        }
+
+        function drawNumbers(container, nums, tableY, calib, isDebug) {
+            nums.forEach(num => {
+                const idx = num + CONFIG.GRID_OFFSET - 1;
+                const row = Math.floor(idx / CONFIG.GRID_COLS);
+                let col = idx % CONFIG.GRID_COLS;
+                col = (CONFIG.GRID_COLS - 1) - col;
+                
+                const x = calib.startX - (col * calib.gapX);
+                let y = tableY + (row * calib.gapY);
+                if (row === 0) y += calib.topRowFix;
+                
+                createMark(container, x, y, isDebug, false);
+            });
+        }
+
+        function drawStrong(container, nums, tableY, calib, isDebug) {
+            const layout = {
+                1: { dx: 12, row: 0 },
+                2: { dx: -12, row: 1 },
+                3: { dx: 12, row: 1 },
+                4: { dx: -12, row: 2 },
+                5: { dx: 12, row: 2 },
+                6: { dx: -12, row: 3 },
+                7: { dx: 12, row: 3 }
+            };
+            
+            nums.forEach(num => {
+                const pos = layout[num];
+                if (!pos) return;
+                const x = calib.scx + pos.dx;
+                let y = tableY + (pos.row * calib.gapY);
+                if (pos.row === 0) y += calib.topRowFix;
+                createMark(container, x, y, isDebug, true);
+            });
+        }
+
+        function createMark(container, x, y, isDebug, isStrong) {
+            const markW = parseFloat(document.getElementById('markW').value) || 10;
+            const markH = parseFloat(document.getElementById('markH').value) || 5;
+            
+            const mark = document.createElement('div');
+            mark.className = 'mark ' + (isDebug ? 'debug ' + (isStrong ? 'strong' : 'regular') : 'final');
+            mark.style.left = x + 'px';
+            mark.style.top = y + 'px';
+            mark.style.borderRadius = '50%';
+            
+            // גודל מותאם לאליפסה
+            if (isDebug) {
+                mark.style.width = (markW + 2) + 'px';
+                mark.style.height = (markH + 2) + 'px';
+            } else {
+                // סימון סופי
+                mark.style.width = markW + 'px';
+                mark.style.height = markH + 'px';
+            }
+            container.appendChild(mark);
+        }
+
+        // ========== כיול אוטומטי ==========
+        let calibMode = {
+            active: false,
+            step: 0,
+            points: []
+        };
+
+        function startAutoCalibration() {
+            calibMode = { active: true, step: 0, points: [] };
+            const statusEl = document.getElementById('calibStatus');
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = `🎯 <b>שלב 1/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#e74c3c;font-weight:bold;">מספר 1</span><br>
+                <small style="color:#666;">בטבלה הראשונה, שורה ראשונה (המספר הכי שמאלי למעלה)</small>`;
+            statusEl.style.background = '#e3f2fd';
+            
+            document.getElementById('btnAutoCalib').textContent = '❌ ביטול כיול';
+            document.getElementById('btnAutoCalib').onclick = cancelAutoCalibration;
+            document.getElementById('btnUndoCalib').style.display = 'none';
+            
+            // הוסף מאזין ללחיצה על הטופס
+            const form = document.getElementById('lottoForm');
+            form.style.cursor = 'crosshair';
+            form.style.outline = '3px solid #e74c3c';
+            form.onclick = handleCalibClick;
+        }
+
+        function undoLastCalibPoint() {
+            if (!calibMode.active || calibMode.step === 0) return;
+            
+            // הסר את הנקודה האחרונה
+            calibMode.points.pop();
+            calibMode.step--;
+            
+            // הסר את הנקודה הויזואלית האחרונה
+            const points = document.querySelectorAll('.calib-point');
+            if (points.length > 0) {
+                points[points.length - 1].remove();
+            }
+            
+            // עדכן את ההוראות
+            const statusEl = document.getElementById('calibStatus');
+            const stepNum = calibMode.step + 1;
+            
+            if (calibMode.step === 0) {
+                statusEl.innerHTML = `🎯 <b>שלב 1/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#e74c3c;font-weight:bold;">מספר 1</span><br>
+                    <small style="color:#666;">בטבלה הראשונה, שורה ראשונה (המספר הכי שמאלי למעלה)</small>`;
+                statusEl.style.background = '#e3f2fd';
+                document.getElementById('btnUndoCalib').style.display = 'none';
+            } else if (calibMode.step === 1) {
+                statusEl.innerHTML = `🎯 <b>שלב 2/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#3498db;font-weight:bold;">מספר 4</span><br>
+                    <small style="color:#666;">באותה טבלה, אותה שורה - 3 עיגולים ימינה מהנקודה הראשונה</small>`;
+                statusEl.style.background = '#e3f2fd';
+            } else if (calibMode.step === 2) {
+                statusEl.innerHTML = `🎯 <b>שלב 3/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#2ecc71;font-weight:bold;">מספר 11</span><br>
+                    <small style="color:#666;">בטבלה 1, שורה שנייה - המספר הכי שמאלי בשורה השנייה</small>`;
+                statusEl.style.background = '#d4edda';
+            } else if (calibMode.step === 3) {
+                statusEl.innerHTML = `🎯 <b>שלב 4/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#f39c12;font-weight:bold;">מספר 1</span><br>
+                    <small style="color:#666;">ב<b>טבלה 2</b> (הטבלה הבאה למטה), שורה ראשונה, מספר שמאלי</small>`;
+                statusEl.style.background = '#fff3cd';
+            }
+        }
+
+        function cancelAutoCalibration() {
+            calibMode = { active: false, step: 0, points: [] };
+            document.getElementById('calibStatus').style.display = 'none';
+            
+            // החזר את הטקסט המקורי לכפתור
+            document.getElementById('btnAutoCalib').textContent = '🎯 כיול אוטומטי (5 לחיצות)';
+            document.getElementById('btnAutoCalib').onclick = startAutoCalibration;
+            document.getElementById('btnUndoCalib').style.display = 'none';
+            
+            const form = document.getElementById('lottoForm');
+            form.style.cursor = 'default';
+            form.style.outline = 'none';
+            form.onclick = null;
+            
+            // הסר נקודות כיול
+            document.querySelectorAll('.calib-point').forEach(p => p.remove());
+        }
+
+        function handleCalibClick(e) {
+            if (!calibMode.active) return;
+            
+            const form = document.getElementById('lottoForm');
+            const rect = form.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            calibMode.points.push({ x, y });
+            calibMode.step++;
+            
+            // הצג כפתור ביטול אחרי הלחיצה הראשונה
+            if (calibMode.step > 0) {
+                document.getElementById('btnUndoCalib').style.display = 'block';
+            }
+            
+            // הצג נקודה על המיקום שנלחץ
+            const point = document.createElement('div');
+            point.className = 'calib-point';
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
+            const color = colors[(calibMode.step - 1) % colors.length];
+            point.style.cssText = `
+                position: absolute;
+                left: ${x}px;
+                top: ${y}px;
+                width: 14px;
+                height: 14px;
+                background: ${color};
+                border-radius: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 1000;
+                box-shadow: 0 0 0 3px white, 0 0 0 5px ${color};
+            `;
+            point.innerHTML = `<span style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:bold;color:${color};background:white;padding:2px 4px;border-radius:3px;">${calibMode.step}</span>`;
+            form.appendChild(point);
+            
+            const statusEl = document.getElementById('calibStatus');
+            
+            if (calibMode.step === 1) {
+                statusEl.innerHTML = `🎯 <b>שלב 2/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#3498db;font-weight:bold;">מספר 4</span><br>
+                    <small style="color:#666;">באותה טבלה, אותה שורה - 3 עיגולים ימינה מהנקודה הראשונה</small>`;
+                statusEl.style.background = '#e3f2fd';
+            } else if (calibMode.step === 2) {
+                statusEl.innerHTML = `🎯 <b>שלב 3/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#2ecc71;font-weight:bold;">מספר 11</span><br>
+                    <small style="color:#666;">בטבלה 1, שורה שנייה - המספר הכי שמאלי בשורה השנייה</small>`;
+                statusEl.style.background = '#d4edda';
+            } else if (calibMode.step === 3) {
+                statusEl.innerHTML = `🎯 <b>שלב 4/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#f39c12;font-weight:bold;">מספר 1</span><br>
+                    <small style="color:#666;">ב<b>טבלה 2</b> (הטבלה הבאה למטה), שורה ראשונה, מספר שמאלי</small>`;
+                statusEl.style.background = '#fff3cd';
+            } else if (calibMode.step === 4) {
+                statusEl.innerHTML = `🎯 <b>שלב 5/5:</b> לחץ על <b>מרכז</b> העיגול של <span style="color:#9b59b6;font-weight:bold;">מספר חזק 1</span><br>
+                    <small style="color:#666;">בטבלה 1 - העיגול של מספר חזק 1 בצד ימין של הטבלה</small>`;
+                statusEl.style.background = '#f3e5f5';
+            } else if (calibMode.step === 5) {
+                calculateCalibration();
+            }
+        }
+
+        function calculateCalibration() {
+            const p1 = calibMode.points[0];    // מספר 1, טבלה 1, שורה 1
+            const p4 = calibMode.points[1];    // מספר 4, טבלה 1, שורה 1
+            const p11 = calibMode.points[2];   // מספר 11, טבלה 1, שורה 2
+            const p1_t2 = calibMode.points[3]; // מספר 1, טבלה 2
+            const pStrong = calibMode.points[4]; // מספר חזק 1, טבלה 1
+            
+            console.log('🎯 נקודות כיול:', {
+                'מספר 1 (טבלה 1)': p1,
+                'מספר 4 (טבלה 1)': p4,
+                'מספר 11 (טבלה 1)': p11,
+                'מספר 1 (טבלה 2)': p1_t2,
+                'מספר חזק 1': pStrong
+            });
+            
+            // חישוב מרווח טורים (בין מספר 1 ל-4 יש 3 מרווחים)
+            // מספר 1 הוא בעמודה 4, מספר 4 בעמודה 7 -> 3 עמודות
+            const gapX = Math.abs(p4.x - p1.x) / 3;
+            
+            // חישוב מרווח שורות (בין שורה 1 לשורה 2)
+            // מספר 1 בשורה 1, מספר 11 בשורה 2
+            const gapY = Math.abs(p11.y - p1.y);
+            
+            // חישוב מרווח טבלאות (המרחק האנכי בין טבלה לטבלה)
+            const tableGap = Math.abs(p1_t2.y - p1.y);
+            
+            // חישוב מיקום מספר חזק
+            const strongX = pStrong.x;
+            
+            // עדכון כל הערכים
+            document.getElementById('cx').value = Math.round(p1.x * 10) / 10;
+            document.getElementById('cy').value = Math.round(p1.y * 10) / 10;
+            document.getElementById('gx').value = Math.round(gapX * 10) / 10;
+            document.getElementById('gapY').value = Math.round(gapY * 10) / 10;
+            document.getElementById('gt').value = Math.round(tableGap * 10) / 10;
+            document.getElementById('scx').value = Math.round(strongX * 10) / 10;
+            
+            // אפס את topRowFix - לא צריך אותו אם לחצנו נכון
+            document.getElementById('topRowFix').value = 0;
+            
+            // לוג לדיבאג
+            console.log('📊 ערכי כיול:', {
+                'X התחלה': Math.round(p1.x * 10) / 10,
+                'Y התחלה': Math.round(p1.y * 10) / 10,
+                'מרווח טורים': Math.round(gapX * 10) / 10,
+                'מרווח שורות': Math.round(gapY * 10) / 10,
+                'מרווח טבלאות': Math.round(tableGap * 10) / 10,
+                'X חזק': Math.round(strongX * 10) / 10
+            });
+            
+            // הצג הודעה מפורטת
+            const statusEl = document.getElementById('calibStatus');
+            statusEl.innerHTML = `✅ <b>כיול הושלם!</b><br>
+                📍 X=${Math.round(p1.x)}, Y=${Math.round(p1.y)}<br>
+                📏 טורים=${Math.round(gapX*10)/10}, שורות=${Math.round(gapY*10)/10}<br>
+                📐 טבלאות=${Math.round(tableGap*10)/10}, 💪 חזק=${Math.round(strongX*10)/10}`;
+            statusEl.style.background = '#d4edda';
+            statusEl.style.color = '#155724';
+            
+            // סיום
+            setTimeout(() => {
+                cancelAutoCalibration();
+                draw();
+                showStatus('✅ כיול הושלם! לחץ על 👁️ לבדיקה');
+            }, 3000);
+        }
+
+        // ========== פקדים ==========
+        function toggleDebug() {
+            state.isDebug = !state.isDebug;
+            document.getElementById('btnDebug').textContent = state.isDebug ? '🔴' : '👁️';
+            document.getElementById('btnDebug').classList.toggle('btn-warning', state.isDebug);
+            draw();
+        }
+
+        function resetAll() {
+            state.poolReg = [];
+            state.poolStrong = [];
+            document.getElementById('inputReg').value = '';
+            document.getElementById('inputStrong').value = '';
+            showStatus('מוכן', 'info');
+            
+            for (let i = 0; i < state.maxTables; i++) {
+                state.tables[i] = 1;
+                state.tickets[i] = null;
+                updateTableUI(i);
+            }
+            
+            updateTicketsList();
+            draw();
+        }
+
+        // ========== הדבקת מספרים בתוך חלון מילוי ידני ==========
+        function pasteNumbers() {
+            const input = document.getElementById('pasteInput').value.trim();
+            
+            if (!input) {
+                alert('❌ אנא הדבק מספרים בשדה!');
+                return;
+            }
+            
+            // Parse all numbers from input
+            const allNumbers = input
+                .split(/[,\s\n]+/)
+                .map(n => n.trim())
+                .filter(n => n)
+                .map(n => parseInt(n))
+                .filter(n => !isNaN(n));
+            
+            if (allNumbers.length === 0) {
+                alert('❌ לא נמצאו מספרים תקינים!');
+                return;
+            }
+            
+            // Separate main numbers (1-37) and strong number (1-7)
+            const mainNumbers = allNumbers.filter(n => n >= CONFIG.MAIN_MIN && n <= CONFIG.MAIN_MAX);
+            const strongNumbers = allNumbers.filter(n => n >= CONFIG.STRONG_MIN && n <= CONFIG.STRONG_MAX);
+            
+            // Validate main numbers
+            if (mainNumbers.length < 6) {
+                alert(`❌ נמצאו רק ${mainNumbers.length} מספרים תקינים (1-37)!\nנדרשים לפחות 6 מספרים.`);
+                return;
+            }
+            
+            // Take first 6 unique main numbers
+            const uniqueMain = [...new Set(mainNumbers)].slice(0, 6);
+            
+            if (uniqueMain.length < 6) {
+                alert(`❌ לאחר הסרת כפילויות נותרו רק ${uniqueMain.length} מספרים!\nנדרשים 6 מספרים שונים.`);
+                return;
+            }
+            
+            // Clear current selection
+            document.querySelectorAll('.num-btn').forEach(btn => btn.classList.remove('selected'));
+            document.querySelectorAll('.strong-btn').forEach(btn => btn.classList.remove('selected'));
+            
+            // Select the 6 main numbers
+            uniqueMain.forEach(num => {
+                const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                if (btn) {
+                    btn.classList.add('selected');
+                }
+            });
+            
+            // Select strong number if found
+            if (strongNumbers.length > 0) {
+                const strongNum = strongNumbers[0]; // Take first valid strong number
+                const btn = document.querySelector(`.strong-btn[data-strong="${strongNum}"]`);
+                if (btn) {
+                    btn.classList.add('selected');
+                }
+            }
+            
+            // Update display
+            updatePickerDisplay();
+            updateNumbersAvailability();
+            
+            // Clear input
+            document.getElementById('pasteInput').value = '';
+            
+            // Show success message
+            const strongMsg = strongNumbers.length > 0 ? ` + חזק: ${strongNumbers[0]}` : '';
+            alert(`✅ מולאו ${uniqueMain.length} מספרים${strongMsg}\n\nמספרים: ${uniqueMain.sort((a,b) => a-b).join(', ')}\n\nלחץ "שמור" לסיום!`);
+        }
+
+        // ========== שמירה/טעינה ==========
+        function saveCalibration() {
+            const calib = {};
+            // כל הפרמטרים לשמירה
+            ['pageW', 'pageH', 'formX', 'formY', 'formW', 'formH',
+             'cy', 'cx', 'gt', 'gapY', 'gx', 'midGap', 'pairGap', 'scx', 'topRowFix',
+             'markW', 'markH'].forEach(id => {
+                calib[id] = document.getElementById(id).value;
+            });
+            calib.formType = state.formType;
+            
+            localStorage.setItem(STORAGE_KEYS.calibration, JSON.stringify(calib));
+            showStatus('✓ הגדרות נשמרו!');
+        }
+
+        function loadCalibration() {
+            const saved = localStorage.getItem(STORAGE_KEYS.calibration);
+            if (!saved) return;
+            
+            try {
+                const calib = JSON.parse(saved);
+                Object.keys(calib).forEach(key => {
+                    const el = document.getElementById(key);
+                    if (el) el.value = calib[key];
+                });
+                // עדכון התצוגה
+                updatePageSize();
+                updateFormPosition();
+                updateFormSize();
+                showStatus('✓ הגדרות נטענו', 'info');
+            } catch (e) { console.error(e); }
+        }
+
+        // ========== קבלת מספרים מהמנתח + שמירה/טעינה ==========
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'FILL_NUMBERS') {
+                const { numbers, strong } = event.data;
+                fillFromTransfer(numbers, strong);
+            } else if (event.data && event.data.type === 'FILL_ALL_TABLES') {
+                // מילוי כל הטבלאות מקומבינציות
+                fillAllFromCombinations(event.data.combinations);
+            } else if (event.data && event.data.type === 'SAVE_STATE') {
+                saveFormState();
+            }
+        });
+        
+        // מילוי כל הטבלאות מקומבינציות
+        function fillAllFromCombinations(combinations) {
+            if (!combinations || combinations.length === 0) {
+                showStatus('❌ לא התקבלו קומבינציות!', 'error');
+                return;
+            }
+            
+            const count = Math.min(combinations.length, state.maxTables);
+            
+            // מלא את הטבלאות
+            for (let i = 0; i < count; i++) {
+                const combo = combinations[i];
+                state.tables[i] = 2; // סמן כידני (צהוב)
+                state.tickets[i] = {
+                    nums: [...combo.numbers].sort((a, b) => a - b),
+                    strong: combo.strong,
+                    manual: true
+                };
+                updateTableUI(i);
+            }
+            
+            // עדכן תצוגה
+            updateTicketsList();
+            draw();
+            saveFormState();
+            showStatus(`✅ ${count} טבלאות מולאו מהקומבינציות המומלצות!`, 'success');
+        }
+        
+        // Save form state to localStorage
+        function saveFormState() {
+            try {
+                const formState = {
+                    tickets: state.tickets,
+                    tables: state.tables,
+                    formType: state.formType,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('lottoFormState', JSON.stringify(formState));
+                console.log('✅ Form state saved');
+            } catch (e) {
+                console.log('Save state error:', e);
+            }
+        }
+        
+        // Load form state from localStorage
+        function loadFormState() {
+            try {
+                const saved = localStorage.getItem('lottoFormState');
+                if (saved) {
+                    const formState = JSON.parse(saved);
+                    // Only load if less than 5 minutes old
+                    if (Date.now() - formState.timestamp < 300000) {
+                        state.tickets = formState.tickets || [];
+                        state.tables = formState.tables || [];
+                        if (formState.formType && formState.formType !== state.formType) {
+                            // Switch form type if needed
+                            state.formType = formState.formType;
+                            updateFormTypeUI();
+                        }
+                        // Update UI
+                        for (let i = 0; i < state.maxTables; i++) {
+                            updateTableUI(i);
+                        }
+                        updateTicketsList();
+                        draw();
+                        console.log('✅ Form state loaded');
+                        showStatus('✓ המצב הקודם נטען', 'info');
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.log('Load state error:', e);
+            }
+            return false;
+        }
+        
+        function fillFromTransfer(numbers, strong) {
+            // Find first available green (active) table that's empty OR next in sequence
+            let targetTableIndex = -1;
+            
+            // First, try to find the next empty green table in sequence
+            for (let i = 0; i < state.maxTables; i++) {
+                if (state.tables[i] === 1 && !state.tickets[i]) { // Green and empty
+                    targetTableIndex = i;
+                    break;
+                }
+            }
+            
+            // If no empty green table, find first green table with content (will overwrite)
+            if (targetTableIndex === -1) {
+                for (let i = 0; i < state.maxTables; i++) {
+                    if (state.tables[i] === 1) { // Green (will overwrite)
+                        targetTableIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (targetTableIndex === -1) {
+                alert('❌ אין טבלאות ירוקות (פעילות)!\nאנא סמן לפחות טבלה אחת כירוקה.');
+                return;
+            }
+            
+            // Fill the table
+            state.tickets[targetTableIndex] = {
+                nums: numbers.sort((a, b) => a - b),
+                strong: strong || pickSingleNumber([], CONFIG.STRONG_MIN, CONFIG.STRONG_MAX),
+                manual: true
+            };
+            
+            // Mark as manual (yellow)
+            state.tables[targetTableIndex] = 2;
+            updateTableUI(targetTableIndex);
+            
+            // Update UI
+            updateTicketsList();
+            draw();
+            
+            // Auto-save state after filling
+            saveFormState();
+            
+            showStatus(`✅ טבלה ${targetTableIndex + 1} מולאה: ${numbers.join(', ')} + חזק: ${strong}`, 'success');
+        }
+        
+        // Check for pending transfer on load
+        function checkPendingTransfer() {
+            try {
+                const transfer = localStorage.getItem('lottoTransfer');
+                if (transfer) {
+                    const data = JSON.parse(transfer);
+                    // Only use if less than 1 minute old
+                    if (Date.now() - data.timestamp < 60000) {
+                        setTimeout(() => {
+                            if (confirm(`📋 נמצאה קומבינציה ממתינה:\n\n${data.numbers.join(', ')} + חזק: ${data.strong}\n\nלמלא בטבלה?`)) {
+                                fillFromTransfer(data.numbers, data.strong);
+                                localStorage.removeItem('lottoTransfer');
+                            }
+                        }, 500);
+                    } else {
+                        localStorage.removeItem('lottoTransfer');
+                    }
+                }
+            } catch (e) {
+                console.log('Transfer check:', e);
+            }
+        }
+        
+        // ========== הפעלה ==========
+        window.addEventListener('DOMContentLoaded', () => {
+            init();
+            // Try to load saved state first
+            const stateLoaded = loadFormState();
+            // Then check for pending transfer
+            if (!stateLoaded) {
+                checkPendingTransfer();
+            }
+        });
+    </script>
+</body>
+</html>

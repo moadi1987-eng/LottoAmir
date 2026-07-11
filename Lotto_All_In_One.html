@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎰 מערכת לוטו מלאה - מילוי + ניתוח</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap');
+
+        /* ===== Design Tokens - Dark Pro (תואם למנתח) ===== */
+        :root {
+            --bg: #0b1120;
+            --bg-elevated: #141d2f;
+            --bg-card: #1a2439;
+            --bg-hover: #22304d;
+            --border: #2d3a54;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --text-subtle: #64748b;
+            --accent: #8b5cf6;
+            --accent-hover: #a78bfa;
+            --accent-glow: rgba(139, 92, 246, 0.25);
+            --accent-subtle: rgba(139, 92, 246, 0.12);
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Assistant', sans-serif;
+            background: var(--bg);
+            min-height: 100vh;
+            color: var(--text);
+        }
+
+        /* ========== MAIN HEADER - קומפקטי ונקי ========== */
+        .main-header {
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            text-align: center;
+            padding: 10px 16px 12px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        .main-header h1 {
+            font-size: 17px;
+            font-weight: 800;
+            margin-bottom: 1px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.3px;
+        }
+
+        .main-header p {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .main-header .nav-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .main-header .nav-btn {
+            padding: 7px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 7px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .main-header .nav-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent);
+            color: var(--accent-hover);
+        }
+        .main-header .nav-btn.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+        .main-header .nav-btn.primary:hover {
+            background: var(--accent-hover);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        /* ========== CONTAINER ========== */
+        .content-wrapper {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* ========== SECTION STYLING ========== */
+        .section-container {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+            padding: 6px 10px 10px;
+            text-align: right;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 12px;
+        }
+        .section-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background: var(--accent);
+            border-radius: 2px;
+        }
+        .section-title.analyzer::before {
+            background: var(--success);
+        }
+
+        /* ========== IFRAME POLISH ========== */
+        iframe {
+            border-radius: 8px;
+        }
+
+        /* ========== NOTIFICATION ========== */
+        .transfer-notification {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--success);
+            padding: 16px 18px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+            z-index: 9999;
+            transform: translateX(400px);
+            transition: transform 0.3s;
+            max-width: 340px;
+        }
+        .transfer-notification.show { transform: translateX(0); }
+        .transfer-notification h3 {
+            color: var(--success);
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .transfer-notification p {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .transfer-notification button {
+            width: 100%;
+            padding: 9px;
+            background: var(--success);
+            color: white;
+            border: none;
+            border-radius: 7px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+            font-size: 13px;
+        }
+        .transfer-notification button:hover { filter: brightness(1.1); }
+
+        /* ========== SCROLL BUTTON ========== */
+        .scroll-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            background: var(--accent);
+            color: white;
+            border: 1px solid var(--accent-hover);
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px var(--accent-glow);
+            display: none;
+            z-index: 999;
+            transition: all 0.15s;
+        }
+        .scroll-btn.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .scroll-btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-2px);
+        }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        ::selection { background: var(--accent); color: white; }
+
+        /* ===== MOBILE RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .main-header { padding: 8px 10px 10px; }
+            .main-header h1 { font-size: 14px; }
+            .main-header p { font-size: 10px; margin-bottom: 8px; }
+            .main-header .nav-btn { padding: 6px 12px; font-size: 11px; }
+            .main-header .nav-buttons { gap: 6px; }
+
+            .content-wrapper { padding: 8px; gap: 10px; }
+            .section-container { padding: 8px; border-radius: 8px; }
+            .section-title { font-size: 12px; padding: 4px 8px 8px; margin-bottom: 8px; }
+
+            #formIframe { height: 900px !important; }
+            #analyzerIframe { height: 800px !important; }
+
+            .transfer-notification {
+                top: 8px;
+                right: 8px;
+                left: 8px;
+                max-width: none;
+                padding: 12px 14px;
+                transform: translateY(-200%);
+            }
+            .transfer-notification.show { transform: translateY(0); }
+            .transfer-notification h3 { font-size: 14px; }
+            .transfer-notification p { font-size: 12px; }
+
+            .scroll-btn {
+                width: 40px;
+                height: 40px;
+                bottom: 14px;
+                right: 14px;
+                font-size: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .main-header h1 { font-size: 13px; }
+            .main-header .nav-buttons { flex-direction: column; }
+            .main-header .nav-btn { width: 100%; }
+            #formIframe { height: 760px !important; }
+            #analyzerIframe { height: 700px !important; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Header -->
+    <div class="main-header">
+        <h1>🎰 מערכת לוטו מלאה ALL-IN-ONE</h1>
+        <p>מילוי טפסים אוטומטי + ניתוח תוצאות מתקדם במקום אחד!</p>
+        <div class="nav-buttons">
+            <button class="nav-btn primary" onclick="scrollToSection('form')">📝 מילוי טפסים</button>
+            <button class="nav-btn" onclick="scrollToSection('analyzer')">📊 ניתוח תוצאות</button>
+            <button class="nav-btn" onclick="printForm()">🖨️ טופס להדפסה</button>
+        </div>
+    </div>
+    
+    <!-- Transfer Notification -->
+    <div class="transfer-notification" id="transferNotification">
+        <h3>✅ הקומבינציה הועברה!</h3>
+        <p id="transferText">המספרים נשלחו לטופס למעלה</p>
+        <button onclick="closeNotification()">הבנתי</button>
+    </div>
+    
+    <!-- Scroll to Top Button -->
+    <button class="scroll-btn" id="scrollTopBtn" onclick="scrollToTop()">⬆️</button>
+    
+    <div class="content-wrapper">
+        <!-- ========== FORM FILLER SECTION ========== -->
+        <div class="section-container" id="formSection">
+            <div class="section-title">📝 מילוי טפסים אוטומטי</div>
+            <iframe
+                src="Lottery_V41_Final.html"
+                style="width: 100%; height: 1200px; border: none; border-radius: 10px; background: white;"
+                id="formIframe"
+            ></iframe>
+        </div>
+        
+        <!-- ========== ANALYZER SECTION ========== -->
+        <div class="section-container" id="analyzerSection">
+            <div class="section-title analyzer">📊 ניתוח תוצאות מתקדם</div>
+            <iframe 
+                src="lotto_analyzer.html" 
+                style="width: 100%; height: 1000px; border: none; border-radius: 10px;"
+                id="analyzerIframe"
+            ></iframe>
+        </div>
+    </div>
+    
+    <script>
+        // ========== GLOBAL FUNCTIONS ==========
+        
+        // Scroll to section
+        function scrollToSection(section) {
+            const element = document.getElementById(section === 'form' ? 'formSection' : 'analyzerSection');
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        
+        // Scroll to top
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        // Print form - open in new window for proper printing
+        function printForm() {
+            try {
+                // Try to sync form state before opening
+                const formIframe = document.getElementById('formIframe');
+                if (formIframe && formIframe.contentWindow) {
+                    try {
+                        // Ask iframe to save its state to localStorage
+                        formIframe.contentWindow.postMessage({ type: 'SAVE_STATE' }, '*');
+                    } catch (e) {
+                        console.log('Save state error:', e);
+                    }
+                }
+                
+                // Open the form file directly in new window for printing
+                setTimeout(() => {
+                    window.open('Lottery_V41_Final.html', '_blank');
+                }, 100);
+            } catch (e) {
+                console.log('Print error:', e);
+                alert('❌ שגיאה בפתיחת הטופס להדפסה');
+            }
+        }
+        
+        // Show/hide scroll button
+        window.addEventListener('scroll', () => {
+            const scrollBtn = document.getElementById('scrollTopBtn');
+            if (window.scrollY > 500) {
+                scrollBtn.classList.add('show');
+            } else {
+                scrollBtn.classList.remove('show');
+            }
+        });
+        
+        // Transfer numbers from analyzer to form
+        function transferToForm(numbers, strong) {
+            // Store in localStorage
+            localStorage.setItem('lottoTransfer', JSON.stringify({
+                numbers: numbers,
+                strong: strong,
+                timestamp: Date.now()
+            }));
+            
+            // Show notification
+            const notification = document.getElementById('transferNotification');
+            const text = document.getElementById('transferText');
+            text.textContent = `המספרים ${numbers.join(', ')} + חזק: ${strong} הועברו!`;
+            notification.classList.add('show');
+            
+            // Scroll to form
+            setTimeout(() => {
+                scrollToSection('form');
+            }, 1000);
+            
+            // Auto-close notification
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+            
+            // Try to trigger form filling in iframe
+            try {
+                const formIframe = document.getElementById('formIframe');
+                if (formIframe && formIframe.contentWindow) {
+                    formIframe.contentWindow.postMessage({
+                        type: 'FILL_NUMBERS',
+                        numbers: numbers,
+                        strong: strong
+                    }, '*');
+                }
+            } catch (e) {
+                console.log('Iframe communication:', e);
+            }
+        }
+        
+        function closeNotification() {
+            document.getElementById('transferNotification').classList.remove('show');
+        }
+        
+        // Listen for messages from analyzer iframe
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'TRANSFER_TO_FORM') {
+                transferToForm(event.data.numbers, event.data.strong);
+            } else if (event.data && event.data.type === 'FILL_ALL_TABLES') {
+                // העברת כל הקומבינציות לטופס
+                fillAllTablesToForm(event.data.combinations);
+            }
+        });
+        
+        // מילוי כל הטבלאות מקומבינציות
+        function fillAllTablesToForm(combinations) {
+            const formIframe = document.getElementById('formIframe');
+            if (formIframe && formIframe.contentWindow) {
+                formIframe.contentWindow.postMessage({
+                    type: 'FILL_ALL_TABLES',
+                    combinations: combinations
+                }, '*');
+            }
+            
+            // Show notification
+            const notification = document.getElementById('transferNotification');
+            const text = document.getElementById('transferText');
+            text.textContent = `${combinations.length} קומבינציות הועברו לטופס!`;
+            notification.classList.add('show');
+            
+            // Scroll to form
+            setTimeout(() => {
+                scrollToSection('form');
+            }, 500);
+            
+            // Auto-close notification
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+        
+        // Initialize system
+        console.log('🎰 Lotto All-In-One System Ready!');
+    </script>
+</body>
+</html>

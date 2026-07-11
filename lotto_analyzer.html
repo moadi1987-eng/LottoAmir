@@ -1,0 +1,2714 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎰 מנתח לוטו חכם - גרסה מלאה</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap');
+
+        /* ===== Design Tokens - Dark Pro ===== */
+        :root {
+            --bg: #0b1120;
+            --bg-elevated: #141d2f;
+            --bg-card: #1a2439;
+            --bg-hover: #22304d;
+            --border: #2d3a54;
+            --border-subtle: #1f2a42;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --text-subtle: #64748b;
+            --accent: #8b5cf6;
+            --accent-hover: #a78bfa;
+            --accent-glow: rgba(139, 92, 246, 0.25);
+            --accent-subtle: rgba(139, 92, 246, 0.12);
+            --success: #10b981;
+            --success-bg: rgba(16, 185, 129, 0.1);
+            --success-border: rgba(16, 185, 129, 0.3);
+            --warning: #f59e0b;
+            --warning-bg: rgba(245, 158, 11, 0.1);
+            --warning-border: rgba(245, 158, 11, 0.3);
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.1);
+            --info: #3b82f6;
+            --info-bg: rgba(59, 130, 246, 0.1);
+            --info-border: rgba(59, 130, 246, 0.3);
+            --hot: #f43f5e;
+            --medium: #f59e0b;
+            --cold: #38bdf8;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Assistant', sans-serif;
+            background: var(--bg);
+            min-height: 100vh;
+            padding: 14px;
+            line-height: 1.5;
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .header {
+            background: var(--bg-card);
+            padding: 10px 20px;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .header h1 {
+            font-size: 17px;
+            font-weight: 800;
+            margin-bottom: 0;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.3px;
+        }
+        .header p { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+
+        .content { padding: 16px; }
+
+        .upload-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 14px 16px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .upload-section h2 { color: var(--text); margin-bottom: 10px; font-size: 14px; font-weight: 700; }
+
+        .file-input-wrapper { position: relative; display: inline-block; }
+        .file-input-wrapper input[type="file"] { display: none; }
+
+        .file-input-label {
+            display: inline-block;
+            padding: 11px 28px;
+            background: var(--accent);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+        }
+        .file-input-label:hover {
+            background: var(--accent-hover);
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+
+        .analyze-btn {
+            display: inline-block;
+            padding: 12px 32px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            margin-top: 12px;
+            transition: all 0.15s;
+        }
+        .analyze-btn:hover:not(:disabled) {
+            background: var(--accent-hover);
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+        .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .results { display: none; }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .card-header {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .stat-box {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 22px; font-weight: 800; color: var(--accent); }
+
+        /* Multi-column combined card for hot/medium/cold */
+        .tri-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 14px;
+        }
+        @media (max-width: 900px) { .tri-columns { grid-template-columns: 1fr; } }
+        .tri-columns .col-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .tri-columns .col.hot .col-title { color: var(--hot); }
+        .tri-columns .col.medium .col-title { color: var(--medium); }
+        .tri-columns .col.cold .col-title { color: var(--cold); }
+
+        .number-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            margin: 4px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 14px;
+            border: 1px solid transparent;
+        }
+        .number-badge.hot {
+            background: rgba(244, 63, 94, 0.12);
+            color: var(--hot);
+            border-color: rgba(244, 63, 94, 0.25);
+        }
+        .number-badge.medium {
+            background: rgba(245, 158, 11, 0.12);
+            color: var(--medium);
+            border-color: rgba(245, 158, 11, 0.25);
+        }
+        .number-badge.cold {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--cold);
+            border-color: rgba(56, 189, 248, 0.25);
+        }
+
+        .numbers-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        .numbers-table th {
+            background: var(--bg-elevated);
+            color: var(--text-muted);
+            padding: 12px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+        .numbers-table td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text);
+            font-size: 14px;
+        }
+        .numbers-table tbody tr:hover td { background: var(--bg-hover); }
+
+        .combinations {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+        }
+
+        .combo-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 10px 8px;
+            transition: all 0.15s;
+            border-right: 2px solid var(--accent);
+        }
+        .combo-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        .combo-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-hover);
+            margin-bottom: 8px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .combo-numbers {
+            display: flex;
+            gap: 4px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+        .combo-number {
+            width: 30px;
+            height: 30px;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .combo-strong {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 6px 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 11px;
+            margin-bottom: 8px;
+            color: var(--text-muted);
+        }
+        .combo-strong-number {
+            width: 26px;
+            height: 26px;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .combo-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        .transfer-btn, .copy-btn {
+            padding: 7px 4px;
+            border: none;
+            border-radius: 5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 11px;
+        }
+        .transfer-btn {
+            background: var(--accent);
+            color: white;
+        }
+        .transfer-btn:hover { background: var(--accent-hover); }
+        .copy-btn {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .copy-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+
+        .fill-all-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 15px;
+            cursor: pointer;
+            margin-top: 18px;
+            transition: all 0.15s;
+        }
+        .fill-all-btn:hover {
+            background: var(--accent-hover);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+        .spinner {
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 14px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #loadingText { color: var(--text-muted); font-size: 14px; }
+
+        .error {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            padding: 14px;
+            border-radius: 8px;
+            margin: 16px 0;
+            display: none;
+        }
+
+        /* ===== Side nav ===== */
+        .side-nav {
+            position: fixed;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(20, 29, 47, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            padding: 10px 8px;
+            border-radius: 12px;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+        .side-nav.show { opacity: 1; pointer-events: all; }
+        .nav-item {
+            display: block;
+            padding: 9px 14px;
+            margin: 3px 0;
+            background: transparent;
+            color: var(--text-muted);
+            text-align: center;
+            border-radius: 7px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+        }
+        .nav-item:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+            border-color: var(--border);
+        }
+        .nav-item.highlight {
+            background: var(--accent-subtle);
+            color: var(--accent-hover);
+            border-color: var(--accent);
+        }
+
+        /* ===== Row selector (inputs inside upload) ===== */
+        .row-selector {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            padding: 16px;
+            border-radius: 10px;
+            margin-bottom: 14px;
+        }
+        .row-selector label {
+            font-weight: 600;
+            color: var(--text);
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .row-selector input {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 7px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .row-selector input::placeholder { color: var(--text-subtle); }
+        .row-selector input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        /* ===== Generic inputs ===== */
+        input[type="text"], input[type="number"], select, textarea {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            font-family: inherit;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        /* ===== Progress bar ===== */
+        #progressBar {
+            background: var(--bg-elevated) !important;
+            border: 1px solid var(--border);
+        }
+        #progressFill {
+            background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 100%) !important;
+        }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        /* ===== Selection ===== */
+        ::selection { background: var(--accent); color: white; }
+
+        /* ===== Quick-range buttons (row selector) ===== */
+        .quick-btn {
+            padding: 8px 14px;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .quick-btn:hover {
+            border-color: var(--accent);
+            background: var(--bg-hover);
+        }
+        .quick-btn.primary {
+            background: var(--success-bg);
+            color: var(--success);
+            border-color: var(--success-border);
+        }
+        .quick-btn.primary:hover { background: rgba(16,185,129,0.2); }
+
+        /* ===== Semantic card variants (overrides inline styles) ===== */
+        .card.card-highlight {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--warning-border) !important;
+        }
+        .card.card-highlight .card-header {
+            color: var(--warning) !important;
+            border-bottom-color: var(--warning-border) !important;
+        }
+        .card.card-saved {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--success-border) !important;
+        }
+        .card.card-saved .card-header {
+            color: var(--success) !important;
+            border-bottom-color: var(--success-border) !important;
+        }
+
+        /* Banner boxes used for compare controls */
+        .banner {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            padding: 16px;
+            border-radius: 10px;
+            margin-bottom: 14px;
+        }
+        .banner.accent { border-color: var(--accent); background: var(--accent-subtle); }
+
+        /* Pill buttons for quick-compare row */
+        .pill-btn {
+            padding: 7px 14px;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .pill-btn:hover { border-color: var(--accent); background: var(--bg-hover); }
+
+        /* Info notes inside cards */
+        .info-note {
+            background: var(--info-bg);
+            border: 1px solid var(--info-border);
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 7px;
+            margin-bottom: 14px;
+            font-size: 13px;
+        }
+
+        /* Generic primary/success/danger/secondary action buttons */
+        .btn {
+            padding: 11px 22px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 4px 16px var(--accent-glow); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover:not(:disabled) { filter: brightness(1.1); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover:not(:disabled) { filter: brightness(1.1); }
+        .btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--border); }
+        .btn-secondary:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--accent); }
+
+        /* ===== MOBILE RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            body { padding: 6px; }
+            .container { border-radius: 8px; }
+            .header { padding: 8px 12px; }
+            .header h1 { font-size: 15px; }
+            .header p { font-size: 10px; }
+            .content { padding: 10px; }
+
+            .upload-section { padding: 10px; }
+            .upload-section h2 { font-size: 13px; }
+            .file-input-label, .analyze-btn { padding: 10px 20px; font-size: 13px; }
+
+            .card { padding: 10px 12px; }
+            .card-header { font-size: 12px; }
+
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .stat-box { padding: 8px; }
+            .stat-value { font-size: 18px; }
+            .stat-label { font-size: 10px; }
+
+            .tri-columns { grid-template-columns: 1fr; gap: 10px; }
+
+            .combinations { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .combo-card { padding: 8px 6px 6px; border-right-width: 2px; }
+            .combo-title { font-size: 11px; margin-bottom: 6px; }
+            .combo-numbers { gap: 3px; margin-bottom: 6px; }
+            .combo-number { width: 24px; height: 24px; font-size: 11px; }
+            .combo-strong { padding: 4px 6px; font-size: 10px; margin-bottom: 6px; }
+            .combo-strong-number { width: 22px; height: 22px; font-size: 11px; }
+            .combo-buttons { grid-template-columns: 1fr; gap: 3px; }
+            .transfer-btn, .copy-btn { padding: 6px 4px; font-size: 10px; }
+
+            .numbers-table { font-size: 12px; display: block; overflow-x: auto; white-space: nowrap; }
+            .numbers-table th, .numbers-table td { padding: 8px 6px; font-size: 12px; }
+
+            .number-badge { padding: 5px 9px; font-size: 12px; margin: 3px; }
+
+            .row-selector { padding: 10px; }
+            .row-selector label { font-size: 13px; }
+            .row-selector input { padding: 9px 10px; font-size: 13px; }
+
+            .banner { padding: 10px; }
+
+            .btn { padding: 9px 16px; font-size: 13px; }
+            .fill-all-btn { padding: 11px; font-size: 13px; margin-top: 12px; }
+
+            .quick-btn, .pill-btn { padding: 7px 11px; font-size: 11px; }
+
+            /* Hide floating side nav on mobile — use scroll instead */
+            .side-nav { display: none !important; }
+
+            /* Make any inline grid layouts stack */
+            [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+        }
+
+        @media (max-width: 480px) {
+            body { padding: 4px; }
+            .header h1 { font-size: 13px; }
+            .header p { font-size: 9px; }
+            .combinations { grid-template-columns: 1fr; }
+            .combo-number { width: 28px; height: 28px; font-size: 12px; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .info-note { font-size: 12px; padding: 8px 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎰 מנתח לוטו חכם - גרסה מלאה</h1>
+            <p>ניתוח מתקדם עם זוגות, טריפלטים, רביעיות והשוואות</p>
+        </div>
+        
+        <div class="content">
+            <div class="upload-section">
+                <h2>📂 העלה קובץ Excel עם תוצאות</h2>
+                <div class="file-input-wrapper">
+                    <input type="file" id="fileInput" accept=".xlsx,.xls">
+                    <label for="fileInput" class="file-input-label">📤 בחר קובץ</label>
+                </div>
+                <div id="fileName" style="color: var(--text-muted); margin-top: 10px; font-weight: 600; font-size: 13px;"></div>
+
+                <!-- בחירת טווח הגרלות -->
+                <div class="row-selector" style="margin-top: 16px; text-align: right;">
+                    <label>📋 בחר שורות לניתוח (אופציונלי)</label>
+                    <input type="text" id="rowSelection" placeholder="השאר ריק לכל הקובץ או הזן טווח/שורות">
+                    <div class="info-note" style="margin-top: 10px; margin-bottom: 0;">
+                        💡 <strong>טיפ:</strong> לחיזוי הגרלה עתידית - נתח שורות <strong>אחרי</strong> ההגרלה שאתה רוצה לחזות (למשל 2-101 לחיזוי שורה 1)
+                    </div>
+
+                    <!-- כפתורי בחירה מהירה -->
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; justify-content: center;">
+                        <button class="quick-btn primary" onclick="setRowSelection('')">🌟 הכל</button>
+                        <button class="quick-btn" onclick="setRowSelection('2-')" title="שורות 2 עד סוף הקובץ">2-האחרון</button>
+                        <button class="quick-btn" onclick="setRowSelection('2-15')">2-15</button>
+                        <button class="quick-btn" onclick="setRowSelection('2-29')">2-29</button>
+                        <button class="quick-btn" onclick="setRowSelection('2-51')">2-51</button>
+                        <button class="quick-btn" onclick="setRowSelection('2-101')">2-101</button>
+                        <button class="quick-btn" onclick="setRowSelection('2-201')">2-201</button>
+                    </div>
+
+                    <div style="font-size: 12px; color: var(--text-subtle); margin-top: 10px; line-height: 1.5;">
+                        💡 לחץ על כפתור או הקלד ידנית: <strong style="color: var(--text-muted);">2-15, 30-40</strong> = טווחים מרובים
+                    </div>
+                </div>
+                
+                <button id="analyzeBtn" class="analyze-btn" disabled>🔍 נתח עכשיו</button>
+            </div>
+            
+            <!-- סרגל ניווט צדדי ימין -->
+            <div class="side-nav" id="sideNav">
+                <a class="nav-item highlight" onclick="scrollToSection('comparisonCard')">🎯 השוואה</a>
+                <a class="nav-item" onclick="scrollToSection('savedCompareCard')" id="navSavedCompare" style="display: none;">📊 השוואה שמור</a>
+                <a class="nav-item" onclick="scrollToSection('combosCard')">✨ קומבינציות</a>
+                <a class="nav-item" onclick="scrollToSection('combosForm2Card')">📋 טופס אחר 1–14</a>
+                <a class="nav-item" onclick="scrollToSection('statsCard')">📊 סטטיסטיקות</a>
+                <a class="nav-item" onclick="scrollToSection('hotCard')">🔥 חמים</a>
+                <a class="nav-item" onclick="scrollToSection('pairsCard')">🤝 זוגות</a>
+                <a class="nav-item" onclick="scrollToSection('tripletsCard')">🎲 טריפלטים</a>
+                <a class="nav-item" onclick="scrollToSection('quartetsCard')">🎯 רביעיות</a>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p id="loadingText">מנתח נתונים...</p>
+                <div id="progressBar" style="width: 80%; max-width: 300px; margin: 15px auto; background: #e0e0e0; border-radius: 10px; overflow: hidden; height: 10px;">
+                    <div id="progressFill" style="width: 0%; height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
+                </div>
+            </div>
+            
+            <div class="error" id="error"></div>
+            
+            <div class="results" id="results">
+                <!-- סטטיסטיקות כלליות - בראש העמוד -->
+                <div class="card" id="statsCard">
+                    <div class="card-header">📊 סטטיסטיקות כלליות</div>
+                    <div class="stats-grid" id="statsGrid"></div>
+                    <!-- שמירה וטעינה של קומבינציות להשוואה מול הגרלה -->
+                    <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);">
+                        <div style="font-weight: 700; color: var(--text); margin-bottom: 6px; font-size: 15px;">💾 שמור קומבינציות → השווה מול הגרלה</div>
+                        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">שמור את 14 הקומבינציות שבחרת, ואחר כך טען אותן (בתאריך מאוחר יותר) כדי לבדוק כמה מספרים פגעת בהגרלה האחרונה או בכל שורה שתבחר.</p>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <button type="button" class="btn btn-success" onclick="saveCombosOnly()" id="saveCombosBtn" disabled>📥 שמור 14 קומבינציות</button>
+                            <label for="loadAnalysisInput" class="btn btn-primary" style="margin: 0; display: inline-block;">📂 טען ובדוק מול הגרלה</label>
+                            <input type="file" id="loadAnalysisInput" accept=".json,application/json" style="display: none;" onchange="loadAnalysisForCompare(event)">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- השוואה: קומבינציות שמורות מול הגרלה -->
+                <div class="card card-saved" id="savedCompareCard" style="display: none;">
+                    <div class="card-header">🎯 קומבינציות שמורות מול הגרלה</div>
+                    <div id="savedCompareMeta" style="margin-bottom: 12px; color: var(--success); font-weight: 600; font-size: 13px;"></div>
+
+                    <!-- בורר שורה להשוואה -->
+                    <div class="banner">
+                        <div style="display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                            <label style="font-weight: 700; color: var(--text); font-size: 14px;">🎲 השווה להגרלה:</label>
+                            <input type="number" id="savedCompareRowInput" value="1" min="1" onkeypress="if(event.key==='Enter') renderSavedVsDrawComparison()" style="width: 90px; padding: 9px; border-radius: 7px; font-size: 16px; font-weight: 700; text-align: center;">
+                            <button class="btn btn-primary" onclick="renderSavedVsDrawComparison()" style="padding: 9px 20px; font-size: 13px;">🔄 עדכן</button>
+                            <span id="savedCompareRangeInfo" style="font-size: 12px; color: var(--text-muted);"></span>
+                        </div>
+                        <div style="display: flex; gap: 6px; justify-content: center; margin-top: 12px; flex-wrap: wrap;">
+                            <button class="pill-btn" onclick="savedQuickCompare(1)">1️⃣ אחרונה</button>
+                            <button class="pill-btn" onclick="savedQuickCompare(2)">2️⃣ לפני אחרונה</button>
+                            <button class="pill-btn" onclick="savedQuickCompare(3)">3️⃣ לפני 2</button>
+                            <button class="pill-btn" onclick="savedQuickCompare(5)">5️⃣ לפני 4</button>
+                            <button class="pill-btn" onclick="savedQuickCompare(10)">🔟 לפני 9</button>
+                        </div>
+                    </div>
+
+                    <!-- סיכום -->
+                    <div id="savedCompareSummary" style="display:none; margin-bottom: 14px;"></div>
+
+                    <!-- הגרלה שמשווים אליה -->
+                    <div id="savedCompareDrawInfo" style="background: var(--bg-elevated); border: 1px solid var(--border); padding: 14px; border-radius: 10px; margin-bottom: 14px; text-align: center;"></div>
+
+                    <!-- תוכן ההשוואה -->
+                    <div id="savedCompareContent"></div>
+
+                    <button type="button" class="btn btn-danger" onclick="clearSavedComparison()" style="margin-top: 14px;">🗑 הסר ניתוח שמור</button>
+                </div>
+
+                <!-- סקשן השוואה -->
+                <div class="card card-highlight" id="comparisonCard">
+                    <div class="card-header">🎯 השוואה להגרלה</div>
+                    <p style="text-align: center; color: var(--text-muted); margin-bottom: 14px; font-size: 13px;">
+                        בדיקה: כמה מספרים מכל קומבינציה מופיעים בהגרלה שבחרת?
+                    </p>
+
+                    <!-- בורר שורה להשוואה -->
+                    <div class="banner">
+                        <div style="display: flex; align-items: center; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                            <label style="font-weight: 700; color: var(--text); font-size: 14px;">🎲 השווה לשורה:</label>
+                            <input type="number" id="comparisonRowInput" value="1" min="1" onkeypress="if(event.key==='Enter') updateComparison()" style="width: 90px; padding: 9px; border-radius: 7px; font-size: 16px; font-weight: 700; text-align: center;">
+                            <button class="btn btn-primary" onclick="updateComparison()" style="padding: 9px 20px; font-size: 13px;">
+                                🔄 עדכן
+                            </button>
+                            <span id="rowRangeInfo" style="font-size: 12px; color: var(--text-muted);"></span>
+                        </div>
+                        <div style="display: flex; gap: 6px; justify-content: center; margin-top: 14px; flex-wrap: wrap;">
+                            <button class="pill-btn" onclick="quickCompare(1)">1️⃣ אחרונה</button>
+                            <button class="pill-btn" onclick="quickCompare(2)">2️⃣ לפני אחרונה</button>
+                            <button class="pill-btn" onclick="quickCompare(3)">3️⃣ לפני 2</button>
+                            <button class="pill-btn" onclick="quickCompare(5)">5️⃣ לפני 4</button>
+                            <button class="pill-btn" onclick="quickCompare(10)">🔟 לפני 9</button>
+                            <span style="align-self: center; color: var(--text-subtle); font-size: 13px;">|</span>
+                            <button type="button" class="pill-btn" id="twoLastRowsBtn" onclick="toggleTwoLastRows()">2 שורות אחרונות</button>
+                        </div>
+                        <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center;">
+                            <span style="font-weight: 600; color: var(--text-muted); font-size: 13px;">השוואה לפי טופס:</span>
+                            <button type="button" class="btn btn-primary" id="compareForm1Btn" onclick="setCompareFormAndUpdate('main')" style="font-size: 13px; padding: 9px 18px;">✨ טופס ראשון – 14 קומבינציות מומלצות</button>
+                            <button type="button" class="btn btn-secondary" id="compareForm2Btn" onclick="setCompareFormAndUpdate('form2')" style="font-size: 13px; padding: 9px 18px;">📋 טופס שני – 14 קומבינציות (1 עד 14)</button>
+                        </div>
+                    </div>
+
+                    <div id="comparisonInfo" style="background: var(--bg-elevated); border: 1px solid var(--border); padding: 18px; border-radius: 10px; margin-bottom: 18px; text-align: center;"></div>
+                    
+                    <table class="numbers-table" id="comparisonTableWrap">
+                        <thead>
+                            <tr>
+                                <th>דירוג</th>
+                                <th>קומבינציה</th>
+                                <th>אסטרטגיה</th>
+                                <th>פגיעות רגילות</th>
+                                <th>פגיעת מספר חזק</th>
+                            </tr>
+                        </thead>
+                        <tbody id="comparisonTable"></tbody>
+                    </table>
+                    <div id="comparisonSecondBlock" style="display: none; margin-top: 22px;">
+                        <div id="comparisonInfo2" style="background: var(--bg-elevated); border: 1px solid var(--border); padding: 18px; border-radius: 10px; margin-bottom: 12px; text-align: center;"></div>
+                        <table class="numbers-table">
+                            <thead>
+                                <tr>
+                                    <th>דירוג</th>
+                                    <th>קומבינציה</th>
+                                    <th>אסטרטגיה</th>
+                                    <th>פגיעות רגילות</th>
+                                    <th>פגיעת מספר חזק</th>
+                                </tr>
+                            </thead>
+                            <tbody id="comparisonTable2"></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- קומבינציות מיד אחרי ההשוואה -->
+                <div class="card" id="combosCard">
+                    <div class="card-header">✨ 14 קומבינציות מומלצות</div>
+                    <p style="text-align: center; color: var(--text-muted); margin-bottom: 16px; font-size: 13px;">
+                        💡 14 אסטרטגיות שונות לחיזוי מספרים מנצחים - כולל 2 אסטרטגיות AI מתקדמות
+                    </p>
+
+                    <div class="banner accent" style="margin-bottom: 16px;">
+                        <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px; color: var(--accent-hover);">⭐ אסטרטגיות מתקדמות</div>
+                        <div style="font-size: 13px; line-height: 1.9; color: var(--text);">
+                            🔗 <strong>רביעיות+שלישיות:</strong> מספרים חוזרים ברביעיות ושלישיות עם חפיפה<br>
+                            🧠 <strong>חיזוי AI:</strong> אלגוריתם חכם עם ציון משוקלל<br>
+                            🔮 <strong>נוסחת הזהב:</strong> שילוב אופטימלי של טריפלטים + זוגות
+                        </div>
+                    </div>
+
+                    <div class="combinations" id="combinations"></div>
+
+                    <button class="fill-all-btn" onclick="sendAllToForm()">
+                        📝 שלח את כל 14 הקומבינציות לטופס
+                    </button>
+                </div>
+
+                <!-- 14 קומבינציות לטופס אחר (ממוספרות 1–14) -->
+                <div class="card" id="combosForm2Card">
+                    <div class="card-header">📋 טופס אחר – 14 קומבינציות (1 עד 14)</div>
+                    <p style="text-align: center; color: var(--text-muted); margin-bottom: 14px; font-size: 13px;">
+                        חישוב סטטיסטי חכם: משקל זמן, פריצת קור, מגמות, פער אופטימלי, פיזור, סינרגיה ועוד
+                    </p>
+                    <div class="info-note" style="text-align: center;">
+                        💪 <strong>רוטציית חזק:</strong> כל מספר חזק (1-7) מופיע בדיוק בשני כרטיסים — מבטיח פגיעה!
+                    </div>
+                    <div class="combinations" id="combinationsForm2"></div>
+                    <button class="fill-all-btn" onclick="sendAllToForm2()">
+                        📝 שלח את כל 14 (טופס אחר) לטופס
+                    </button>
+                </div>
+                
+                <div class="card" id="hotCard">
+                    <div class="card-header">🌡️ מספרים לפי תדירות</div>
+                    <div class="tri-columns">
+                        <div class="col hot">
+                            <div class="col-title">🔥 חמים (Top 10)</div>
+                            <div id="hotNumbers"></div>
+                        </div>
+                        <div class="col medium">
+                            <div class="col-title">🌡️ בינוניים</div>
+                            <div id="mediumNumbers"></div>
+                        </div>
+                        <div class="col cold">
+                            <div class="col-title">❄️ קרים</div>
+                            <div id="coldNumbers"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card" id="pairsCard">
+                    <div class="card-header">🤝 זוגות חוזרים (Top 10)</div>
+                    <table class="numbers-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>זוג</th>
+                                <th>מספר הופעות</th>
+                                <th>אחוז</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pairsTable"></tbody>
+                    </table>
+                </div>
+                
+                <div class="card" id="tripletsCard">
+                    <div class="card-header">🎲 טריפלטים חוזרים (Top 10)</div>
+                    <div id="tripletLimitNote" class="info-note" style="display: none;">
+                        ⚡ לביצועים מהירים: ניתוח טריפלטים מבוסס על 100 שורות ראשונות
+                    </div>
+                    <table class="numbers-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>טריפלט</th>
+                                <th>מספר הופעות</th>
+                                <th>אחוז</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tripletsTable"></tbody>
+                    </table>
+                </div>
+                
+                <div class="card" id="quartetsCard">
+                    <div class="card-header">🎯 רביעיות חוזרות (Top 10)</div>
+                    <div id="quartetLimitNote" class="info-note" style="display: none;">
+                        ⚡ לביצועים מהירים: ניתוח רביעיות מבוסס על 50 שורות ראשונות
+                    </div>
+                    <table class="numbers-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>רביעייה</th>
+                                <th>מספר הופעות</th>
+                                <th>אחוז</th>
+                            </tr>
+                        </thead>
+                        <tbody id="quartetsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentCombinations = [];
+        let currentCombinationsForm2 = [];
+        var comparisonFormSource = 'main';
+        let currentData = null;
+        var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
+        
+        function detectDataFormat(data) {
+            if (!data || data.length === 0) return { numStart: 0, strongIdx: 6, hasDrawDate: false };
+            var row = data[0];
+            if (!row || row.length < 6) return { numStart: 0, strongIdx: 6, hasDrawDate: false };
+            var c0 = parseInt(row[0], 10);
+            var c2 = parseInt(row[2], 10);
+            if (row.length >= 9 && (isNaN(c0) || c0 < 1 || c0 > 37) && !isNaN(c2) && c2 >= 1 && c2 <= 37) {
+                return { numStart: 2, strongIdx: 8, hasDrawDate: true };
+            }
+            return { numStart: 0, strongIdx: 6, hasDrawDate: false };
+        }
+        
+        function normalizeRow(row) {
+            var f = dataFormat;
+            var numbers = [];
+            for (var i = 0; i < 6; i++) {
+                var val = row[f.numStart + i];
+                numbers.push(typeof val === 'number' && !isNaN(val) ? val : parseInt(val, 10));
+            }
+            return {
+                numbers: numbers,
+                strong: typeof row[f.strongIdx] === 'number' ? row[f.strongIdx] : parseInt(row[f.strongIdx], 10),
+                drawNumber: f.hasDrawDate ? row[0] : null,
+                date: f.hasDrawDate ? row[1] : null
+            };
+        }
+        
+        function normalizeData(data) {
+            if (!data || data.length === 0) return data;
+            dataFormat = detectDataFormat(data);
+            return data.map(function(row) { return normalizeRow(row); });
+        }
+        let selectedData = null;
+        let lastAnalysis = null;   // הניתוח האחרון (לשמירה)
+        let savedAnalysis = null;  // ניתוח שמור (להשוואה)
+        
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('fileName').textContent = `✓ ${file.name}`;
+                document.getElementById('analyzeBtn').disabled = false;
+            }
+        });
+        
+        document.getElementById('analyzeBtn').addEventListener('click', function() {
+            const file = document.getElementById('fileInput').files[0];
+            if (file) runAnalysisWithFile(file);
+            else showError('אנא בחר קובץ תחילה');
+        });
+        
+        // פונקציה לבחירה מהירה של טווח שורות
+        function setRowSelection(value) {
+            document.getElementById('rowSelection').value = value;
+            // הדגש את השדה כדי שהמשתמש יראה את השינוי
+            const input = document.getElementById('rowSelection');
+            input.style.boxShadow = '0 0 10px rgba(39, 174, 96, 0.5)';
+            setTimeout(() => {
+                input.style.boxShadow = 'none';
+            }, 500);
+        }
+        
+        async function runAnalysisWithFile(file) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('results').style.display = 'none';
+            
+            try {
+                var data = await readExcelFile(file);
+                data = normalizeData(data);
+                currentData = data;
+                
+                const rowSelection = document.getElementById('rowSelection').value.trim();
+                selectedData = rowSelection ? selectRows(data, rowSelection) : data;
+                
+                if (!selectedData || selectedData.length === 0) {
+                    showError('לא נמצאו שורות תקינות לניתוח. בדוק את הבחירה או השאר את השדה ריק.');
+                    document.getElementById('loading').style.display = 'none';
+                    return;
+                }
+                
+                const selectionInfo = rowSelection ? 
+                    `נבחרו ${selectedData.length} שורות מתוך ${currentData.length}` : 
+                    `ניתוח כל ${selectedData.length} השורות`;
+                console.log(selectionInfo);
+                
+                const analysis = await analyzeData(selectedData);
+                lastAnalysis = analysis;
+                displayResults(analysis);
+                
+                if (savedAnalysis) renderSavedVsCurrentComparison();
+                
+                document.getElementById('sideNav').classList.add('show');
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('rowRangeInfo').textContent = `(טווח: 1-${currentData.length} מהקובץ המקורי)`;
+                document.getElementById('comparisonRowInput').max = currentData.length;
+                updateComparison();
+            } catch (error) {
+                console.error('Error:', error);
+                showError('שגיאה בניתוח הקובץ: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        function selectRows(data, selection) {
+            // אם אין בחירה, החזר את כל הנתונים
+            if (!selection || selection.trim() === '') return data;
+            
+            try {
+                const indices = [];
+                // תומך גם בפסיק וגם בפסיק עם רווחים
+                const parts = selection.split(/[,،]/);
+                
+                parts.forEach(part => {
+                    part = part.trim();
+                    if (!part) return; // דלג על חלקים ריקים
+                    
+                    if (part.includes('-')) {
+                        // טווח: 2-15 או 30-40 או 2- (משורה 2 עד סוף הקובץ)
+                        const rangeParts = part.split('-');
+                        if (rangeParts.length >= 2) {
+                            const start = parseInt(rangeParts[0].trim());
+                            const endRaw = rangeParts[1].trim();
+                            const end = endRaw === '' ? data.length : parseInt(endRaw);
+                            
+                            if (!isNaN(start) && (endRaw === '' || (!isNaN(end) && start <= end))) {
+                                const endVal = endRaw === '' ? data.length : Math.min(end, data.length);
+                                for (let i = start; i <= endVal; i++) {
+                                    if (i > 0 && i <= data.length) {
+                                        indices.push(i - 1); // Convert to 0-indexed
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // מספר בודד
+                        const num = parseInt(part);
+                        if (!isNaN(num) && num > 0 && num <= data.length) {
+                            indices.push(num - 1);
+                        }
+                    }
+                });
+                
+                // אם לא נמצאו אינדקסים תקינים, החזר את כל הנתונים
+                if (indices.length === 0) {
+                    console.warn('לא נמצאו שורות תקינות בבחירה, מחזיר את כל הנתונים');
+                    return data;
+                }
+                
+                // הסר כפילויות ומיין
+                const uniqueIndices = [...new Set(indices)].sort((a, b) => a - b);
+                console.log(`נבחרו ${uniqueIndices.length} שורות מתוך ${data.length}`);
+                return uniqueIndices.map(i => data[i]);
+                
+            } catch (error) {
+                console.error('שגיאה בפרסור בחירת השורות:', error);
+                return data; // במקרה של שגיאה, החזר את כל הנתונים
+            }
+        }
+        
+        function readExcelFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        const workbook = XLSX.read(e.target.result, { type: 'array' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+                        
+                        const filteredData = data.filter(row => 
+                            row.some(cell => cell !== '' && cell !== null && cell !== undefined)
+                        );
+                        
+                        resolve(filteredData);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                
+                reader.onerror = () => reject(new Error('שגיאה בקריאת הקובץ'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+        
+        // פונקציה להמתנה קצרה לשחרור ה-UI
+        function yieldToUI() {
+            return new Promise(resolve => setTimeout(resolve, 0));
+        }
+        
+        // עדכון התקדמות
+        function updateProgress(percent, text) {
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('loadingText').textContent = text;
+        }
+        
+        async function analyzeData(data) {
+            updateProgress(5, 'מנתח תדירות מספרים...');
+            await yieldToUI();
+            
+            const numberFreq = {};
+            const strongFreq = {};
+            
+            // עבור על השורות עם yields כל 30 שורות
+            for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
+                if (rowIdx > 0 && rowIdx % 30 === 0) {
+                    updateProgress(5 + Math.floor(rowIdx / data.length * 10), `מנתח שורה ${rowIdx}/${data.length}...`);
+                    await yieldToUI();
+                }
+                
+                const row = data[rowIdx];
+                for (let i = 0; i < 6; i++) {
+                    const num = row.numbers[i];
+                    if (!isNaN(num) && num >= 1 && num <= 37) {
+                        numberFreq[num] = (numberFreq[num] || 0) + 1;
+                    }
+                }
+                
+                const strong = row.strong;
+                if (!isNaN(strong) && strong >= 1 && strong <= 7) {
+                    strongFreq[strong] = (strongFreq[strong] || 0) + 1;
+                }
+            }
+            
+            updateProgress(15, 'ממיין תוצאות...');
+            await yieldToUI();
+            
+            const sortedNumbers = Object.entries(numberFreq)
+                .map(([num, count]) => ({ 
+                    number: parseInt(num), 
+                    count, 
+                    percentage: (count / data.length * 100).toFixed(1) 
+                }))
+                .sort((a, b) => b.count - a.count);
+            
+            const sortedStrong = Object.entries(strongFreq)
+                .map(([num, count]) => ({ 
+                    number: parseInt(num), 
+                    count, 
+                    percentage: (count / data.length * 100).toFixed(1) 
+                }))
+                .sort((a, b) => b.count - a.count);
+            
+            const third = Math.ceil(sortedNumbers.length / 3);
+            const hot = sortedNumbers.slice(0, third);
+            const medium = sortedNumbers.slice(third, third * 2);
+            const cold = sortedNumbers.slice(third * 2);
+            
+            const strongThird = Math.ceil(sortedStrong.length / 3);
+            const strongHot = sortedStrong.slice(0, strongThird);
+            const strongMedium = sortedStrong.slice(strongThird, strongThird * 2);
+            const strongCold = sortedStrong.slice(strongThird * 2);
+            
+            updateProgress(30, 'מנתח זוגות חוזרים...');
+            await yieldToUI();
+            const pairs = await analyzePairs(data);
+            
+            updateProgress(50, 'מנתח טריפלטים (שלישיות)...');
+            await yieldToUI();
+            const triplets = await analyzeTriplets(data);
+            
+            updateProgress(70, 'מנתח רביעיות...');
+            await yieldToUI();
+            const quartets = await analyzeQuartets(data);
+            
+            updateProgress(85, 'יוצר קומבינציות מומלצות...');
+            await yieldToUI();
+            const combinations = await generateCombinations(
+                hot, medium, cold, 
+                strongHot, strongMedium, strongCold,
+                pairs, sortedNumbers, triplets, quartets, data
+            );
+            
+            currentCombinations = combinations;
+            
+            updateProgress(92, 'יוצר 14 קומבינציות לטופס אחר...');
+            await yieldToUI();
+            const combinationsForm2 = generateCombinationsForm2(
+                hot, medium, cold,
+                strongHot, strongMedium, strongCold,
+                pairs, sortedNumbers, triplets, quartets, data
+            );
+            currentCombinationsForm2 = combinationsForm2;
+            
+            updateProgress(100, 'מסיים...');
+            await yieldToUI();
+            
+            return {
+                totalDraws: data.length,
+                numbers: sortedNumbers,
+                strong: sortedStrong,
+                hot, medium, cold,
+                strongHot, strongMedium, strongCold,
+                pairs, triplets, quartets,
+                combinations,
+                combinationsForm2: currentCombinationsForm2
+            };
+        }
+        
+        async function analyzePairs(data) {
+            const pairCounts = new Map();
+            // זוגות - יעיל יותר
+            const maxRows = Math.min(data.length, 200);
+            
+            for (let rowIdx = 0; rowIdx < maxRows; rowIdx++) {
+                // yield כל 50 שורות
+                if (rowIdx > 0 && rowIdx % 50 === 0) await yieldToUI();
+                
+                const row = data[rowIdx];
+                const numbers = (row.numbers || []).filter(n => !isNaN(n) && n >= 1 && n <= 37);
+                
+                if (numbers.length >= 2) {
+                    for (let i = 0; i < numbers.length; i++) {
+                        for (let j = i + 1; j < numbers.length; j++) {
+                            const key = numbers[i] < numbers[j] ? 
+                                `${numbers[i]}-${numbers[j]}` : `${numbers[j]}-${numbers[i]}`;
+                            pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+                        }
+                    }
+                }
+            }
+            
+            return Array.from(pairCounts.entries())
+                .map(([pair, count]) => ({
+                    pair,
+                    count,
+                    percentage: (count / maxRows * 100).toFixed(1)
+                }))
+                .sort((a, b) => b.count - a.count);
+        }
+        
+        async function analyzeTriplets(data) {
+            const tripletCounts = new Map();
+            // הגבל ל-100 שורות - מספיק לסטטיסטיקה טובה
+            const maxRows = Math.min(data.length, 100);
+            
+            for (let rowIdx = 0; rowIdx < maxRows; rowIdx++) {
+                // yield כל 25 שורות
+                if (rowIdx > 0 && rowIdx % 25 === 0) await yieldToUI();
+                
+                const row = data[rowIdx];
+                const numbers = (row.numbers || []).filter(n => !isNaN(n) && n >= 1 && n <= 37);
+                
+                if (numbers.length >= 3) {
+                    for (let i = 0; i < numbers.length; i++) {
+                        for (let j = i + 1; j < numbers.length; j++) {
+                            for (let k = j + 1; k < numbers.length; k++) {
+                                const sorted = [numbers[i], numbers[j], numbers[k]].sort((a, b) => a - b);
+                                const key = `${sorted[0]}-${sorted[1]}-${sorted[2]}`;
+                                tripletCounts.set(key, (tripletCounts.get(key) || 0) + 1);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return Array.from(tripletCounts.entries())
+                .map(([triplet, count]) => ({
+                    triplet,
+                    count,
+                    percentage: (count / maxRows * 100).toFixed(1)
+                }))
+                .sort((a, b) => b.count - a.count);
+        }
+        
+        async function analyzeQuartets(data) {
+            const quartetCounts = new Map();
+            // הגבל ל-50 שורות בלבד - רביעיות כבד מאוד
+            const maxRows = Math.min(data.length, 50);
+            
+            for (let rowIdx = 0; rowIdx < maxRows; rowIdx++) {
+                // yield כל 10 שורות
+                if (rowIdx > 0 && rowIdx % 10 === 0) await yieldToUI();
+                
+                const row = data[rowIdx];
+                const numbers = (row.numbers || []).filter(n => !isNaN(n) && n >= 1 && n <= 37);
+                
+                if (numbers.length >= 4) {
+                    for (let i = 0; i < numbers.length; i++) {
+                        for (let j = i + 1; j < numbers.length; j++) {
+                            for (let k = j + 1; k < numbers.length; k++) {
+                                for (let l = k + 1; l < numbers.length; l++) {
+                                    const sorted = [numbers[i], numbers[j], numbers[k], numbers[l]].sort((a, b) => a - b);
+                                    const key = `${sorted[0]}-${sorted[1]}-${sorted[2]}-${sorted[3]}`;
+                                    quartetCounts.set(key, (quartetCounts.get(key) || 0) + 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return Array.from(quartetCounts.entries())
+                .map(([quartet, count]) => ({
+                    quartet,
+                    count,
+                    percentage: (count / maxRows * 100).toFixed(1)
+                }))
+                .sort((a, b) => b.count - a.count);
+        }
+        
+        // 🧬 חיזוי חכם - ניתוח דפוסים מתקדם
+        // משלב 3 אסטרטגיות: "פריצה", "מומנטום", ו"מחזוריות"
+        function generateSlidingWindowCombo(rawData, strongHot, strongMedium, comboNum) {
+            const windowSize = 50;
+            const numTargets = Math.min(30, rawData.length - windowSize);
+            
+            if (numTargets <= 0 || rawData.length < windowSize + 1) {
+                const fallbackNums = [];
+                for (let i = 1; i <= 6; i++) fallbackNums.push({ number: i * 5 });
+                return createCombo(fallbackNums, strongHot[0]?.number || 1, comboNum, '🧬 חיזוי חכם');
+            }
+            
+            // ציונים לפי סוג דפוס
+            const breakthroughScores = {}; // מספרים "קרים" שפרצו להגרלה
+            const momentumScores = {};     // מספרים "חמים" שהמשיכו להופיע
+            const cycleScores = {};        // מספרים שמופיעים במחזוריות
+            const gapScores = {};          // ציון לפי פער מהופעה אחרונה
+            const strongScores = {};
+            
+            for (let i = 1; i <= 37; i++) {
+                breakthroughScores[i] = 0;
+                momentumScores[i] = 0;
+                cycleScores[i] = 0;
+                gapScores[i] = 0;
+            }
+            for (let i = 1; i <= 7; i++) {
+                strongScores[i] = 0;
+            }
+            
+            const avgFreqPerNum = (windowSize * 6) / 37; // תדירות ממוצעת צפויה למספר בחלון
+            
+            // ניתוח כל חלון
+            for (let targetIdx = 0; targetIdx < numTargets; targetIdx++) {
+                const targetRow = rawData[targetIdx];
+                
+                // מספרי היעד
+                const targetNumbers = new Set();
+                (targetRow.numbers || []).forEach(num => {
+                    if (!isNaN(num) && num >= 1 && num <= 37) targetNumbers.add(num);
+                });
+                const targetStrong = targetRow.strong;
+                
+                // חשב תדירות בחלון + פער מהופעה אחרונה
+                const windowFreq = {};
+                const lastSeen = {}; // מתי המספר הופיע לאחרונה בחלון
+                
+                for (let offset = 1; offset <= windowSize && targetIdx + offset < rawData.length; offset++) {
+                    const windowRow = rawData[targetIdx + offset];
+                    (windowRow.numbers || []).forEach(num => {
+                        if (!isNaN(num) && num >= 1 && num <= 37) {
+                            windowFreq[num] = (windowFreq[num] || 0) + 1;
+                            if (!lastSeen[num]) lastSeen[num] = offset;
+                        }
+                    });
+                }
+                
+                // נתח כל מספר ביעד
+                targetNumbers.forEach(num => {
+                    const freq = windowFreq[num] || 0;
+                    const gap = lastSeen[num] || windowSize + 1;
+                    
+                    // פריצה: מספר קר שהופיע ביעד
+                    if (freq < avgFreqPerNum * 0.5) {
+                        breakthroughScores[num] += 4;
+                    }
+                    
+                    // מומנטום: מספר חם שהמשיך
+                    if (freq > avgFreqPerNum * 1.2) {
+                        momentumScores[num] += 4;
+                    }
+                    
+                    // מחזוריות: מספר שהופיע בפער של 5-15 הגרלות
+                    if (gap >= 5 && gap <= 15) {
+                        cycleScores[num] += 3;
+                    }
+                    
+                    // בונוס לפער אופטימלי (8-12)
+                    if (gap >= 8 && gap <= 12) {
+                        gapScores[num] += 2;
+                    }
+                });
+                
+                // מספר חזק
+                if (!isNaN(targetStrong)) {
+                    strongScores[targetStrong] += 2;
+                }
+            }
+            
+            // עכשיו נתח את המצב הנוכחי (שורות 1-50 מהנתונים שנבחרו)
+            const currentWindowFreq = {};
+            const currentLastSeen = {};
+            
+            for (let i = 0; i < Math.min(windowSize, rawData.length); i++) {
+                const row = rawData[i];
+                (row.numbers || []).forEach(num => {
+                    if (!isNaN(num) && num >= 1 && num <= 37) {
+                        currentWindowFreq[num] = (currentWindowFreq[num] || 0) + 1;
+                        if (!currentLastSeen[num]) currentLastSeen[num] = i + 1;
+                    }
+                });
+            }
+            
+            // חשב ציון סופי משוקלל לפי המצב הנוכחי
+            const finalScores = {};
+            
+            for (let i = 1; i <= 37; i++) {
+                const currentFreq = currentWindowFreq[i] || 0;
+                const currentGap = currentLastSeen[i] || 100;
+                
+                let score = 0;
+                
+                // אם המספר כרגע קר - תן משקל לציון פריצה
+                if (currentFreq < avgFreqPerNum * 0.6) {
+                    score += breakthroughScores[i] * 2.5;
+                    score += cycleScores[i] * 1.5;
+                }
+                // אם המספר כרגע חם - תן משקל לציון מומנטום
+                else if (currentFreq > avgFreqPerNum * 1.3) {
+                    score += momentumScores[i] * 2.5;
+                    score += cycleScores[i] * 1.5;
+                }
+                // בינוני - שילוב
+                else {
+                    score += breakthroughScores[i] * 1.5;
+                    score += momentumScores[i] * 1.5;
+                    score += cycleScores[i] * 2;
+                }
+                
+                // בונוס לפער אופטימלי במצב הנוכחי
+                if (currentGap >= 5 && currentGap <= 15) {
+                    score += gapScores[i] * 2;
+                }
+                
+                // בונוס נוסף למספרים "בשלים" - לא הופיעו 8-15 הגרלות
+                if (currentGap >= 8 && currentGap <= 15) {
+                    score += 5;
+                }
+                
+                finalScores[i] = score;
+            }
+            
+            // בחר 6 מספרים מובילים
+            const sorted = Object.entries(finalScores)
+                .map(([num, score]) => ({ number: parseInt(num), score }))
+                .sort((a, b) => b.score - a.score);
+            
+            const nums = sorted.slice(0, 6);
+            
+            // מספר חזק - גם לפי דפוסים
+            const currentStrongFreq = {};
+            for (let i = 0; i < Math.min(windowSize, rawData.length); i++) {
+                const strong = rawData[i].strong;
+                if (!isNaN(strong)) currentStrongFreq[strong] = (currentStrongFreq[strong] || 0) + 1;
+            }
+            
+            // משקל סופי למספר חזק
+            let bestStrong = 1;
+            let bestStrongScore = 0;
+            for (let i = 1; i <= 7; i++) {
+                const historyScore = strongScores[i] || 0;
+                const currentFreq = currentStrongFreq[i] || 0;
+                // מספר חזק שהיסטורית טוב אבל לא הופיע לאחרונה יותר מדי
+                const combined = historyScore * 2 + (currentFreq < 5 ? 3 : 0);
+                if (combined > bestStrongScore) {
+                    bestStrongScore = combined;
+                    bestStrong = i;
+                }
+            }
+            
+            return createCombo(nums, bestStrong, comboNum, '🧬 חיזוי חכם (דפוסים)');
+        }
+        
+        async function generateCombinations(hot, medium, cold, strongHot, strongMedium, strongCold, pairs, mainStats, triplets, quartets, rawData) {
+            const combos = [];
+            
+            // הגבל את rawData ל-100 שורות מקסימום לביצועים
+            const limitedRawData = rawData.slice(0, Math.min(100, rawData.length));
+            
+            // 1. מאוזן
+            combos.push(createCombo([
+                ...pickRandom(hot, 2),
+                ...pickRandom(medium, 2),
+                ...pickRandom(cold, 2)
+            ], pickRandom(strongHot, 1)[0]?.number || 1, 1, '⚖️ מאוזן'));
+            
+            // 2. מיקוד חם
+            combos.push(createCombo([
+                ...pickRandom(hot, 4),
+                ...pickRandom(medium, 1),
+                ...pickRandom(cold, 1)
+            ], pickRandom(strongHot, 1)[0]?.number || 2, 2, '🔥 מיקוד חם'));
+            
+            // 3. מבוסס זוגות
+            const topPair = pairs[0]?.pair.split('-').map(n => parseInt(n)) || [];
+            const pairNums = topPair.length >= 2 ? topPair : pickRandom(hot, 2).map(n => n.number);
+            const remaining = [...pickRandom(hot, 2), ...pickRandom(medium, 2)].map(n => n.number)
+                .filter(n => !pairNums.includes(n)).slice(0, 4);
+            combos.push(createCombo(
+                [...pairNums, ...remaining].slice(0, 6).map(n => ({ number: n })),
+                pickRandom(strongHot, 1)[0]?.number || 3,
+                3,
+                '🤝 מבוסס זוגות'
+            ));
+            
+            await yieldToUI(); // yield אחרי 3 קומבינציות
+            
+            // 4. שילוב חכם - זוג מוביל + שלישייה מובילה (ללא חפיפה)
+            combos.push(generateSmartMixCombo(pairs, triplets, hot, strongHot, 4));
+            
+            // 5. מספרים בשלים - לא יצאו זמן רב אבל היסטורית חזקים
+            combos.push(generateDueNumbersCombo(mainStats, limitedRawData, strongHot, strongMedium, 5));
+            
+            // 6. 10 המובילים
+            combos.push(createCombo(
+                pickRandom(mainStats.slice(0, 10), 6),
+                pickRandom(strongHot, 1)[0]?.number || 6,
+                6,
+                '⭐ 10 המובילים'
+            ));
+            
+            await yieldToUI(); // yield אחרי 6 קומבינציות
+            
+            // 7. שתי שלישיות מובילות
+            combos.push(generateDoubleTripletCombo(triplets, hot, strongHot, 7));
+            
+            // 8. שילוב חם-קר עם חזק קר
+            combos.push(createCombo([
+                ...pickRandom(hot, 3),
+                ...pickRandom(cold, 3)
+            ], pickRandom(strongCold, 1)[0]?.number || 7, 8, '🔥❄️ חם+קר (חזק קר)'));
+            
+            // 9. בלתי צפוי - מעורבב עם חזרות קבועות ומספר חזק שונה מהאחרון
+            combos.push(generateUnpredictableCombo(hot, medium, cold, pairs, triplets, strongHot, strongMedium, strongCold, limitedRawData, 9));
+            
+            await yieldToUI(); // yield אחרי 9 קומבינציות
+            
+            // 10. ניתוח מגמות חכם - זיהוי מספרים במגמת עלייה
+            combos.push(generateTrendAnalysisCombo(mainStats, limitedRawData, strongHot, 10));
+            
+            // 11: חיזוי חלון נע - ניתוח דפוסי התאמה מ-50 שורות היסטוריות
+            combos.push(generateSlidingWindowCombo(rawData, strongHot, strongMedium, 11));
+            
+            // 12. רביעיות + שלישיות עם חפיפה
+            combos.push(generateQuartetTripletOverlapCombo(quartets, triplets, hot, strongHot, 12));
+            
+            await yieldToUI(); // yield אחרי 12 קומבינציות
+            
+            // 13. חיזוי AI
+            combos.push(generateAICombo(hot, medium, cold, strongHot, mainStats, limitedRawData, 13, '🧠 חיזוי AI'));
+            
+            // 14. נוסחת הזהב
+            const goldenTriplet = triplets[0]?.triplet.split('-').map(n => parseInt(n)) || [];
+            const goldenPair = pairs[0]?.pair.split('-').map(n => parseInt(n)) || [];
+            const goldenNums = [...new Set([...goldenTriplet, ...goldenPair])];
+            let hotIdx = 0;
+            while (goldenNums.length < 6 && hotIdx < hot.length) {
+                const hotNum = hot[hotIdx]?.number;
+                if (hotNum && !goldenNums.includes(hotNum)) goldenNums.push(hotNum);
+                hotIdx++;
+            }
+            combos.push(createCombo(
+                goldenNums.slice(0, 6).map(n => ({ number: n })),
+                pickRandom(strongHot, 1)[0]?.number || 7,
+                14,
+                '🔮 נוסחת הזהב'
+            ));
+            
+            return combos;
+        }
+        
+        // ========== 14 קומבינציות לטופס אחר (1–14) – חישוב סטטיסטי חכם ==========
+        function generateCombinationsForm2(hot, medium, cold, strongHot, strongMedium, strongCold, pairs, mainStats, triplets, quartets, rawData) {
+            const limited = (rawData || []).slice(0, Math.min(100, (rawData || []).length));
+            const combos = [];
+
+            // === שיפור: רוטציית מספר חזק (כיסוי מלא של כל 7 המספרים) ===
+            // בונים רשימה של 14 מספרים חזקים כך שכל מספר (1-7) מופיע בדיוק פעמיים.
+            // מתמטית: ההגרלה תבחר 1 מ-7 → מובטח שיש לנו 2 כרטיסים עם המספר הנכון.
+            // הסדר הוא לפי דירוג (חם→קר) כך שהחמים יקבלו עדיפות בקומבינציות הראשונות.
+            const allStrongSorted = [...(strongHot || []), ...(strongMedium || []), ...(strongCold || [])]
+                .filter(s => s && s.number >= 1 && s.number <= 7);
+            const seenStrong = new Set(allStrongSorted.map(s => s.number));
+            for (let i = 1; i <= 7; i++) {
+                if (!seenStrong.has(i)) allStrongSorted.push({ number: i, count: 0 });
+            }
+            const strongRotation = [];
+            for (let i = 0; i < 14; i++) {
+                strongRotation.push(allStrongSorted[i % 7].number);
+            }
+
+            const create = (nums, strong, num) => createCombo(nums.map(n => typeof n === 'number' ? { number: n } : n), strong, num, String(num));
+            
+            // עזר: פער מהופעה אחרונה (אינדקס נמוך = הופיע לאחרונה)
+            const lastSeen = {};
+            (limited || []).forEach((row, idx) => {
+                (row.numbers || []).forEach(n => {
+                    if (!isNaN(n) && n >= 1 && n <= 37 && lastSeen[n] === undefined) lastSeen[n] = idx;
+                });
+            });
+            const getGap = (n) => lastSeen[n] !== undefined ? lastSeen[n] : 999;
+            
+            // 1. בשלים + תדירות – 6 מספרים עם פער אופטימלי (4–16) + תדירות גבוהה. לוגיקה פשוטה וברורה.
+            const combo1Due = (mainStats || []).map(s => {
+                const g = getGap(s.number);
+                const dueBonus = (g >= 4 && g <= 16) ? 18 : (g >= 3 && g <= 20) ? 6 : 0;
+                return { number: s.number, score: s.count + dueBonus };
+            }).sort((a, b) => b.score - a.score).slice(0, 6);
+            const combo1Nums = combo1Due.length ? combo1Due : pickTop(hot, 6);
+            combos.push(createCombo(combo1Nums, 1, 1, 'בשלים + תדירות (פער 4–16)'));
+            
+            // 2. פריצת קור – קרים עם תדירות היסטורית גבוהה (בשלים)
+            const coldBreak = (cold || []).slice(0, 15).map(c => ({ number: c.number, score: (mainStats.find(s => s.number === c.number)?.count || 0) + getGap(c.number) * 0.5 })).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(coldBreak.length ? coldBreak : pickTop(hot, 6), strongMedium[0]?.number || strongHot[0]?.number || 1, 2));
+            
+            // 3. מגמת עלייה מואצת – 10 אחרונות vs 10 שלפניהן
+            const r10 = (limited || []).slice(0, 10);
+            const p10 = (limited || []).slice(10, 20);
+            const freqR = {}, freqP = {};
+            for (let i = 1; i <= 37; i++) freqR[i] = freqP[i] = 0;
+            r10.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) freqR[n]++; }); });
+            p10.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) freqP[n]++; }); });
+            const trend = Object.entries(freqR).map(([n, v]) => ({ number: parseInt(n), score: (v || 0) - (freqP[n] || 0) })).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(trend.length ? trend : pickTop(hot, 6), strongHot[0]?.number || 1, 3));
+            
+            // 4. פער אופטימלי – בשלים (פער 6–14) + תדירות
+            const gapScores = (mainStats || []).slice(0, 25).map(s => {
+                const g = getGap(s.number);
+                const bonus = (g >= 6 && g <= 14) ? 20 : (g >= 4 && g <= 20) ? 10 : 0;
+                return { number: s.number, score: s.count + bonus };
+            }).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(gapScores.length ? gapScores : pickTop(hot, 6), strongHot[0]?.number || 1, 4));
+            
+            // 5. איזון פיזור – בחירה כך שפריסה על 1–37 (לא צפוף)
+            const spread = [];
+            const bands = [[1, 12], [13, 24], [25, 37]];
+            bands.forEach(([lo, hi]) => {
+                const inBand = (mainStats || []).filter(s => s.number >= lo && s.number <= hi).slice(0, 2);
+                inBand.forEach(s => spread.push({ number: s.number }));
+            });
+            const spreadSorted = [...new Set(spread.map(s => s.number))].slice(0, 6).sort((a, b) => a - b).map(n => ({ number: n }));
+            combos.push(create(spreadSorted.length >= 6 ? spreadSorted : [...spreadSorted, ...pickTop(hot, 6 - spreadSorted.length)], strongHot[0]?.number || 1, 5));
+            
+            // 6. זוגות מאמצע הרשימה (5–15) + השלמה
+            const midPairs = (pairs || []).slice(4, 15);
+            const set6 = new Set();
+            midPairs.forEach(p => {
+                if (!p || !p.pair) return;
+                const [a, b] = p.pair.split('-').map(Number);
+                if (!isNaN(a)) set6.add(a);
+                if (!isNaN(b)) set6.add(b);
+                if (set6.size >= 6) return;
+            });
+            const arr6 = set6.size >= 6 ? [...set6].slice(0, 6) : [...set6, ...(hot || []).map(h => h.number).filter(n => !set6.has(n))].slice(0, 6);
+            combos.push(create(arr6.map(n => ({ number: n })), strongHot[0]?.number || 1, 6));
+            
+            // 7. שלישייה מובילה + 3 קרים (תדירות היסטורית)
+            const set7 = new Set();
+            if ((triplets || []).length) (triplets[0].triplet || '').split('-').forEach(n => { const x = parseInt(n); if (!isNaN(x)) set7.add(x); });
+            (cold || []).slice(0, 10).forEach(c => { if (set7.size < 6 && c && c.number) set7.add(c.number); });
+            if (set7.size < 6) (hot || []).forEach(h => { if (set7.size < 6 && h && h.number) set7.add(h.number); });
+            combos.push(create([...set7].slice(0, 6).map(n => ({ number: n })), strongCold[0]?.number || strongHot[0]?.number || 1, 7));
+            
+            // 8. ממוצע נע – תדירות בחלון אחרון גבוהה מהקודם
+            const w1 = (limited || []).slice(0, 20);
+            const w2 = (limited || []).slice(20, 40);
+            const f1 = {}, f2 = {};
+            for (let i = 1; i <= 37; i++) f1[i] = f2[i] = 0;
+            w1.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) f1[n]++; }); });
+            w2.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) f2[n]++; }); });
+            const moving = Object.entries(f1).map(([n, v]) => ({ number: parseInt(n), score: (v || 0) - (f2[n] || 0) })).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(moving.length ? moving : pickTop(hot, 6), strongHot[0]?.number || 1, 8));
+            
+            // 9. אנטי-אחרון – מתחמק מ-3 הגרלות אחרונות, בוחר בשלים/חמים
+            const last3 = new Set();
+            (limited || []).slice(0, 3).forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) last3.add(n); }); });
+            const anti = (mainStats || []).filter(s => !last3.has(s.number)).map(s => ({ number: s.number, score: s.count + (getGap(s.number) >= 5 ? 5 : 0) })).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(anti.length ? anti : pickTop(hot, 6), strongHot[0]?.number || 1, 9));
+            
+            // 10. מספרים בשלים – פער אופטימלי (5–16) + תדירות: לא הופיעו לאחרונה אבל מופיעים הרבה
+            const dueScores = (mainStats || []).map(s => {
+                const g = getGap(s.number);
+                const dueBonus = (g >= 5 && g <= 16) ? 12 : (g >= 4 && g <= 20) ? 4 : 0;
+                return { number: s.number, score: s.count + dueBonus };
+            }).sort((a, b) => b.score - a.score).slice(0, 6);
+            const dueNums = dueScores.length ? dueScores : pickTop(hot, 6);
+            combos.push(createCombo(dueNums, strongHot[0]?.number || 1, 10, 'מספרים בשלים (פער 5–16 + תדירות)'));
+            
+            // 11. תנודה – שונות בין חלונות (חם בחלון אחד, קר באחר)
+            const v1 = (limited || []).slice(0, 25);
+            const v2 = (limited || []).slice(25, 50);
+            const vf1 = {}, vf2 = {};
+            for (let i = 1; i <= 37; i++) vf1[i] = vf2[i] = 0;
+            v1.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) vf1[n]++; }); });
+            v2.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) vf2[n]++; }); });
+            const variance = Object.entries(vf1).map(([n, v]) => ({ number: parseInt(n), score: Math.abs((v || 0) - (vf2[n] || 0)) })).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(variance.length ? variance : pickTop(medium, 6), strongMedium[0]?.number || strongHot[0]?.number || 1, 11));
+            
+            // 12. חזרת מגמה – היו בטופ, ירדו, פער 5–15
+            const wasTop = new Set((mainStats || []).slice(0, 15).map(s => s.number));
+            const comeback = (mainStats || []).filter(s => wasTop.has(s.number)).map(s => {
+                const g = getGap(s.number);
+                return { number: s.number, score: (g >= 5 && g <= 15) ? s.count + 15 : s.count };
+            }).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(comeback.length ? comeback : pickTop(hot, 6), strongHot[0]?.number || 1, 12));
+            
+            // 13. סינרגיה מלאה – זוגות+שלישיות+רביעיות+תדירות+פער
+            const synScores = {};
+            for (let i = 1; i <= 37; i++) synScores[i] = 0;
+            (mainStats || []).forEach((s, i) => { synScores[s.number] = (synScores[s.number] || 0) + (20 - i); });
+            (pairs || []).slice(0, 20).forEach(p => { if (!p || !p.pair) return; p.pair.split('-').map(Number).forEach(n => { if (!isNaN(n)) synScores[n] = (synScores[n] || 0) + 2; }); });
+            (triplets || []).slice(0, 10).forEach(t => { if (!t || !t.triplet) return; t.triplet.split('-').map(Number).forEach(n => { if (!isNaN(n)) synScores[n] = (synScores[n] || 0) + 3; }); });
+            (quartets || []).slice(0, 5).forEach(q => { if (!q || !q.quartet) return; q.quartet.split('-').map(Number).forEach(n => { if (!isNaN(n)) synScores[n] = (synScores[n] || 0) + 4; }); });
+            Object.keys(synScores).forEach(n => { const g = getGap(parseInt(n)); if (g >= 4 && g <= 18) synScores[n] += 5; });
+            const synTop = Object.entries(synScores).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n]) => ({ number: parseInt(n) }));
+            combos.push(create(synTop, strongHot[0]?.number || 1, 13));
+            
+            // 14. ממוצע משוקלל – תדירות + מומנטום (5 אחרונות) + פער אופטימלי
+            const last5 = (limited || []).slice(0, 5);
+            const mom = {};
+            for (let i = 1; i <= 37; i++) mom[i] = 0;
+            last5.forEach(row => { (row.numbers || []).forEach(n => { if (!isNaN(n)) mom[n] += 4; }); });
+            const weighted = (mainStats || []).map(s => ({
+                number: s.number,
+                score: s.count * 2 + (mom[s.number] || 0) + (getGap(s.number) >= 6 && getGap(s.number) <= 12 ? 8 : 0)
+            })).sort((a, b) => b.score - a.score).slice(0, 6);
+            combos.push(create(weighted.length ? weighted : pickTop(hot, 6), strongHot[0]?.number || 1, 14));
+
+            // === החלת רוטציית המספר החזק על כל 14 הקומבינציות ===
+            // מבטיח: כל אחד מהמספרים 1-7 מופיע בדיוק ב-2 כרטיסים.
+            combos.forEach((combo, i) => {
+                combo.strong = strongRotation[i];
+            });
+
+            return combos;
+        }
+        
+        // שילוב חכם - זוג מוביל + שלישייה שנייה (ללא חפיפה)
+        function generateSmartMixCombo(pairs, triplets, hot, strongHot, comboNum) {
+            const result = new Set();
+            
+            // קח את הזוג המוביל
+            if (pairs.length > 0) {
+                const pairNums = pairs[0]?.pair.split('-').map(n => parseInt(n)) || [];
+                pairNums.forEach(n => result.add(n));
+            }
+            
+            // קח שלישייה שנייה (כדי למנוע חפיפה עם הראשונה)
+            if (triplets.length > 1) {
+                const tripletNums = triplets[1]?.triplet.split('-').map(n => parseInt(n)) || [];
+                tripletNums.forEach(n => result.add(n));
+            } else if (triplets.length > 0) {
+                const tripletNums = triplets[0]?.triplet.split('-').map(n => parseInt(n)) || [];
+                tripletNums.forEach(n => result.add(n));
+            }
+            
+            // השלם מחמים
+            let idx = 0;
+            while (result.size < 6 && idx < hot.length) {
+                if (!result.has(hot[idx].number)) result.add(hot[idx].number);
+                idx++;
+            }
+            
+            const nums = [...result].slice(0, 6).map(n => ({ number: n }));
+            return createCombo(nums, strongHot[0]?.number || 1, comboNum, '🎯 זוג+שלישייה');
+        }
+        
+        // מספרים בשלים - לא יצאו זמן רב אבל היסטורית חזקים
+        function generateDueNumbersCombo(mainStats, rawData, strongHot, strongMedium, comboNum) {
+            // חשב פער מהופעה אחרונה לכל מספר
+            const lastAppearance = {};
+            rawData.forEach((row, idx) => {
+                (row.numbers || []).forEach(num => {
+                    if (!isNaN(num) && num >= 1 && num <= 37 && lastAppearance[num] === undefined) lastAppearance[num] = idx;
+                });
+            });
+            
+            // חשב ציון לכל מספר: תדירות גבוהה + פער גדול = בשל
+            const dueScores = mainStats.slice(0, 20).map(stat => {
+                const gap = lastAppearance[stat.number] || rawData.length;
+                // מספרים עם פער 5-20 הגרלות מקבלים בונוס
+                const gapBonus = gap >= 5 && gap <= 20 ? gap * 3 : gap;
+                return {
+                    number: stat.number,
+                    score: stat.count + gapBonus,
+                    gap: gap
+                };
+            }).sort((a, b) => b.score - a.score);
+            
+            const nums = dueScores.slice(0, 6);
+            
+            // מספר חזק - גם מבוסס בשלות
+            const strongGaps = {};
+            rawData.forEach((row, idx) => {
+                const strong = row.strong;
+                if (!isNaN(strong) && strongGaps[strong] === undefined) strongGaps[strong] = idx;
+            });
+            
+            const allStrong = [...strongHot, ...strongMedium];
+            const dueStrong = allStrong.sort((a, b) => {
+                const gapA = strongGaps[a.number] || 100;
+                const gapB = strongGaps[b.number] || 100;
+                return gapB - gapA;
+            })[0];
+            
+            return createCombo(nums, dueStrong?.number || 1, comboNum, '⏰ מספרים בשלים');
+        }
+        
+        // שתי שלישיות מובילות
+        function generateDoubleTripletCombo(triplets, hot, strongHot, comboNum) {
+            const result = new Set();
+            
+            // קח שלישייה ראשונה
+            if (triplets.length > 0) {
+                const triplet1 = triplets[0]?.triplet.split('-').map(n => parseInt(n)) || [];
+                triplet1.forEach(n => result.add(n));
+            }
+            
+            // קח שלישייה שנייה
+            if (triplets.length > 1) {
+                const triplet2 = triplets[1]?.triplet.split('-').map(n => parseInt(n)) || [];
+                triplet2.forEach(n => result.add(n));
+            }
+            
+            // השלם מחמים אם צריך
+            let idx = 0;
+            while (result.size < 6 && idx < hot.length) {
+                if (!result.has(hot[idx].number)) result.add(hot[idx].number);
+                idx++;
+            }
+            
+            const nums = [...result].slice(0, 6).map(n => ({ number: n }));
+            return createCombo(nums, strongHot[0]?.number || 1, comboNum, '🔗 2 שלישיות');
+        }
+        
+        // ניתוח מגמות חכם - זיהוי מספרים במגמת עלייה
+        function generateTrendAnalysisCombo(mainStats, rawData, strongHot, comboNum) {
+            const scores = {};
+            
+            // אתחל ציונים לכל המספרים
+            for (let i = 1; i <= 37; i++) {
+                scores[i] = 0;
+            }
+            
+            // 1. ניתוח מגמה: השווה 20 אחרונות ל-20 שלפני
+            const recent20 = rawData.slice(0, Math.min(20, rawData.length));
+            const previous20 = rawData.slice(20, Math.min(40, rawData.length));
+            
+            const recentFreq = {};
+            const previousFreq = {};
+            
+            recent20.forEach(row => {
+                (row.numbers || []).forEach(num => {
+                    if (!isNaN(num) && num >= 1 && num <= 37) recentFreq[num] = (recentFreq[num] || 0) + 1;
+                });
+            });
+            
+            previous20.forEach(row => {
+                (row.numbers || []).forEach(num => {
+                    if (!isNaN(num) && num >= 1 && num <= 37) previousFreq[num] = (previousFreq[num] || 0) + 1;
+                });
+            });
+            
+            // מספרים במגמת עלייה מקבלים בונוס גדול
+            for (let i = 1; i <= 37; i++) {
+                const recentCount = recentFreq[i] || 0;
+                const previousCount = previousFreq[i] || 0;
+                const trend = recentCount - previousCount;
+                scores[i] += trend * 15; // בונוס למגמה עולה
+            }
+            
+            // 2. ניתוח פער - מספרים שלא הופיעו זמן רב אבל היסטורית חזקים
+            const lastAppearance = {};
+            rawData.forEach((row, idx) => {
+                (row.numbers || []).forEach(num => {
+                    if (!isNaN(num) && num >= 1 && num <= 37 && lastAppearance[num] === undefined) lastAppearance[num] = idx;
+                });
+            });
+            
+            // מספרים שלא הופיעו 10+ הגרלות מקבלים בונוס
+            for (let i = 1; i <= 37; i++) {
+                const gap = lastAppearance[i] || rawData.length;
+                if (gap >= 10 && gap <= 25) {
+                    scores[i] += 10; // "בשל" להופעה
+                }
+            }
+            
+            // 3. בונוס מתדירות כללית
+            mainStats.forEach((stat, idx) => {
+                scores[stat.number] += Math.max(0, 20 - idx); // המובילים מקבלים בונוס
+            });
+            
+            // 4. "מומנטום" - מספרים שהופיעו ב-5 אחרונות
+            const last5 = rawData.slice(0, Math.min(5, rawData.length));
+            last5.forEach(row => {
+                (row.numbers || []).forEach(num => {
+                    if (!isNaN(num)) scores[num] = (scores[num] || 0) + 8;
+                });
+            });
+            
+            // מיין לפי ציון ובחר 6 מובילים
+            const sorted = Object.entries(scores)
+                .map(([num, score]) => ({ number: parseInt(num), score }))
+                .sort((a, b) => b.score - a.score);
+            
+            const nums = sorted.slice(0, 6);
+            const strongNum = strongHot[0]?.number || 1;
+            
+            return createCombo(nums, strongNum, comboNum, '📈 ניתוח מגמות');
+        }
+        
+        // קומבינציה בלתי צפויה - מעורבב עם חזרות קבועות ומספר חזק שונה מהאחרון
+        function generateUnpredictableCombo(hot, medium, cold, pairs, triplets, strongHot, strongMedium, strongCold, rawData, comboNum) {
+            const result = new Set();
+            
+            // קח מספרים מזוג חוזר מוביל (דטרמיניסטי - הראשון)
+            if (pairs.length > 0) {
+                const pairNums = pairs[0]?.pair.split('-').map(n => parseInt(n)) || [];
+                pairNums.forEach(n => result.add(n));
+            }
+            
+            // קח מספר משלישייה חוזרת מובילה (השנייה להימנע מכפילות)
+            if (triplets.length > 1) {
+                const tripletNums = triplets[1]?.triplet.split('-').map(n => parseInt(n)) || [];
+                // קח רק מספר אחד או שניים מהשלישייה
+                tripletNums.slice(0, 2).forEach(n => result.add(n));
+            } else if (triplets.length > 0) {
+                const tripletNums = triplets[0]?.triplet.split('-').map(n => parseInt(n)) || [];
+                tripletNums.slice(0, 2).forEach(n => result.add(n));
+            }
+            
+            // השלם מ-hot, medium, cold לפי סדר (דטרמיניסטי)
+            const fillOrder = [...hot.slice(0, 3), ...medium.slice(0, 2), ...cold.slice(0, 2)];
+            for (const item of fillOrder) {
+                if (result.size >= 6) break;
+                if (!result.has(item.number)) result.add(item.number);
+            }
+            
+            // מספר חזק שונה מההגרלה האחרונה
+            let lastStrong = null;
+            if (rawData && rawData.length > 0) {
+                lastStrong = rawData[0].strong;
+            }
+            
+            // בחר מספר חזק שונה מהאחרון (דטרמיניסטי - הראשון שעונה על התנאי)
+            const allStrong = [...strongHot, ...strongMedium, ...strongCold];
+            const differentStrong = allStrong.filter(s => s.number !== lastStrong);
+            const strongNum = differentStrong.length > 0 
+                ? differentStrong[0]?.number 
+                : (allStrong[0]?.number || 1);
+            
+            const nums = [...result].slice(0, 6).map(n => ({ number: n }));
+            
+            return createCombo(nums, strongNum, comboNum, '🎲 בלתי צפוי (חזק ≠ אחרון)');
+        }
+        
+        // קומבינציה מבוססת רביעיות + שלישיות עם חפיפה
+        function generateQuartetTripletOverlapCombo(quartets, triplets, hot, strongHot, comboNum) {
+            const result = new Set();
+            
+            // קח את הרביעייה המובילה
+            const topQuartet = quartets[0]?.quartet.split('-').map(n => parseInt(n)) || [];
+            topQuartet.forEach(n => result.add(n));
+            
+            // קח את השלישייה המובילה
+            const topTriplet = triplets[0]?.triplet.split('-').map(n => parseInt(n)) || [];
+            topTriplet.forEach(n => result.add(n));
+            
+            // מצא חפיפה - מספרים שמופיעים גם ברביעייה וגם בשלישייה
+            const overlap = topQuartet.filter(n => topTriplet.includes(n));
+            
+            // אם יש יותר מ-6 מספרים, העדף את החופפים ואז את השאר
+            if (result.size > 6) {
+                const prioritized = [...overlap]; // המספרים החופפים בראש
+                const remaining = [...result].filter(n => !overlap.includes(n));
+                const final = [...prioritized, ...remaining].slice(0, 6);
+                result.clear();
+                final.forEach(n => result.add(n));
+            }
+            
+            // אם אין מספיק מספרים, השלם מהשלישיות והרביעיות הבאות
+            let idx = 1;
+            while (result.size < 6 && idx < Math.min(5, quartets.length)) {
+                const nextQuartet = quartets[idx]?.quartet.split('-').map(n => parseInt(n)) || [];
+                nextQuartet.forEach(n => {
+                    if (result.size < 6) result.add(n);
+                });
+                idx++;
+            }
+            
+            // עדיין לא מספיק? קח מהחמים
+            while (result.size < 6 && hot.length > 0) {
+                const hotNum = hot[result.size % hot.length]?.number;
+                if (hotNum && !result.has(hotNum)) result.add(hotNum);
+                else break;
+            }
+            
+            const nums = [...result].slice(0, 6).map(n => ({ number: n }));
+            const strongNum = strongHot[0]?.number || 1;
+            
+            return createCombo(nums, strongNum, comboNum, '🔗 רביעיות+שלישיות (חפיפה)');
+        }
+        
+        function generateAICombo(hot, medium, cold, strongHot, mainStats, rawData, num, strategy) {
+            const scores = {};
+            
+            mainStats.forEach(stat => {
+                scores[stat.number] = stat.count * 2; // Base score from frequency
+            });
+            
+            // Boost from recent appearances
+            const recent = rawData.slice(0, Math.min(5, rawData.length));
+            recent.forEach(row => {
+                (row.numbers || []).forEach(n => {
+                    if (!isNaN(n)) scores[n] = (scores[n] || 0) + 5;
+                });
+            });
+            
+            const sortedByScore = Object.entries(scores)
+                .map(([num, score]) => ({ number: parseInt(num), score }))
+                .sort((a, b) => b.score - a.score);
+            
+            const nums = sortedByScore.slice(0, 6);
+            
+            return createCombo(nums, pickRandom(strongHot, 1)[0]?.number || 1, num, strategy);
+        }
+        
+        function createCombo(nums, strongNum, id, strategy) {
+            return {
+                comboNum: id,
+                strategy,
+                numbers: nums.map(n => n.number).sort((a, b) => a - b).slice(0, 6),
+                strong: strongNum
+            };
+        }
+        
+        // בחירה דטרמיניסטית - תמיד לוקח את הראשונים (לפי תדירות)
+        function pickTop(arr, count) {
+            if (!arr || arr.length === 0) return [];
+            return arr.slice(0, Math.min(count, arr.length));
+        }
+        
+        // בחירה עם אופסט - לוקח מספרים מאמצע הרשימה
+        function pickOffset(arr, count, offset = 0) {
+            if (!arr || arr.length === 0) return [];
+            const start = Math.min(offset, arr.length - count);
+            return arr.slice(start, start + Math.min(count, arr.length));
+        }
+        
+        // שמירת תאימות - pickRandom עכשיו דטרמיניסטי
+        function pickRandom(arr, count) {
+            return pickTop(arr, count);
+        }
+        
+        function displayResults(analysis) {
+            // קבע את הודעת הטווח
+            const rowSelection = document.getElementById('rowSelection').value.trim();
+            const rangeInfo = rowSelection ? 
+                `${analysis.totalDraws} מתוך ${currentData.length}` : 
+                `${analysis.totalDraws}`;
+            
+            // Statistics
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="stat-box">
+                    <div class="stat-label">🎯 שורות שנותחו</div>
+                    <div class="stat-value">${rangeInfo}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">🔥 מספר הכי חם</div>
+                    <div class="stat-value">${analysis.hot[0]?.number || '-'}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">📊 תדירות</div>
+                    <div class="stat-value">${analysis.hot[0]?.percentage || 0}%</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">🔗 זוגות ייחודיים</div>
+                    <div class="stat-value">${analysis.pairs.length}</div>
+                </div>
+            `;
+            if (dataFormat.hasDrawDate && currentData && currentData.length > 0) {
+                var first = currentData[0];
+                var last = currentData[currentData.length - 1];
+                var drawRange = (first.drawNumber != null && last.drawNumber != null) ? ' הגרלה #' + first.drawNumber + ' – #' + last.drawNumber : '';
+                var dateRange = (first.date != null && last.date != null) ? ' תאריכים: ' + first.date + ' – ' + last.date : '';
+                if (drawRange || dateRange) {
+                    var extra = document.getElementById('statsDrawDateRange');
+                    if (!extra) {
+                        extra = document.createElement('div');
+                        extra.id = 'statsDrawDateRange';
+                        extra.style.cssText = 'margin-top:12px;font-size:14px;color:#666;';
+                        document.getElementById('statsCard').appendChild(extra);
+                    }
+                    extra.textContent = (drawRange + dateRange).replace(/^\s+/, '');
+                    extra.style.display = 'block';
+                }
+            } else {
+                var hide = document.getElementById('statsDrawDateRange');
+                if (hide) hide.style.display = 'none';
+            }
+            
+            // Numbers
+            document.getElementById('hotNumbers').innerHTML = analysis.hot.slice(0, 10)
+                .map(n => `<span class="number-badge hot">${n.number} (${n.percentage}%)</span>`).join('');
+            
+            document.getElementById('mediumNumbers').innerHTML = analysis.medium.slice(0, 10)
+                .map(n => `<span class="number-badge medium">${n.number} (${n.percentage}%)</span>`).join('');
+            
+            document.getElementById('coldNumbers').innerHTML = analysis.cold.slice(0, 10)
+                .map(n => `<span class="number-badge cold">${n.number} (${n.percentage}%)</span>`).join('');
+            
+            // Pairs
+            document.getElementById('pairsTable').innerHTML = analysis.pairs.slice(0, 10)
+                .map((p, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td><strong>${p.pair}</strong></td>
+                        <td>${p.count}</td>
+                        <td>${p.percentage}%</td>
+                    </tr>
+                `).join('');
+            
+            // Triplets
+            document.getElementById('tripletsTable').innerHTML = analysis.triplets.slice(0, 10)
+                .map((t, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td><strong>${t.triplet}</strong></td>
+                        <td>${t.count}</td>
+                        <td>${t.percentage}%</td>
+                    </tr>
+                `).join('');
+            
+            // Quartets
+            document.getElementById('quartetsTable').innerHTML = analysis.quartets.slice(0, 10)
+                .map((q, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td><strong>${q.quartet}</strong></td>
+                        <td>${q.count}</td>
+                        <td>${q.percentage}%</td>
+                    </tr>
+                `).join('');
+            
+            // הצג הודעות על הגבלות
+            const tripletNote = document.getElementById('tripletLimitNote');
+            if (analysis.totalDraws > 100) {
+                tripletNote.style.display = 'block';
+            } else {
+                tripletNote.style.display = 'none';
+            }
+            
+            const quartetNote = document.getElementById('quartetLimitNote');
+            if (analysis.totalDraws > 50) {
+                quartetNote.style.display = 'block';
+            } else {
+                quartetNote.style.display = 'none';
+            }
+            
+            // Combinations
+            const combosHtml = analysis.combinations.map((combo, index) => `
+                <div class="combo-card">
+                    <div class="combo-title">${combo.strategy}</div>
+                    <div class="combo-numbers">
+                        ${combo.numbers.map(n => `<div class="combo-number">${n}</div>`).join('')}
+                    </div>
+                    <div class="combo-strong">
+                        <div>💪 מספר חזק:</div>
+                        <div class="combo-strong-number">${combo.strong}</div>
+                    </div>
+                    <div class="combo-buttons">
+                        <button class="transfer-btn" onclick="sendToForm(${index})">📝 שלח לטופס</button>
+                        <button class="copy-btn" onclick="copyCombo(${index})">📋 העתק</button>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.getElementById('combinations').innerHTML = combosHtml;
+            document.getElementById('saveCombosBtn').disabled = false;
+            
+            var form2 = (analysis.combinationsForm2 || currentCombinationsForm2 || []);
+            var form2Html = form2.map(function(combo, index) {
+                return '<div class="combo-card">' +
+                    '<div class="combo-title">' + (combo.strategy || (index + 1)) + '</div>' +
+                    '<div class="combo-numbers">' + (combo.numbers || []).map(function(n) { return '<div class="combo-number">' + n + '</div>'; }).join('') + '</div>' +
+                    '<div class="combo-strong"><div>💪 מספר חזק:</div><div class="combo-strong-number">' + (combo.strong != null ? combo.strong : '') + '</div></div>' +
+                    '<div class="combo-buttons">' +
+                    '<button class="transfer-btn" onclick="sendToForm2(' + index + ')">📝 שלח לטופס</button>' +
+                    '<button class="copy-btn" onclick="copyCombo2(' + index + ')">📋 העתק</button>' +
+                    '</div></div>';
+            }).join('');
+            document.getElementById('combinationsForm2').innerHTML = form2Html;
+        }
+        
+        async function saveCombosOnly() {
+            if (!currentCombinations || currentCombinations.length === 0) { alert('אין קומבינציות לשמירה. הרץ ניתוח קודם.'); return; }
+            const name = prompt('שם לשמירה (אופציונלי):', '14 קומבינציות ' + new Date().toLocaleDateString('he-IL'));
+            const exportData = {
+                version: 1,
+                type: 'combos_only',
+                savedAt: new Date().toISOString(),
+                name: (name && name.trim()) || ('14 קומבינציות ' + new Date().toLocaleDateString('he-IL')),
+                combinations: currentCombinations.map(c => ({ strategy: c.strategy, numbers: c.numbers, strong: c.strong }))
+            };
+            const jsonStr = JSON.stringify(exportData, null, 2);
+            const defaultName = 'lotto_14_combos_' + new Date().toISOString().slice(0, 10) + '.json';
+            try {
+                if ('showSaveFilePicker' in window) {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: defaultName,
+                        types: [{ description: 'קובץ קומבינציות JSON', accept: { 'application/json': ['.json'] } }]
+                    });
+                    const w = await handle.createWritable();
+                    await w.write(jsonStr);
+                    await w.close();
+                    return;
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+            }
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = defaultName;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+        
+        function loadAnalysisForCompare(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    const hasCombos = data.combinations && Array.isArray(data.combinations) && data.combinations.length > 0;
+                    if (!hasCombos) { alert('קובץ לא תקין: חסרים קומבינציות.'); return; }
+                    savedAnalysis = data;
+                    document.getElementById('loadAnalysisInput').value = '';
+                    if (!currentData || currentData.length === 0) {
+                        alert('⚠️ טען קובץ Excel של הגרלות ולחץ "נתח עכשיו" כדי שנוכל להשוות את הקומבינציות השמורות מול הגרלות בפועל.');
+                        return;
+                    }
+                    // ברירת מחדל: השווה להגרלה האחרונה (שורה 1)
+                    document.getElementById('savedCompareRowInput').value = '1';
+                    document.getElementById('savedCompareRowInput').max = currentData.length;
+                    document.getElementById('savedCompareRangeInfo').textContent = '(טווח: 1-' + currentData.length + ')';
+                    renderSavedVsDrawComparison();
+                    document.getElementById('savedCompareCard').style.display = 'block';
+                    document.getElementById('navSavedCompare').style.display = 'inline-block';
+                    scrollToSection('savedCompareCard');
+                } catch (err) {
+                    alert('שגיאה בקריאת הקובץ: ' + err.message);
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function savedQuickCompare(rowNumber) {
+            document.getElementById('savedCompareRowInput').value = rowNumber;
+            renderSavedVsDrawComparison();
+        }
+
+        function renderSavedVsDrawComparison() {
+            const el = document.getElementById('savedCompareContent');
+            const metaEl = document.getElementById('savedCompareMeta');
+            const drawInfoEl = document.getElementById('savedCompareDrawInfo');
+            const summaryEl = document.getElementById('savedCompareSummary');
+
+            if (!savedAnalysis) {
+                el.innerHTML = '';
+                metaEl.textContent = '';
+                if (drawInfoEl) drawInfoEl.innerHTML = '';
+                if (summaryEl) { summaryEl.innerHTML = ''; summaryEl.style.display = 'none'; }
+                return;
+            }
+
+            metaEl.textContent = '📁 ' + (savedAnalysis.name || 'ללא שם') + (savedAnalysis.savedAt ? ' • נשמר: ' + new Date(savedAnalysis.savedAt).toLocaleString('he-IL') : '') + ' • ' + (savedAnalysis.combinations || []).length + ' קומבינציות';
+
+            const savedCombos = savedAnalysis.combinations || [];
+            if (savedCombos.length === 0) {
+                el.innerHTML = '<p style="color: var(--text-muted);">אין קומבינציות שמורות להשוואה.</p>';
+                return;
+            }
+
+            if (!currentData || currentData.length === 0) {
+                el.innerHTML = '<p style="color: var(--warning);">⚠️ טען קובץ Excel ולחץ "נתח עכשיו" כדי להשוות מול הגרלות.</p>';
+                return;
+            }
+
+            // קבל את שורת ההגרלה לפי הבחירה
+            const rowNumber = parseInt(document.getElementById('savedCompareRowInput').value) || 1;
+            if (rowNumber < 1 || rowNumber > currentData.length) {
+                alert('❌ שורה לא תקינה! בחר בין 1 ל-' + currentData.length);
+                return;
+            }
+            const drawRow = currentData[rowNumber - 1];
+            const drawNumbers = (drawRow.numbers || []).filter(n => !isNaN(n) && n >= 1 && n <= 37);
+            const drawStrong = drawRow.strong;
+
+            // תצוגת ההגרלה המשווה אליה
+            const rowLabel = rowNumber === 1 ? 'ההגרלה האחרונה' : ('הגרלה מלפני ' + (rowNumber - 1));
+            const drawNumLbl = (drawRow.drawNumber != null && drawRow.drawNumber !== '') ? ' • הגרלה #' + drawRow.drawNumber : '';
+            const dateLbl = (drawRow.date != null && drawRow.date !== '') ? ' • ' + drawRow.date : '';
+            drawInfoEl.innerHTML = `
+                <div style="font-weight: 700; font-size: 15px; margin-bottom: 8px; color: var(--text);">
+                    📋 ${rowLabel} <span style="color: var(--warning);">(שורה ${rowNumber})</span>${drawNumLbl}${dateLbl}
+                </div>
+                <div style="display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap; color: var(--text);">
+                    <strong style="font-size: 13px;">מספרים:</strong>
+                    ${drawNumbers.map(n => `<span class="number-badge hot" style="font-size: 13px; padding: 5px 10px;">${n}</span>`).join('')}
+                    <strong style="font-size: 13px; margin-right: 10px;">חזק:</strong>
+                    <span class="number-badge medium" style="font-size: 13px; padding: 5px 10px;">${drawStrong}</span>
+                </div>
+            `;
+
+            // חשב פגיעות לכל קומבינציה
+            const results = savedCombos.map((combo, idx) => {
+                const nums = combo.numbers || [];
+                const regularMatches = nums.filter(n => drawNumbers.includes(n)).length;
+                const strongMatch = combo.strong === drawStrong ? 1 : 0;
+                return { combo, idx, regularMatches, strongMatch };
+            });
+
+            // סטטיסטיקה מצטברת
+            const totalHits = results.reduce((s, r) => s + r.regularMatches, 0);
+            const totalStrong = results.reduce((s, r) => s + r.strongMatch, 0);
+            const maxPossible = savedCombos.length * 6;
+            const hitRate = ((totalHits / maxPossible) * 100).toFixed(1);
+            const bestCombo = results.slice().sort((a, b) => b.regularMatches - a.regularMatches || b.strongMatch - a.strongMatch)[0];
+            const countByHits = [0, 0, 0, 0, 0, 0, 0]; // index = hits count
+            results.forEach(r => { countByHits[r.regularMatches]++; });
+
+            summaryEl.style.display = 'block';
+            summaryEl.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
+                    <div class="stat-box" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3);">
+                        <div class="stat-label">🎯 סך פגיעות</div>
+                        <div class="stat-value" style="color: var(--success);">${totalHits}/${maxPossible}</div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${hitRate}%</div>
+                    </div>
+                    <div class="stat-box" style="background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.3);">
+                        <div class="stat-label">💪 חזק צדק</div>
+                        <div class="stat-value">${totalStrong}/${savedCombos.length}</div>
+                    </div>
+                    <div class="stat-box" style="background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3);">
+                        <div class="stat-label">🏆 טובה ביותר</div>
+                        <div class="stat-value" style="color: var(--warning);">${bestCombo.regularMatches}/6</div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">קומבינציה #${(bestCombo.combo.comboNum || bestCombo.idx + 1)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">📊 התפלגות פגיעות</div>
+                        <div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; margin-top: 4px;">
+                            ${countByHits.map((c, i) => c > 0 ? `<span style="font-size: 11px; padding: 3px 7px; border-radius: 4px; background: ${i >= 3 ? 'rgba(16,185,129,0.2)' : i === 2 ? 'rgba(245,158,11,0.2)' : 'var(--bg-elevated)'}; color: ${i >= 3 ? 'var(--success)' : i === 2 ? 'var(--warning)' : 'var(--text-muted)'};">${i}:${c}</span>` : '').join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // מיון לפי פגיעות
+            results.sort((a, b) => b.regularMatches - a.regularMatches || b.strongMatch - a.strongMatch);
+
+            // טבלת תוצאות
+            const rows = results.map((r, rank) => {
+                const medal = rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : String(rank + 1);
+                const rowBg = r.regularMatches >= 4 ? 'rgba(16, 185, 129, 0.22)'
+                            : r.regularMatches >= 3 ? 'rgba(16, 185, 129, 0.12)'
+                            : r.regularMatches >= 2 ? 'rgba(245, 158, 11, 0.12)'
+                            : 'transparent';
+                const matchColor = r.regularMatches >= 3 ? '#34d399' : r.regularMatches >= 2 ? '#fbbf24' : '#94a3b8';
+                const strongColor = r.strongMatch ? '#a78bfa' : '#475569';
+                const combo = r.combo;
+                const comboNum = combo.comboNum != null ? combo.comboNum : (r.idx + 1);
+                // סמן את המספרים שפגעו
+                const savedSet = new Set(drawNumbers);
+                const nums = (combo.numbers || []).map(n => savedSet.has(n)
+                    ? `<span style="background: rgba(16,185,129,0.35); color: #34d399; padding: 2px 6px; border-radius: 4px; font-weight: 800;">${n}</span>`
+                    : `<span style="color: var(--text-muted);">${n}</span>`).join(', ');
+                const strongCell = combo.strong == null ? '—'
+                    : r.strongMatch
+                        ? `<span style="background: rgba(139,92,246,0.35); color: #a78bfa; padding: 2px 6px; border-radius: 4px; font-weight: 800;">${combo.strong}</span>`
+                        : `<span style="color: var(--text-muted);">${combo.strong}</span>`;
+                return `<tr style="background: ${rowBg};">
+                    <td style="font-weight: 700; font-size: 18px; color: var(--text);">${medal}</td>
+                    <td style="font-weight: 700; color: var(--text);">#${comboNum}</td>
+                    <td style="font-size: 12px; color: var(--text);">${combo.strategy || '—'}</td>
+                    <td style="font-size: 13px; color: var(--text); direction: ltr;">${nums}</td>
+                    <td style="font-size: 14px;">${strongCell}</td>
+                    <td style="font-size: 18px; font-weight: 800; color: ${matchColor};">${r.regularMatches}/6</td>
+                    <td style="font-size: 16px; font-weight: 700; color: ${strongColor};">${r.strongMatch ? '✅' : '❌'}</td>
+                </tr>`;
+            }).join('');
+
+            el.innerHTML = '<div style="overflow-x: auto;">' +
+                '<table class="numbers-table">' +
+                '<thead><tr><th>דירוג</th><th>#</th><th>אסטרטגיה</th><th>מספרים</th><th>חזק</th><th>פגיעות</th><th>חזק</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table></div>';
+        }
+
+        // שם ישן - מופנה לפונקציה החדשה (עבור compatibility)
+        function renderSavedVsCurrentComparison() {
+            renderSavedVsDrawComparison();
+        }
+
+        function clearSavedComparison() {
+            savedAnalysis = null;
+            document.getElementById('savedCompareCard').style.display = 'none';
+            document.getElementById('navSavedCompare').style.display = 'none';
+            document.getElementById('savedCompareContent').innerHTML = '';
+            document.getElementById('savedCompareMeta').textContent = '';
+            var drawInfo = document.getElementById('savedCompareDrawInfo');
+            if (drawInfo) drawInfo.innerHTML = '';
+            var summary = document.getElementById('savedCompareSummary');
+            if (summary) { summary.innerHTML = ''; summary.style.display = 'none'; }
+        }
+        
+        function sendToForm(index) {
+            const combo = currentCombinations[index];
+            if (!combo) return;
+            
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'TRANSFER_TO_FORM',
+                    numbers: combo.numbers,
+                    strong: combo.strong
+                }, '*');
+            } else {
+                localStorage.setItem('lottoTransfer', JSON.stringify({
+                    numbers: combo.numbers,
+                    strong: combo.strong,
+                    timestamp: Date.now()
+                }));
+                alert('✅ הקומבינציה נשמרה!');
+            }
+        }
+        
+        function copyCombo(index) {
+            const combo = currentCombinations[index];
+            if (!combo) return;
+            
+            const text = `${combo.numbers.join(', ')} + חזק: ${combo.strong}`;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ הקומבינציה הועתקה ללוח!');
+            });
+        }
+        
+        function sendAllToForm() {
+            if (!currentCombinations || currentCombinations.length === 0) {
+                alert('❌ אנא נתח קובץ תחילה!');
+                return;
+            }
+            
+            const combos = currentCombinations.slice(0, 14);
+            
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'FILL_ALL_TABLES',
+                    combinations: combos
+                }, '*');
+                alert(`✅ ${combos.length} קומבינציות נשלחו לטופס!`);
+            } else {
+                localStorage.setItem('lottoFillAll', JSON.stringify({
+                    combinations: combos,
+                    timestamp: Date.now()
+                }));
+                alert('✅ הקומבינציות נשמרו!');
+            }
+        }
+        
+        function sendToForm2(index) {
+            var combo = currentCombinationsForm2[index];
+            if (!combo) return;
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'TRANSFER_TO_FORM',
+                    numbers: combo.numbers,
+                    strong: combo.strong
+                }, '*');
+            } else {
+                localStorage.setItem('lottoTransfer', JSON.stringify({
+                    numbers: combo.numbers,
+                    strong: combo.strong,
+                    timestamp: Date.now()
+                }));
+                alert('✅ הקומבינציה נשמרה!');
+            }
+        }
+        
+        function copyCombo2(index) {
+            var combo = currentCombinationsForm2[index];
+            if (!combo) return;
+            var text = (combo.numbers || []).join(', ') + ' + חזק: ' + (combo.strong != null ? combo.strong : '');
+            navigator.clipboard.writeText(text).then(function() { alert('✅ הקומבינציה הועתקה ללוח!'); });
+        }
+        
+        function sendAllToForm2() {
+            if (!currentCombinationsForm2 || currentCombinationsForm2.length === 0) {
+                alert('❌ אנא נתח קובץ תחילה!');
+                return;
+            }
+            var combos = currentCombinationsForm2.slice(0, 14);
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'FILL_ALL_TABLES',
+                    combinations: combos
+                }, '*');
+                alert('✅ ' + combos.length + ' קומבינציות (טופס אחר) נשלחו לטופס!');
+            } else {
+                localStorage.setItem('lottoFillAll', JSON.stringify({
+                    combinations: combos,
+                    timestamp: Date.now(),
+                    source: 'form2'
+                }));
+                alert('✅ הקומבינציות נשמרו!');
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = '❌ ' + message;
+            errorDiv.style.display = 'block';
+        }
+        
+        // ========== ניווט ==========
+        function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+        
+        // ========== השוואה ==========
+        var compareTwoLastRows = false;
+        
+        function toggleTwoLastRows() {
+            compareTwoLastRows = !compareTwoLastRows;
+            var btn = document.getElementById('twoLastRowsBtn');
+            if (btn) btn.style.background = compareTwoLastRows ? 'white' : 'rgba(255,255,255,0.2)';
+            if (btn) btn.style.color = compareTwoLastRows ? '#f57c00' : 'white';
+            if (compareTwoLastRows) document.getElementById('comparisonRowInput').value = '1';
+            updateComparison();
+        }
+        
+        function setCompareFormAndUpdate(source) {
+            comparisonFormSource = source;
+            var btn1 = document.getElementById('compareForm1Btn');
+            var btn2 = document.getElementById('compareForm2Btn');
+            if (btn1 && btn2) {
+                if (source === 'main') {
+                    btn1.style.background = 'white';
+                    btn1.style.color = '#e65100';
+                    btn1.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+                    btn2.style.background = 'rgba(255,255,255,0.9)';
+                    btn2.style.color = '#d35400';
+                    btn2.style.boxShadow = 'none';
+                } else {
+                    btn2.style.background = 'white';
+                    btn2.style.color = '#e65100';
+                    btn2.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+                    btn1.style.background = 'rgba(255,255,255,0.9)';
+                    btn1.style.color = '#d35400';
+                    btn1.style.boxShadow = 'none';
+                }
+            }
+            updateComparison();
+        }
+        
+        function quickCompare(rowNumber) {
+            compareTwoLastRows = false;
+            var btn = document.getElementById('twoLastRowsBtn');
+            if (btn) { btn.style.background = 'rgba(255,255,255,0.2)'; btn.style.color = 'white'; }
+            document.getElementById('comparisonRowInput').value = rowNumber;
+            updateComparison();
+        }
+        
+        function buildOneComparison(combosToUse, drawRow, rowNumber, formLabel) {
+            const drawNumbers = (drawRow.numbers || []).filter(n => !isNaN(n) && n >= 1 && n <= 37);
+            const drawStrong = drawRow.strong;
+            var drawNumLabel = (drawRow.drawNumber != null && drawRow.drawNumber !== '') ? ' • הגרלה #' + drawRow.drawNumber : '';
+            var dateLabel = (drawRow.date != null && drawRow.date !== '') ? ' • ' + drawRow.date : '';
+            const rowLabel = rowNumber === 1 ? 'ההגרלה האחרונה' : `הגרלה מלפני ${rowNumber - 1}`;
+            var infoHtml = `
+                <div style="font-weight: 700; font-size: 16px; margin-bottom: 8px; color: var(--text);">
+                    📋 ${rowLabel} <span style="color: var(--warning);">(שורה ${rowNumber})</span>${drawNumLabel}${dateLabel}
+                </div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">${formLabel}</div>
+                <div style="display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; color: var(--text);">
+                    <strong>מספרים:</strong>
+                    ${drawNumbers.map(n => `<span class="number-badge hot" style="font-size: 14px; padding: 6px 12px;">${n}</span>`).join('')}
+                    <strong style="margin-right: 15px;">חזק:</strong>
+                    <span class="number-badge medium" style="font-size: 14px; padding: 6px 12px;">${drawStrong}</span>
+                </div>
+            `;
+            const results = combosToUse.map((combo) => {
+                const regularMatches = combo.numbers.filter(n => drawNumbers.includes(n)).length;
+                const strongMatch = combo.strong === drawStrong ? 1 : 0;
+                return { combo, regularMatches, strongMatch };
+            });
+            results.sort((a, b) => {
+                if (b.regularMatches !== a.regularMatches) return b.regularMatches - a.regularMatches;
+                return b.strongMatch - a.strongMatch;
+            });
+            const tableHtml = results.map((result, rank) => {
+                const { combo, regularMatches, strongMatch } = result;
+                const medal = rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : `${rank + 1}`;
+                // רקעים דינמיים מותאמים לDark theme
+                const rowBg = regularMatches >= 4 ? 'rgba(16, 185, 129, 0.22)'
+                           : regularMatches >= 3 ? 'rgba(16, 185, 129, 0.12)'
+                           : regularMatches >= 2 ? 'rgba(245, 158, 11, 0.12)'
+                           : 'transparent';
+                const matchColor = regularMatches >= 3 ? '#34d399' : regularMatches >= 2 ? '#fbbf24' : '#94a3b8';
+                const strongColor = strongMatch ? '#a78bfa' : '#475569';
+                const comboNum = combo.comboNum != null ? combo.comboNum : (rank + 1);
+                return `<tr style="background: ${rowBg};"><td style="font-weight: 700; font-size: 18px; color: var(--text);">${medal}</td><td style="font-weight: 700; color: var(--text);">#${comboNum}</td><td style="font-size: 13px; color: var(--text);">${combo.strategy}</td><td style="font-size: 20px; font-weight: 800; color: ${matchColor};">${regularMatches}/6</td><td style="font-size: 18px; font-weight: 700; color: ${strongColor};">${strongMatch ? '✅' : '❌'}</td></tr>`;
+            }).join('');
+            return { infoHtml, tableHtml };
+        }
+        
+        function updateComparison() {
+            var combosToUse = comparisonFormSource === 'form2' ? (currentCombinationsForm2 || []) : (currentCombinations || []);
+            if (!currentData || !combosToUse.length) {
+                alert('❌ אנא נתח קובץ תחילה!');
+                return;
+            }
+            var formLabel = comparisonFormSource === 'form2' ? '📋 טופס שני (1–14)' : '✨ טופס ראשון (14 מומלצות)';
+            var secondBlock = document.getElementById('comparisonSecondBlock');
+            if (compareTwoLastRows && currentData.length >= 2) {
+                secondBlock.style.display = 'block';
+                var r1 = buildOneComparison(combosToUse, currentData[0], 1, formLabel);
+                var r2 = buildOneComparison(combosToUse, currentData[1], 2, formLabel);
+                document.getElementById('comparisonInfo').innerHTML = r1.infoHtml;
+                document.getElementById('comparisonTable').innerHTML = r1.tableHtml;
+                document.getElementById('comparisonInfo2').innerHTML = r2.infoHtml;
+                document.getElementById('comparisonTable2').innerHTML = r2.tableHtml;
+            } else {
+                secondBlock.style.display = 'none';
+                const rowNumber = parseInt(document.getElementById('comparisonRowInput').value);
+                if (isNaN(rowNumber) || rowNumber < 1 || rowNumber > currentData.length) {
+                    alert(`❌ מספר שורה לא תקין!\nהזן מספר בין 1 ל-${currentData.length}`);
+                    return;
+                }
+                var res = buildOneComparison(combosToUse, currentData[rowNumber - 1], rowNumber, formLabel);
+                document.getElementById('comparisonInfo').innerHTML = res.infoHtml;
+                document.getElementById('comparisonTable').innerHTML = res.tableHtml;
+            }
+            document.getElementById('comparisonInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    </script>
+</body>
+</html>
