@@ -13,6 +13,13 @@ backup_2025-02-18/
 *.py
 requirements.txt
 
+# Tracked automatic-results updater and its tests
+!scripts/__init__.py
+!scripts/update_lotto_results.py
+!tests/test_update_lotto_results.py
+__pycache__/
+*.pyc
+
 # Older HTML versions not included in the first LottoAmir publish
 Lottery_Numbers_Picker_Updated_V35.html
 Lottery_V38_Manual_Fixed.html

@@ -18,6 +18,8 @@
 - Keep exactly nine columns, no header, and preserve the worksheet name.
 - Never replace `NUMBERS.xlsx` before complete validation and reopen verification.
 - Do not modify the workbook when normalized content is unchanged.
+- Block automatic changes to every draw already present in the workbook.
+- Always update `main` and verify that Pages successfully built the exact latest commit.
 - Do not alter analyzer, PIN, or combination behavior.
 
 ---
@@ -140,15 +142,15 @@ Add `openpyxl==3.1.5` to `.github/requirements-lotto-update.txt`.
 
 - [ ] **Step 2: Add scheduled and manual triggers**
 
-Configure `schedule` with `17 */6 * * *`, `workflow_dispatch`, `contents: write`, one concurrency group, Ubuntu, Python 3.12, and a ten-minute timeout.
+Configure `schedule` with `17 */6 * * *`, `workflow_dispatch`, `contents: write`, `pages: write`, one concurrency group, Ubuntu, Python 3.12, and a ten-minute timeout.
 
 - [ ] **Step 3: Add test, update, and conditional commit steps**
 
-Install the pinned requirement, run the Python test module, run the updater, detect a `NUMBERS.xlsx` diff, and commit as `github-actions[bot]` only when changed.
+Install the pinned requirement, run the Python test module, run the updater, detect a `NUMBERS.xlsx` diff, and commit as `github-actions[bot]` only when changed. Check out and push `main` explicitly. Because a commit made with `GITHUB_TOKEN` does not trigger Pages automatically, compare the latest Pages build with `HEAD`, request `POST /repos/{owner}/{repo}/pages/builds` when needed, and poll until that exact commit reports `built`.
 
 - [ ] **Step 4: Validate workflow structure locally**
 
-Parse the YAML with an available structured parser and assert the schedule, manual trigger, permissions, test command, updater command, and conditional commit are present.
+Run the local workflow contract test and let GitHub parse the complete YAML after push. Assert the schedule, manual trigger, permissions, test command, updater command, conditional commit, and explicit Pages build request are present.
 
 ---
 

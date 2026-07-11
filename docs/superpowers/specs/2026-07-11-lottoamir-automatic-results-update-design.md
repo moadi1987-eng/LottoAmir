@@ -30,8 +30,11 @@ No workbook is written unless all checks pass:
 - The downloaded range is not shorter than the existing populated range.
 - The downloaded newest draw is not older than the workbook's newest draw.
 - Draw numbers are unique.
+- Every overlapping official row exactly matches the existing workbook history.
 
 Any download, decoding, parsing, validation, or write failure exits unsuccessfully and leaves the existing workbook untouched.
+
+Historical rows are never changed automatically, even when replacement values look valid. A source correction therefore fails visibly and requires a reviewed manual change instead of silently rewriting prior results.
 
 ## Workbook Output
 The updater writes exactly nine columns with no header:
@@ -58,10 +61,11 @@ A GitHub Actions workflow runs every six hours and can also be started manually.
 3. Runs the updater unit tests.
 4. Runs the updater against the official CSV.
 5. Commits and pushes `NUMBERS.xlsx` only when the file changed.
+6. Ensures the latest `main` commit has a successful GitHub Pages build, requesting and polling a build when necessary.
 
-The workflow receives only `contents: write` permission. A concurrency group prevents two updater runs from writing simultaneously. A failed run does not commit anything.
+The workflow receives `contents: write` and `pages: write` permissions. A concurrency group prevents two updater runs from writing simultaneously. A failed run does not commit anything.
 
-GitHub Pages already deploys changes from the repository. `lotto_analyzer.html` fetches `NUMBERS.xlsx` with `cache: 'no-store'`, so a refreshed site reads the new draw after Pages deployment.
+The workflow always checks out and pushes `main`, including manual runs. Commits pushed with a workflow `GITHUB_TOKEN` do not trigger another workflow or a Pages build, so the updater calls the Pages build endpoint when the latest commit is not already deployed and polls until that exact commit is built. This check also retries a previously failed deployment when the workbook has no new change. `lotto_analyzer.html` fetches `NUMBERS.xlsx` with `cache: 'no-store'`, so a refreshed site reads the new draw after that deployment.
 
 ## PIN Behavior
 PIN records remain browser-local snapshots. Updating `NUMBERS.xlsx` does not regenerate or alter pinned combinations. Once the site reloads the new workbook, future-comparison logic sees draws whose draw number is greater than the PIN anchor.
