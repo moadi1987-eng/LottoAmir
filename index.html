@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LottoAmir - מרכז הכלים ללוטו PRO V41, ALL-IN-ONE וניתוח תוצאות.">
+  <title>LottoAmir</title>
+  <style>
+    :root {
+      --page: #f7f9fb;
+      --surface: #ffffff;
+      --surface-soft: #eef6f5;
+      --text: #172033;
+      --muted: #5f6f85;
+      --border: #dbe3ea;
+      --teal: #0f766e;
+      --teal-dark: #115e59;
+      --gold: #b7791f;
+      --blue: #2563eb;
+      --danger: #b42318;
+      --shadow: 0 18px 45px rgba(23, 32, 51, 0.11);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Assistant", "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 30rem),
+        linear-gradient(180deg, #ffffff 0%, var(--page) 44%, #edf2f7 100%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .site-shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 34px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 56px;
+      margin-bottom: 42px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      color: #ffffff;
+      background: linear-gradient(135deg, var(--teal), #1d4ed8);
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: 0 10px 24px rgba(15, 118, 110, 0.24);
+      flex: 0 0 auto;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.1;
+      font-weight: 800;
+    }
+
+    .brand-caption {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 8px 13px;
+      border: 1px solid rgba(15, 118, 110, 0.25);
+      border-radius: 999px;
+      color: var(--teal-dark);
+      background: rgba(238, 246, 245, 0.82);
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.04fr 0.96fr;
+      gap: 26px;
+      align-items: stretch;
+      margin-bottom: 26px;
+    }
+
+    .intro {
+      padding: 34px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--teal-dark);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 680px;
+      font-size: 46px;
+      line-height: 1.08;
+      font-weight: 850;
+    }
+
+    .lead {
+      margin: 18px 0 0;
+      max-width: 660px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.75;
+      font-weight: 500;
+    }
+
+    .primary-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 800;
+      transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    }
+
+    .button:hover,
+    .tool-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .button-primary {
+      color: #ffffff;
+      background: var(--teal);
+      box-shadow: 0 14px 28px rgba(15, 118, 110, 0.22);
+    }
+
+    .button-secondary {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: #ffffff;
+    }
+
+    .main-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      padding: 30px;
+      overflow: hidden;
+      border: 1px solid rgba(15, 118, 110, 0.25);
+      border-radius: 8px;
+      background:
+        linear-gradient(150deg, rgba(15, 118, 110, 0.14), transparent 48%),
+        var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .main-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 6px;
+      background: linear-gradient(90deg, var(--teal), var(--blue), var(--gold));
+    }
+
+    .card-label {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      min-height: 30px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: var(--teal-dark);
+      background: var(--surface-soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .main-card h2,
+    .tool-card h2 {
+      margin: 18px 0 0;
+      font-size: 27px;
+      line-height: 1.22;
+    }
+
+    .main-card p,
+    .tool-card p {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .main-card .button {
+      width: fit-content;
+      margin-top: auto;
+    }
+
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .tool-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 250px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 12px 30px rgba(23, 32, 51, 0.08);
+      transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    }
+
+    .tool-card:hover {
+      border-color: rgba(15, 118, 110, 0.34);
+      box-shadow: 0 18px 38px rgba(23, 32, 51, 0.12);
+    }
+
+    .tool-card.primary {
+      border-color: rgba(15, 118, 110, 0.38);
+      background:
+        linear-gradient(180deg, rgba(238, 246, 245, 0.82), #ffffff 52%),
+        var(--surface);
+    }
+
+    .tool-card.allin .card-label {
+      color: #7c4a03;
+      background: #fff5dc;
+    }
+
+    .tool-card.analysis .card-label {
+      color: #1d4ed8;
+      background: #e8f0ff;
+    }
+
+    .tool-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 18px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tool-meta li {
+      min-height: 28px;
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: #fbfdff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tool-card .button {
+      width: 100%;
+      margin-top: auto;
+    }
+
+    .note {
+      margin: 20px 0 0;
+      padding: 14px 16px;
+      border: 1px solid #f5c2bd;
+      border-radius: 8px;
+      color: #7a271a;
+      background: #fff3f0;
+      font-size: 14px;
+      line-height: 1.6;
+      font-weight: 650;
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    @media (max-width: 920px) {
+      .hero,
+      .tool-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .main-card,
+      .tool-card {
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .site-shell {
+        width: min(100% - 22px, 1120px);
+        padding-top: 18px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        margin-bottom: 24px;
+      }
+
+      .intro,
+      .main-card,
+      .tool-card {
+        padding: 22px;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .lead {
+        font-size: 16px;
+      }
+
+      .primary-actions,
+      .button {
+        width: 100%;
+      }
+
+      .brand-name {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="site-shell">
+    <header class="topbar" aria-label="כותרת האתר">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">LA</div>
+        <div>
+          <p class="brand-name">LottoAmir</p>
+          <p class="brand-caption">מרכז הכלים האישי ללוטו</p>
+        </div>
+      </div>
+      <span class="status-pill">3 כלים מרכזיים</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="main-title">
+        <div class="intro">
+          <p class="eyebrow">גרסה ראשית, מילוי וניתוח במקום אחד</p>
+          <h1 id="main-title">LottoAmir מרכז את כלי הלוטו החשובים שלך</h1>
+          <p class="lead">
+            כניסה מהירה ל־V41, למערכת ALL-IN-ONE ולמנתח התוצאות. הכל נשאר כקבצי HTML נפרדים כדי לשמור על היציבות של כל כלי.
+          </p>
+          <div class="primary-actions" aria-label="פעולות ראשיות">
+            <a class="button button-primary" href="Lottery_V41_Final.html" aria-label="פתח את לוטו PRO V41">פתח V41</a>
+            <a class="button button-secondary" href="#tools">כל הכלים</a>
+          </div>
+        </div>
+
+        <a class="main-card" href="Lottery_V41_Final.html" aria-label="פתח את הכלי הראשי לוטו PRO V41">
+          <span class="card-label">הכלי הראשי</span>
+          <h2>לוטו PRO V41</h2>
+          <p>הגרסה האחרונה והמרכזית לבחירת מספרים, סימון ומילוי טופס.</p>
+          <ul class="tool-meta" aria-label="מאפייני V41">
+            <li>גרסה אחרונה</li>
+            <li>בחירה ידנית</li>
+            <li>שמירה מקומית</li>
+          </ul>
+          <span class="button button-primary">כניסה לכלי הראשי</span>
+        </a>
+      </section>
+
+      <section id="tools" class="tool-grid" aria-label="כלי LottoAmir">
+        <a class="tool-card primary" href="Lottery_V41_Final.html" aria-label="פתח לוטו PRO V41">
+          <span class="card-label">מומלץ</span>
+          <h2>לוטו PRO V41</h2>
+          <p>הכניסה הראשית לאתר והגרסה שתקבל את הדגש הראשון.</p>
+          <ul class="tool-meta">
+            <li>ראשי</li>
+            <li>V41</li>
+          </ul>
+          <span class="button button-primary">פתח V41</span>
+        </a>
+
+        <a class="tool-card allin" href="Lotto_All_In_One.html" aria-label="פתח את מערכת ALL-IN-ONE">
+          <span class="card-label">משולב</span>
+          <h2>ALL-IN-ONE</h2>
+          <p>כלי משולב למילוי ולניתוח בתוך תהליך עבודה אחד.</p>
+          <ul class="tool-meta">
+            <li>מילוי</li>
+            <li>ניתוח</li>
+          </ul>
+          <span class="button button-secondary">פתח ALL-IN-ONE</span>
+        </a>
+
+        <a class="tool-card analysis" href="lotto_analyzer.html" aria-label="פתח ניתוח תוצאות">
+          <span class="card-label">נתונים</span>
+          <h2>ניתוח תוצאות</h2>
+          <p>העלאת קובץ תוצאות ובדיקת נתונים, מגמות והשוואות.</p>
+          <ul class="tool-meta">
+            <li>Excel</li>
+            <li>השוואות</li>
+          </ul>
+          <span class="button button-secondary">פתח ניתוח</span>
+        </a>
+      </section>
+
+      <p class="note">
+        LottoAmir הוא כלי אישי לניתוח וסידור מידע. אין הבטחה לזכייה או לחיזוי תוצאות.
+      </p>
+    </main>
+
+    <footer>
+      LottoAmir - V41, ALL-IN-ONE וניתוח תוצאות
+    </footer>
+  </div>
+</body>
+</html>
