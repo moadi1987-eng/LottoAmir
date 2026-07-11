@@ -12,6 +12,8 @@
         :root {
             --app-height: 100vh;
             --header-height: 78px;
+            --rail-width: 104px;
+            --mobile-rail-height: 64px;
             --bg: #0b1120;
             --bg-elevated: #141d2f;
             --bg-card: #1a2439;
@@ -128,10 +130,14 @@
             flex-direction: column;
             gap: 14px;
             width: 100%;
-            max-width: 1600px;
+            max-width: none;
             height: calc(var(--app-height) - var(--header-height));
             margin: 0 auto;
             overflow: hidden;
+        }
+
+        body.shell-analyzer-active .content-wrapper {
+            padding-right: calc(var(--rail-width) + 16px);
         }
 
         /* ========== SECTION STYLING ========== */
@@ -191,6 +197,49 @@
             min-height: 0 !important;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
+        }
+
+        .analyzer-rail {
+            position: fixed;
+            top: calc(var(--header-height) + 12px);
+            right: 10px;
+            bottom: 12px;
+            width: var(--rail-width);
+            display: none;
+            flex-direction: column;
+            gap: 7px;
+            padding: 8px;
+            background: rgba(20, 29, 47, 0.92);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 10px 32px rgba(0,0,0,0.32);
+            z-index: 900;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        body.shell-analyzer-active .analyzer-rail {
+            display: flex;
+        }
+        .analyzer-rail-btn {
+            min-height: 40px;
+            padding: 7px 6px;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.15;
+            transition: all 0.15s;
+        }
+        .analyzer-rail-btn:hover,
+        .analyzer-rail-btn.active {
+            background: var(--accent);
+            border-color: var(--accent-hover);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-glow);
         }
 
         /* ========== NOTIFICATION ========== */
@@ -295,6 +344,10 @@
                 padding: 8px;
                 gap: 10px;
             }
+            body.shell-analyzer-active .content-wrapper {
+                padding-right: 8px;
+                padding-bottom: calc(var(--mobile-rail-height) + 8px);
+            }
             .section-container { padding: 7px; border-radius: 8px; scroll-margin-top: 118px; }
             .section-title { font-size: 12px; padding: 4px 8px 8px; margin-bottom: 8px; }
 
@@ -323,6 +376,31 @@
                 right: 14px;
                 font-size: 16px;
             }
+
+            .analyzer-rail {
+                top: auto;
+                right: 0;
+                left: 0;
+                bottom: 0;
+                width: auto;
+                min-height: var(--mobile-rail-height);
+                flex-direction: row;
+                gap: 6px;
+                padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+                border-right: 0;
+                border-left: 0;
+                border-bottom: 0;
+                border-radius: 10px 10px 0 0;
+                overflow-x: auto;
+                overflow-y: hidden;
+            }
+            .analyzer-rail-btn {
+                flex: 0 0 auto;
+                min-width: 78px;
+                min-height: 42px;
+                padding: 7px 10px;
+                white-space: nowrap;
+            }
         }
 
         @media (max-width: 480px) {
@@ -350,6 +428,17 @@
             <button class="nav-btn print-nav" id="navPrintBtn" onclick="printForm()">🖨️ הדפסה</button>
         </div>
     </div>
+
+    <nav class="analyzer-rail" id="analyzerRail" aria-label="ניווט ניתוח תוצאות">
+        <button type="button" class="analyzer-rail-btn" data-target="comparisonCard" onclick="goToAnalyzerSection('comparisonCard')">🎯 השוואה</button>
+        <button type="button" class="analyzer-rail-btn" data-target="combosCard" onclick="goToAnalyzerSection('combosCard')">✨ קומבינציות</button>
+        <button type="button" class="analyzer-rail-btn" data-target="combosForm2Card" onclick="goToAnalyzerSection('combosForm2Card')">📋 טופס 2</button>
+        <button type="button" class="analyzer-rail-btn" data-target="statsCard" onclick="goToAnalyzerSection('statsCard')">📊 סטטיסטיקות</button>
+        <button type="button" class="analyzer-rail-btn" data-target="hotCard" onclick="goToAnalyzerSection('hotCard')">🔥 חמים</button>
+        <button type="button" class="analyzer-rail-btn" data-target="pairsCard" onclick="goToAnalyzerSection('pairsCard')">🤝 זוגות</button>
+        <button type="button" class="analyzer-rail-btn" data-target="tripletsCard" onclick="goToAnalyzerSection('tripletsCard')">🎲 טריפלטים</button>
+        <button type="button" class="analyzer-rail-btn" data-target="quartetsCard" onclick="goToAnalyzerSection('quartetsCard')">🎯 רביעיות</button>
+    </nav>
     
     <!-- Transfer Notification -->
     <div class="transfer-notification" id="transferNotification">
@@ -397,11 +486,29 @@
             document.documentElement.style.setProperty('--header-height', `${headerHeight}px`);
         }
 
+        function setEmbeddedAnalyzerMode() {
+            const analyzerIframe = document.getElementById('analyzerIframe');
+            if (!analyzerIframe || !analyzerIframe.contentWindow) return;
+
+            try {
+                analyzerIframe.contentWindow.document.body.classList.add('embedded-shell');
+            } catch (e) {
+                console.log('Analyzer embed mode skipped:', e);
+            }
+        }
+
+        function setActiveRailButton(sectionId) {
+            document.querySelectorAll('.analyzer-rail-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.target === sectionId);
+            });
+        }
+
         function setActiveSection(section, options) {
             options = options || {};
             const normalized = section === 'analyzer' || section === 'compare' ? 'analyzer' : 'form';
             const activeNav = options.navTarget || (section === 'compare' ? 'compare' : normalized);
             activeShellSection = normalized;
+            document.body.classList.toggle('shell-analyzer-active', normalized === 'analyzer');
 
             document.getElementById('formSection').classList.toggle('is-active', normalized === 'form');
             document.getElementById('analyzerSection').classList.toggle('is-active', normalized === 'analyzer');
@@ -422,35 +529,39 @@
             });
 
             updateViewportMetrics();
+            if (normalized === 'analyzer') setEmbeddedAnalyzerMode();
             if (!options.preserveScroll) {
                 window.scrollTo({ top: 0, behavior: options.smooth ? 'smooth' : 'auto' });
             }
         }
 
-        function focusAnalyzerComparison() {
+        function goToAnalyzerSection(sectionId, navTarget) {
+            setActiveSection('analyzer', { preserveScroll: true, navTarget: navTarget || 'analyzer' });
+            setActiveRailButton(sectionId);
+
             setTimeout(() => {
                 const analyzerIframe = document.getElementById('analyzerIframe');
                 if (!analyzerIframe || !analyzerIframe.contentWindow) return;
 
                 try {
                     if (typeof analyzerIframe.contentWindow.scrollToSection === 'function') {
-                        analyzerIframe.contentWindow.scrollToSection('comparisonCard');
+                        analyzerIframe.contentWindow.scrollToSection(sectionId);
                         return;
                     }
 
-                    const comparisonCard = analyzerIframe.contentWindow.document.getElementById('comparisonCard');
-                    if (comparisonCard) {
-                        comparisonCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    const target = analyzerIframe.contentWindow.document.getElementById(sectionId);
+                    if (target) {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 } catch (e) {
-                    console.log('Comparison focus skipped:', e);
+                    console.log('Analyzer section focus skipped:', e);
                 }
             }, 180);
         }
 
         function openComparisonView() {
             setActiveSection('compare', { navTarget: 'compare', smooth: true });
-            focusAnalyzerComparison();
+            goToAnalyzerSection('comparisonCard', 'compare');
         }
         
         // Scroll to section
@@ -585,6 +696,7 @@
         // Initialize system
         updateViewportMetrics();
         setActiveSection(activeShellSection, { preserveScroll: true });
+        document.getElementById('analyzerIframe').addEventListener('load', setEmbeddedAnalyzerMode);
         window.addEventListener('resize', updateViewportMetrics);
         window.addEventListener('orientationchange', updateViewportMetrics);
         if (window.visualViewport) {
