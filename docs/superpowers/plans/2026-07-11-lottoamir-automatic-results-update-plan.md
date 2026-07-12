@@ -148,7 +148,7 @@ Use `%LOCALAPPDATA%\LottoAmirUpdater\repo`, a named mutex, `git pull --ff-only o
 
 - [ ] **Step 3: Add the Scheduled Task installer**
 
-Create a Python 3.13 virtual environment, install the pinned dependency, copy the stable runner into the automation directory, and register an interactive hidden Windows PowerShell task every six hours plus a logon trigger. Resolve Windows PowerShell from `%SystemRoot%` so installation works from either `powershell.exe` or `pwsh`. Enable `StartWhenAvailable` and prevent overlapping instances.
+Create a Python 3.13 virtual environment, install the pinned dependency, copy the stable runner into the automation directory, and register an interactive hidden Windows PowerShell task for Tuesday, Thursday, and Saturday at 23:55. Resolve Windows PowerShell from `%SystemRoot%` so installation works from either `powershell.exe` or `pwsh`. Enable `StartWhenAvailable` and prevent overlapping instances.
 
 - [ ] **Step 4: Remove blocked hosted workflows and validate locally**
 
@@ -184,7 +184,7 @@ Commit the feature, tests, scheduler, dependency pin, documentation, and refresh
 
 - [ ] **Step 5: Inspect the installed task and first local run**
 
-Confirm Task Scheduler reports the task as ready, the repeat interval is six hours, the first local run succeeds, and an unchanged workbook creates no extra commit.
+Confirm Task Scheduler reports the task as ready, exposes one weekly trigger for Tuesday, Thursday, and Saturday at 23:55, the first local run succeeds, and an unchanged workbook creates no extra commit.
 
 - [ ] **Step 6: Verify the published site**
 

@@ -60,12 +60,12 @@ $action = New-ScheduledTaskAction `
     -Argument $actionArguments `
     -WorkingDirectory $automationRoot
 
-$periodicTrigger = New-ScheduledTaskTrigger `
-    -Once `
-    -At (Get-Date).AddMinutes(2) `
-    -RepetitionInterval (New-TimeSpan -Hours 6)
+$drawTrigger = New-ScheduledTaskTrigger `
+    -Weekly `
+    -WeeksInterval 1 `
+    -DaysOfWeek Tuesday, Thursday, Saturday `
+    -At "23:55"
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries `
@@ -80,14 +80,15 @@ $principal = New-ScheduledTaskPrincipal `
 Register-ScheduledTask `
     -TaskName $taskName `
     -Action $action `
-    -Trigger @($periodicTrigger, $logonTrigger) `
+    -Trigger $drawTrigger `
     -Settings $settings `
     -Principal $principal `
     -Description "Downloads validated Pais lotto results and publishes NUMBERS.xlsx to LottoAmir." `
     -Force | Out-Null
 
 Write-Host "Installed scheduled task: $taskName"
-Write-Host "Runs every 6 hours and after logon when the computer is available."
+Write-Host "Runs Tuesday, Thursday, and Saturday at 23:55."
+Write-Host "Missed runs start when the computer becomes available."
 Write-Host "Logs: $(Join-Path $automationRoot 'logs')"
 
 if ($RunNow) {

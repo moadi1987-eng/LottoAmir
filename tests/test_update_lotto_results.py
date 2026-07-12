@@ -313,7 +313,9 @@ class LocalSchedulerContractTests(unittest.TestCase):
         installer = installer_path.read_text(encoding="utf-8")
         installer_fragments = (
             "New-ScheduledTaskTrigger",
-            "New-TimeSpan -Hours 6",
+            "-Weekly",
+            "-DaysOfWeek Tuesday, Thursday, Saturday",
+            '-At "23:55"',
             "New-ScheduledTaskSettingsSet",
             "-StartWhenAvailable",
             "Register-ScheduledTask",
@@ -323,6 +325,8 @@ class LocalSchedulerContractTests(unittest.TestCase):
         for fragment in installer_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, installer)
+        self.assertNotIn("New-TimeSpan -Hours 6", installer)
+        self.assertNotIn("New-ScheduledTaskTrigger -AtLogOn", installer)
 
     def test_blocked_github_hosted_updater_workflows_are_removed(self):
         workflows = Path(__file__).resolve().parents[1] / ".github" / "workflows"

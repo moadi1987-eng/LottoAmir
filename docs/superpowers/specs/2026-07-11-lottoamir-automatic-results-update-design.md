@@ -59,7 +59,7 @@ Two live GitHub-hosted Ubuntu runs resolved the official Pais server correctly b
 The updater therefore must not run on GitHub-hosted infrastructure. The failed scheduled workflow and temporary diagnostic workflow are removed so the repository does not generate repeated false failures.
 
 ## Automation
-A Windows Scheduled Task named `LottoAmir Automatic Results Update` runs every six hours and at user logon. `StartWhenAvailable` allows a missed periodic trigger to run after the computer wakes.
+A Windows Scheduled Task named `LottoAmir Automatic Results Update` runs on Tuesday, Thursday, and Saturday at 23:55 local time. Pais states that the Lotto broadcast window is 23:00 through 23:40, so the task starts 15 minutes after that window. `StartWhenAvailable` allows a missed weekly trigger to run after the computer wakes or the user becomes available.
 
 The task runs a hidden PowerShell command that:
 
