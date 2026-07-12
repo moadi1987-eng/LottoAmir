@@ -424,7 +424,6 @@
         <div class="nav-buttons">
             <button class="nav-btn primary active" id="navFormBtn" onclick="setActiveSection('form')" aria-pressed="true">📝 טפסים</button>
             <button class="nav-btn" id="navAnalyzerBtn" onclick="setActiveSection('analyzer')" aria-pressed="false">📊 ניתוח</button>
-            <button class="nav-btn" id="navCompareBtn" onclick="openComparisonView()" aria-pressed="false">🎯 השוואה</button>
             <button class="nav-btn print-nav" id="navPrintBtn" onclick="printForm()">🖨️ הדפסה</button>
         </div>
     </div>
@@ -507,7 +506,6 @@
         function setActiveSection(section, options) {
             options = options || {};
             const normalized = section === 'analyzer' || section === 'compare' ? 'analyzer' : 'form';
-            const activeNav = options.navTarget || (section === 'compare' ? 'compare' : normalized);
             activeShellSection = normalized;
             document.body.classList.toggle('shell-analyzer-active', normalized === 'analyzer');
 
@@ -516,14 +514,13 @@
 
             const navMap = {
                 form: document.getElementById('navFormBtn'),
-                analyzer: document.getElementById('navAnalyzerBtn'),
-                compare: document.getElementById('navCompareBtn')
+                analyzer: document.getElementById('navAnalyzerBtn')
             };
 
             Object.keys(navMap).forEach(key => {
                 const btn = navMap[key];
                 if (!btn) return;
-                const isActive = key === activeNav;
+                const isActive = key === normalized;
                 btn.classList.toggle('active', isActive);
                 btn.classList.toggle('primary', isActive);
                 btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
@@ -536,8 +533,8 @@
             }
         }
 
-        function goToAnalyzerSection(sectionId, navTarget) {
-            setActiveSection('analyzer', { preserveScroll: true, navTarget: navTarget || 'analyzer' });
+        function goToAnalyzerSection(sectionId) {
+            setActiveSection('analyzer', { preserveScroll: true });
             setActiveRailButton(sectionId);
 
             setTimeout(() => {
@@ -558,11 +555,6 @@
                     console.log('Analyzer section focus skipped:', e);
                 }
             }, 180);
-        }
-
-        function openComparisonView() {
-            setActiveSection('compare', { navTarget: 'compare', smooth: true });
-            goToAnalyzerSection('comparisonCard', 'compare');
         }
         
         // Scroll to section

@@ -5,18 +5,25 @@ backup_2025-02-18/
 *.xlsx
 !NUMBERS.xlsx
 *.json
+!tests/fixtures/sample-draws.json
 *.png
 !10.png
 !14.png
 
 # Python helper scripts are kept local for now
 *.py
+!scripts/_extract_lotto_combos.js
 requirements.txt
 
 # Tracked automatic-results updater and its tests
 !scripts/__init__.py
 !scripts/update_lotto_results.py
+!scripts/requirements-lotto-update.txt
 !tests/test_update_lotto_results.py
+!tests/test-lotto-combos.js
+!tests/verify-form2-diversity.js
+!tests/verify-pinned-forms.js
+!js/lotto-combos.js
 __pycache__/
 *.pyc
 
