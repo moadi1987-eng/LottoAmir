@@ -4,9 +4,9 @@
 
 **Goal:** Automatically refresh `NUMBERS.xlsx` from the official Pais CSV and safely publish new draws through GitHub Pages.
 
-**Architecture:** A tested Python command downloads and validates the official CSV, limits it to the workbook's existing current-game era, and atomically replaces the workbook only when normalized data changed. A scheduled GitHub Actions workflow runs the tests and command, then commits only an actual workbook change.
+**Architecture:** A tested Python command downloads and validates the official CSV, limits it to the workbook's existing current-game era, and atomically replaces the workbook only when normalized data changed. Because live probes proved that GitHub-hosted runners cannot establish a connection to the Pais network, a Windows Scheduled Task runs the command from an isolated local clone and pushes only an actual workbook change.
 
-**Tech Stack:** Python 3.12, standard library (`argparse`, `csv`, `datetime`, `urllib`, `tempfile`), `openpyxl`, `unittest`, GitHub Actions, GitHub Pages.
+**Tech Stack:** Python 3.13, standard library (`argparse`, `csv`, `datetime`, `urllib`, `tempfile`), `openpyxl`, `unittest`, Windows PowerShell, Task Scheduler, Git, GitHub Pages.
 
 ## Global Constraints
 
@@ -19,7 +19,8 @@
 - Never replace `NUMBERS.xlsx` before complete validation and reopen verification.
 - Do not modify the workbook when normalized content is unchanged.
 - Block automatic changes to every draw already present in the workbook.
-- Always update `main` and verify that Pages successfully built the exact latest commit.
+- Always update `main` from an isolated clean clone and push through the owner's Git credentials.
+- Never schedule the download on GitHub-hosted runners because Pais blocks their network before TLS.
 - Do not alter analyzer, PIN, or combination behavior.
 
 ---
@@ -125,32 +126,33 @@ Run the full test module and expect all tests to pass with no warnings.
 
 ---
 
-### Task 4: Add GitHub automation
+### Task 4: Add local Windows automation
 
 **Files:**
-- Create: `.github/requirements-lotto-update.txt`
-- Create: `.github/workflows/update-lotto-results.yml`
-- Test: workflow syntax and updater tests
+- Create: `scripts/requirements-lotto-update.txt`
+- Create: `scripts/run_scheduled_update.ps1`
+- Create: `scripts/install_lotto_update_task.ps1`
+- Test: `tests/test_update_lotto_results.py`
 
 **Interfaces:**
-- Consumes: repository `NUMBERS.xlsx`, official CSV, `GITHUB_TOKEN`
-- Produces: a commit to `main` only when `NUMBERS.xlsx` changed
+- Consumes: official CSV, isolated local clone, existing Git credentials
+- Produces: a user-authenticated commit to `main` only when `NUMBERS.xlsx` changed
 
 - [ ] **Step 1: Pin the workbook dependency**
 
-Add `openpyxl==3.1.5` to `.github/requirements-lotto-update.txt`.
+Add `openpyxl==3.1.5` to `scripts/requirements-lotto-update.txt`.
 
-- [ ] **Step 2: Add scheduled and manual triggers**
+- [ ] **Step 2: Add the isolated scheduled runner**
 
-Configure `schedule` with `17 */6 * * *`, `workflow_dispatch`, `contents: write`, `pages: write`, one concurrency group, Ubuntu, Python 3.12, and a ten-minute timeout.
+Use `%LOCALAPPDATA%\LottoAmirUpdater\repo`, a named mutex, `git pull --ff-only origin main`, the Python updater, an only-`NUMBERS.xlsx` change guard, conditional commit/push, and dated local logs. Preserve and replace the isolated clone when a sole dirty workbook indicates interruption, or when a workbook-only pending commit diverges after the remote advances. Refuse recovery for every unexpected changed path.
 
-- [ ] **Step 3: Add test, update, and conditional commit steps**
+- [ ] **Step 3: Add the Scheduled Task installer**
 
-Install the pinned requirement, run the Python test module, run the updater, detect a `NUMBERS.xlsx` diff, and commit as `github-actions[bot]` only when changed. Check out and push `main` explicitly. Because a commit made with `GITHUB_TOKEN` does not trigger Pages automatically, compare the latest Pages build with `HEAD`, request `POST /repos/{owner}/{repo}/pages/builds` when needed, and poll until that exact commit reports `built`.
+Create a Python 3.13 virtual environment, install the pinned dependency, copy the stable runner into the automation directory, and register an interactive hidden Windows PowerShell task every six hours plus a logon trigger. Resolve Windows PowerShell from `%SystemRoot%` so installation works from either `powershell.exe` or `pwsh`. Enable `StartWhenAvailable` and prevent overlapping instances.
 
-- [ ] **Step 4: Validate workflow structure locally**
+- [ ] **Step 4: Remove blocked hosted workflows and validate locally**
 
-Run the local workflow contract test and let GitHub parse the complete YAML after push. Assert the schedule, manual trigger, permissions, test command, updater command, conditional commit, and explicit Pages build request are present.
+Remove both the failed GitHub-hosted updater and temporary network diagnostic workflow. Run the scheduler contract tests, parse both PowerShell files, install the task, and execute one real no-change update from the isolated clone.
 
 ---
 
@@ -162,7 +164,7 @@ Run the local workflow contract test and let GitHub parse the complete YAML afte
 
 **Interfaces:**
 - Consumes: live official CSV containing draw 3944
-- Produces: tested repository changes and a successful GitHub Actions run
+- Produces: tested repository changes and an active Windows Scheduled Task
 
 - [ ] **Step 1: Run all existing and new tests**
 
@@ -178,11 +180,11 @@ Confirm no analyzer, PIN, generated-combination, or unrelated files changed.
 
 - [ ] **Step 4: Commit and push**
 
-Commit the feature, tests, workflow, dependency pin, documentation, and refreshed workbook. Push `main` to `origin`.
+Commit the feature, tests, scheduler, dependency pin, documentation, and refreshed workbook. Push `main` to `origin`.
 
-- [ ] **Step 5: Trigger and inspect the manual workflow**
+- [ ] **Step 5: Inspect the installed task and first local run**
 
-Start `Update Lotto Results` with `workflow_dispatch`. Confirm tests and updater pass and that an unchanged workbook creates no extra commit.
+Confirm Task Scheduler reports the task as ready, the repeat interval is six hours, the first local run succeeds, and an unchanged workbook creates no extra commit.
 
 - [ ] **Step 6: Verify the published site**
 

@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime
@@ -280,37 +283,180 @@ class RepositoryWorkbookContractTests(unittest.TestCase):
         workbook.close()
 
 
-class WorkflowContractTests(unittest.TestCase):
-    def test_scheduled_workflow_runs_tests_and_commits_only_workbook_changes(self):
-        workflow_path = (
-            Path(__file__).resolve().parents[1]
-            / ".github"
-            / "workflows"
-            / "update-lotto-results.yml"
-        )
+class LocalSchedulerContractTests(unittest.TestCase):
+    def test_windows_task_uses_isolated_clone_and_pushes_only_new_results(self):
+        root = Path(__file__).resolve().parents[1]
+        runner_path = root / "scripts" / "run_scheduled_update.ps1"
+        installer_path = root / "scripts" / "install_lotto_update_task.ps1"
+        requirements_path = root / "scripts" / "requirements-lotto-update.txt"
 
-        self.assertTrue(workflow_path.is_file(), "Updater workflow must exist")
-        workflow = workflow_path.read_text(encoding="utf-8")
-        required_fragments = (
-            "schedule:",
-            'cron: "17 */6 * * *"',
-            "workflow_dispatch:",
-            "contents: write",
-            "pages: write",
-            "concurrency:",
-            "ref: main",
-            "python -m unittest tests/test_update_lotto_results.py -v",
-            "python scripts/update_lotto_results.py",
+        self.assertTrue(runner_path.is_file(), "Scheduled runner must exist")
+        self.assertTrue(installer_path.is_file(), "Task installer must exist")
+        self.assertTrue(requirements_path.is_file(), "Updater requirements must exist")
+
+        runner = runner_path.read_text(encoding="utf-8")
+        runner_fragments = (
+            "LottoAmirUpdater",
+            "Archive-AutomationClone",
+            "git clone",
+            "git pull --ff-only origin main",
+            "origin/main...main",
+            "scripts/update_lotto_results.py",
             "git diff --quiet -- NUMBERS.xlsx",
             "git add NUMBERS.xlsx",
-            "git push origin HEAD:main",
-            "pages/builds",
-            "pages/builds/latest",
-            'status" == "built',
+            "git push origin main",
         )
-        for fragment in required_fragments:
+        for fragment in runner_fragments:
             with self.subTest(fragment=fragment):
-                self.assertIn(fragment, workflow)
+                self.assertIn(fragment, runner)
+
+        installer = installer_path.read_text(encoding="utf-8")
+        installer_fragments = (
+            "New-ScheduledTaskTrigger",
+            "New-TimeSpan -Hours 6",
+            "New-ScheduledTaskSettingsSet",
+            "-StartWhenAvailable",
+            "Register-ScheduledTask",
+            "run_scheduled_update.ps1",
+            "$env:SystemRoot",
+        )
+        for fragment in installer_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, installer)
+
+    def test_blocked_github_hosted_updater_workflows_are_removed(self):
+        workflows = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+
+        self.assertFalse((workflows / "update-lotto-results.yml").exists())
+        self.assertFalse((workflows / "diagnose-pais.yml").exists())
+
+
+@unittest.skipUnless(os.name == "nt", "Windows Task Scheduler runner test")
+class WindowsSchedulerRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+        self.remote = self.root / "remote.git"
+        self.seed = self.root / "seed"
+        self.automation_root = self.root / "automation"
+        self.runner = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "run_scheduled_update.ps1"
+        )
+        self.power_shell = (
+            Path(os.environ["SystemRoot"])
+            / "System32"
+            / "WindowsPowerShell"
+            / "v1.0"
+            / "powershell.exe"
+        )
+
+        self.run_command(
+            ["git", "init", "--bare", "--initial-branch=main", str(self.remote)]
+        )
+        self.run_command(
+            ["git", "init", "--initial-branch=main", str(self.seed)]
+        )
+        self.run_command(["git", "config", "user.name", "Test User"], self.seed)
+        self.run_command(
+            ["git", "config", "user.email", "test@example.com"], self.seed
+        )
+        (self.seed / "scripts").mkdir()
+        (self.seed / "scripts" / "update_lotto_results.py").write_text(
+            "print('fixture updater: no changes')\n", encoding="utf-8"
+        )
+        (self.seed / "NUMBERS.xlsx").write_text("3944\n", encoding="utf-8")
+        (self.seed / "README.md").write_text("initial\n", encoding="utf-8")
+        self.run_command(["git", "add", "."], self.seed)
+        self.run_command(["git", "commit", "-m", "initial"], self.seed)
+        self.run_command(
+            ["git", "remote", "add", "origin", str(self.remote)], self.seed
+        )
+        self.run_command(["git", "push", "-u", "origin", "main"], self.seed)
+
+    def run_command(self, command, cwd=None):
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+    def run_scheduler(self):
+        return subprocess.run(
+            [
+                str(self.power_shell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(self.runner),
+                "-AutomationRoot",
+                str(self.automation_root),
+                "-RepositoryUrl",
+                str(self.remote),
+                "-PythonExecutable",
+                sys.executable,
+                "-NoPush",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+
+    def test_recovers_interrupted_workbook_change_and_diverged_pending_commit(self):
+        first_run = self.run_scheduler()
+        self.assertEqual(first_run.returncode, 0, first_run.stdout + first_run.stderr)
+
+        managed_repo = self.automation_root / "repo"
+        (managed_repo / "NUMBERS.xlsx").write_text("interrupted\n", encoding="utf-8")
+
+        dirty_recovery = self.run_scheduler()
+        self.assertEqual(
+            dirty_recovery.returncode,
+            0,
+            dirty_recovery.stdout + dirty_recovery.stderr,
+        )
+        self.assertEqual(
+            (managed_repo / "NUMBERS.xlsx").read_text(encoding="utf-8"), "3944\n"
+        )
+
+        self.run_command(["git", "config", "user.name", "Updater"], managed_repo)
+        self.run_command(
+            ["git", "config", "user.email", "updater@example.com"], managed_repo
+        )
+        (managed_repo / "NUMBERS.xlsx").write_text("pending push\n", encoding="utf-8")
+        self.run_command(["git", "add", "NUMBERS.xlsx"], managed_repo)
+        self.run_command(["git", "commit", "-m", "pending data"], managed_repo)
+
+        remote_writer = self.root / "remote-writer"
+        self.run_command(["git", "clone", str(self.remote), str(remote_writer)])
+        self.run_command(["git", "config", "user.name", "Remote User"], remote_writer)
+        self.run_command(
+            ["git", "config", "user.email", "remote@example.com"], remote_writer
+        )
+        (remote_writer / "README.md").write_text("remote advance\n", encoding="utf-8")
+        self.run_command(["git", "add", "README.md"], remote_writer)
+        self.run_command(["git", "commit", "-m", "remote advance"], remote_writer)
+        self.run_command(["git", "push", "origin", "main"], remote_writer)
+
+        divergence_recovery = self.run_scheduler()
+        self.assertEqual(
+            divergence_recovery.returncode,
+            0,
+            divergence_recovery.stdout + divergence_recovery.stderr,
+        )
+        self.assertEqual(
+            (managed_repo / "README.md").read_text(encoding="utf-8"),
+            "remote advance\n",
+        )
+        self.assertGreaterEqual(
+            len(list(self.automation_root.glob("repo-recovery-*"))), 2
+        )
 
 
 if __name__ == "__main__":
