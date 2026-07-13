@@ -5,8 +5,8 @@
 }(typeof self !== 'undefined' ? self : globalThis, function createLottoStrategyCore() {
   'use strict';
 
-  const ALGORITHM_VERSION = 'lotto-backtest-v1';
-  const CONSTRAINT_VERSION = 'forms-v1';
+  const ALGORITHM_VERSION = 'lotto-backtest-v2';
+  const CONSTRAINT_VERSION = 'forms-v2';
   const BACKTEST_WINDOWS = Object.freeze([100, 200, 500]);
   const REGULAR_POINTS = Object.freeze([0, 1, 3, 10, 35, 120, 400]);
   const FORM1_OPTIONS = Object.freeze({
@@ -52,6 +52,10 @@
     const allHaveDrawNumbers = rows.every(row => Number.isFinite(row.drawNumber));
     if (allHaveDrawNumbers) return rows.sort((a, b) => a.drawNumber - b.drawNumber);
     return rows.reverse();
+  }
+
+  function toNewestFirst(rows) {
+    return toChronological(rows).reverse();
   }
 
   function createCombo(values, strong, comboNum, strategy) {
@@ -338,7 +342,7 @@
       });
     });
     const numbers = mainStats.slice(0, 20).map(stat => {
-      const gap = lastAppearance[stat.number] || rawData.length;
+      const gap = lastAppearance[stat.number] ?? rawData.length;
       const gapBonus = gap >= 5 && gap <= 20 ? gap * 3 : gap;
       return { number: stat.number, score: stat.count + gapBonus, gap };
     }).sort((a, b) => b.score - a.score).slice(0, 6);
@@ -348,8 +352,8 @@
       if (!Number.isNaN(row.strong) && strongGaps[row.strong] === undefined) strongGaps[row.strong] = index;
     });
     const dueStrong = [...strongHot, ...strongMedium].sort((a, b) => {
-      const gapA = strongGaps[a.number] || 100;
-      const gapB = strongGaps[b.number] || 100;
+      const gapA = strongGaps[a.number] ?? 100;
+      const gapB = strongGaps[b.number] ?? 100;
       return gapB - gapA;
     })[0];
     return createCombo(numbers, dueStrong?.number || 1, comboNum, '⏰ מספרים בשלים');
@@ -588,12 +592,14 @@
     return (firstNumbers || []).filter(number => second.has(number)).length;
   }
 
-  function getNumberSelections(values, count) {
-    if (count === 0) return [[]];
-    const selections = [];
+  function forEachNumberSelection(values, count, visitSelection) {
+    if (count === 0) {
+      visitSelection([]);
+      return;
+    }
     function visit(start, selected) {
       if (selected.length === count) {
-        selections.push(selected.slice());
+        visitSelection(selected.slice());
         return;
       }
       const remaining = count - selected.length;
@@ -604,7 +610,6 @@
       }
     }
     visit(0, []);
-    return selections;
   }
 
   function buildForm2CandidatePriority(mainStats, hot, medium, cold) {
@@ -712,11 +717,9 @@
       );
       let chosen = null;
       for (let retainedCount = 6; retainedCount >= settings.minimumRetained && !chosen; retainedCount -= 1) {
-        const keptSelections = getNumberSelections(baseNumbers, retainedCount);
-        const replacementSelections = getNumberSelections(replacements, 6 - retainedCount);
         let best = null;
-        keptSelections.forEach(kept => {
-          replacementSelections.forEach(replacement => {
+        forEachNumberSelection(baseNumbers, retainedCount, kept => {
+          forEachNumberSelection(replacements, 6 - retainedCount, replacement => {
             const numbers = [...kept, ...replacement].sort((a, b) => a - b);
             const key = getCombinationKey(numbers);
             if (acceptedKeys.has(key) || forbiddenKeys.has(key)) return;
@@ -987,7 +990,7 @@
   }
 
   function generateRawCandidates(newestFirstRows, windowSize) {
-    const rows = newestFirstRows.slice(0, windowSize);
+    const rows = toNewestFirst(newestFirstRows).slice(0, windowSize);
     const snapshot = buildAnalysisSnapshot(rows);
     const annotate = source => combo => ({
       ...combo,
@@ -1003,7 +1006,7 @@
   }
 
   function generateBaselineForms(newestFirstRows) {
-    const rows = newestFirstRows.filter(isValidDraw).map(cloneDraw);
+    const rows = toNewestFirst(newestFirstRows);
     const snapshot = buildAnalysisSnapshot(rows);
     const main = generateMainCandidates(snapshot, rows);
     const form2Raw = generateForm2RawCandidates(snapshot, rows);
@@ -1103,7 +1106,7 @@
       const weight = records.length - index;
       record.numbers.forEach(number => { weightedScores[number] += weight; });
     });
-    const snapshot = buildAnalysisSnapshot((training500 || []).slice(0, 500));
+    const snapshot = buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500));
     const frequencyRank = new Map(snapshot.numbers.map((item, index) => [item.number, index]));
     return Array.from({ length: 37 }, (_, index) => index + 1).sort((first, second) => (
       weightedScores[second] - weightedScores[first]
@@ -1144,7 +1147,9 @@
 
   function finalizeSelectedForm(combos, training500, settings, code, forbiddenKeys) {
     if (!formSatisfiesConstraints(combos, settings, forbiddenKeys)) throw createSelectionError(code);
-    const rotation = buildBalancedStrongRotation(buildAnalysisSnapshot((training500 || []).slice(0, 500)).strong);
+    const rotation = buildBalancedStrongRotation(
+      buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500)).strong,
+    );
     return combos.map((combo, index) => ({
       comboNum: index + 1,
       strategy: `${combo.strategy} · חלון ${combo.window}`,
@@ -1160,6 +1165,20 @@
     }));
   }
 
+  function selectPerformanceBase(records, settings) {
+    const selected = [];
+    const exposure = {};
+    for (const record of records) {
+      if (record.numbers.some(number => (exposure[number] || 0) + 1 > settings.maximumExposure)) continue;
+      if (selected.some(previous => getOverlap(record.numbers, previous.numbers) > settings.maximumOverlap)) continue;
+      selected.push(record);
+      record.numbers.forEach(number => { exposure[number] = (exposure[number] || 0) + 1; });
+      if (selected.length === 14) break;
+    }
+    if (selected.length !== 14) throw createSelectionError('FORM1_SELECTION_FAILED');
+    return selected;
+  }
+
   function selectPerformanceForm(candidates, rankings, training500, options = FORM1_OPTIONS) {
     const settings = {
       ...FORM1_OPTIONS,
@@ -1169,7 +1188,7 @@
     };
     const records = buildRankedCandidateRecords(candidates, rankings);
     if (records.length < 14) throw createSelectionError('FORM1_SELECTION_FAILED');
-    const base = records.slice(0, 14).map(toSelectorCombo);
+    const base = selectPerformanceBase(records, settings).map(toSelectorCombo);
     let selected = base;
     if (!formSatisfiesConstraints(selected, settings, [])) {
       try {
@@ -1179,6 +1198,26 @@
       }
     }
     return finalizeSelectedForm(selected, training500, settings, 'FORM1_SELECTION_FAILED', []);
+  }
+
+  function getMedianIdentityScore(rankings, records) {
+    const seen = new Set();
+    const identityScores = (rankings || []).reduce((scores, ranking, index) => {
+      const identity = ranking && ranking.identity != null ? String(ranking.identity) : `ranking:${index}`;
+      const score = Number(ranking && ranking.calibration && ranking.calibration.score);
+      if (!seen.has(identity) && Number.isFinite(score)) {
+        seen.add(identity);
+        scores.push(score);
+      }
+      return scores;
+    }, []);
+    const sortedScores = (identityScores.length ? identityScores : records.map(record => record.rank.score))
+      .slice()
+      .sort((a, b) => a - b);
+    const middle = Math.floor(sortedScores.length / 2);
+    return sortedScores.length % 2
+      ? sortedScores[middle]
+      : (sortedScores[middle - 1] + sortedScores[middle]) / 2;
   }
 
   function selectDiversityBase(records, form1Rows, settings, medianScore) {
@@ -1238,11 +1277,7 @@
     const settings = { ...FORM2_OPTIONS, ...(options || {}), enforceMinimumRetained: true };
     const records = buildRankedCandidateRecords(candidates, rankings);
     if (records.length < 14) throw createSelectionError('FORM2_SELECTION_FAILED');
-    const sortedScores = records.map(record => record.rank.score).sort((a, b) => a - b);
-    const middle = Math.floor(sortedScores.length / 2);
-    const medianScore = sortedScores.length % 2
-      ? sortedScores[middle]
-      : (sortedScores[middle - 1] + sortedScores[middle]) / 2;
+    const medianScore = getMedianIdentityScore(rankings, records);
     const baseRecords = selectDiversityBase(records, form1Rows, settings, medianScore);
     const base = baseRecords.map(toSelectorCombo);
     const forbiddenKeys = new Set((form1Rows || []).map(combo => getCombinationKey(combo.numbers)));
@@ -1289,8 +1324,9 @@
   }
 
   function buildCurrentOptimizedForms(rows, rankings, windows = BACKTEST_WINDOWS) {
-    const candidates = windows.flatMap(windowSize => generateRawCandidates(rows, windowSize));
-    return selectOptimizedForms(candidates, rankings, rows.slice(0, 500));
+    const newestFirst = toNewestFirst(rows);
+    const candidates = windows.flatMap(windowSize => generateRawCandidates(newestFirst, windowSize));
+    return selectOptimizedForms(candidates, rankings, newestFirst.slice(0, 500));
   }
 
   function fingerprintRows(rows) {
@@ -1411,9 +1447,10 @@
       accumulator.bucketCounts[index] ? total / accumulator.bucketCounts[index] : 0
     ));
     const minimumBucket = Math.min(...bucketAverages);
-    const stability = averagePoints === 0
+    const averageBucketScore = bucketAverages.reduce((sum, score) => sum + score, 0) / bucketAverages.length;
+    const stability = averageBucketScore === 0
       ? 0
-      : Math.max(0, Math.min(1, minimumBucket / averagePoints));
+      : Math.max(0, Math.min(1, minimumBucket / averageBucketScore));
     const rateAtLeast = threshold => {
       if (!sampleCount) return 0;
       return accumulator.hitCounts.slice(threshold).reduce((sum, count) => sum + count, 0) / sampleCount;
@@ -1438,6 +1475,7 @@
       rate6: rateAtLeast(6),
       bestRegularMatches,
       bucketAverages,
+      averageBucketScore,
       stability,
       score: averagePoints * 0.80 + averagePoints * stability * 0.20,
     };
@@ -1541,6 +1579,8 @@
       coverageTotal: 0,
       maximumExposure: 0,
       maximumOverlap: 0,
+      bucketScores: Array(3).fill(0),
+      bucketCounts: Array(3).fill(0),
     };
   }
 
@@ -1557,7 +1597,7 @@
     return { main: createEmptyPolicyAggregate(), form2: createEmptyPolicyAggregate() };
   }
 
-  function addFormResult(accumulator, form, draw) {
+  function addFormResult(accumulator, form, draw, bucketIndex) {
     const evaluation = scoreForm(form, draw);
     const diversity = getFormDiversityMetrics(form);
     accumulator.drawScoreTotal += evaluation.drawScore;
@@ -1568,22 +1608,38 @@
     accumulator.coverageTotal += diversity.coveredNumberCount;
     accumulator.maximumExposure = Math.max(accumulator.maximumExposure, diversity.maximumExposure);
     accumulator.maximumOverlap = Math.max(accumulator.maximumOverlap, diversity.maximumOverlap);
+    if (bucketIndex >= 0 && bucketIndex < 3) {
+      accumulator.bucketScores[bucketIndex] += evaluation.drawScore;
+      accumulator.bucketCounts[bucketIndex] += 1;
+    }
   }
 
-  function addPolicyDraw(aggregate, baselineForm, optimizedForm, draw, selectionFailed) {
+  function addPolicyDraw(aggregate, baselineForm, optimizedForm, draw, selectionFailed, bucketIndex) {
     aggregate.sampleCount += 1;
     aggregate.selectionFailures += selectionFailed ? 1 : 0;
-    addFormResult(aggregate.baseline, baselineForm, draw);
-    addFormResult(aggregate.optimized, optimizedForm, draw);
+    addFormResult(aggregate.baseline, baselineForm, draw, bucketIndex);
+    addFormResult(aggregate.optimized, optimizedForm, draw, bucketIndex);
   }
 
   function finalizeFormAccumulator(accumulator, sampleCount) {
     const samples = Math.max(1, sampleCount);
+    const averageScore = accumulator.drawScoreTotal / samples;
+    const bucketAverages = accumulator.bucketScores.map((total, index) => (
+      accumulator.bucketCounts[index] ? total / accumulator.bucketCounts[index] : 0
+    ));
+    const averageBucketScore = bucketAverages.reduce((sum, score) => sum + score, 0) / bucketAverages.length;
+    const stability = averageBucketScore === 0
+      ? 0
+      : Math.max(0, Math.min(1, Math.min(...bucketAverages) / averageBucketScore));
     const rateAtLeast = threshold => accumulator.exactBestHits
       .slice(threshold)
       .reduce((sum, count) => sum + count, 0) / samples;
     return {
-      averageScore: accumulator.drawScoreTotal / samples,
+      averageScore,
+      bucketAverages,
+      averageBucketScore,
+      stability,
+      score: averageScore * 0.80 + averageScore * stability * 0.20,
       averageBestMatches: accumulator.bestMatchTotal / samples,
       rate2Plus: rateAtLeast(2),
       rate3Plus: rateAtLeast(3),
@@ -1603,7 +1659,7 @@
     const optimized = finalizeFormAccumulator(aggregate.optimized, aggregate.sampleCount);
     const reasons = [];
     if (aggregate.selectionFailures > 0) reasons.push('selection-failure');
-    if (optimized.averageScore < baseline.averageScore) reasons.push('score-regression');
+    if (optimized.score < baseline.score) reasons.push('score-regression');
     if (optimized.rate3Plus < baseline.rate3Plus - 0.01) reasons.push('three-plus-regression');
     return {
       sampleCount: aggregate.sampleCount,
@@ -1644,12 +1700,14 @@
       const allEarlier = plan.chronological.slice(0, targetIndex).reverse();
       const optimized = selectOptimizedForms(pool, rankings, training500);
       const baseline = generateBaselineForms(allEarlier);
+      const bucketIndex = getChronologyBucket(index, plan.holdoutTargets.length);
       addPolicyDraw(
         policyAggregates.main,
         baseline.main,
         optimized.main || baseline.main,
         plan.chronological[targetIndex],
         Boolean(optimized.errors.main),
+        bucketIndex,
       );
       addPolicyDraw(
         policyAggregates.form2,
@@ -1657,6 +1715,7 @@
         optimized.form2 || baseline.form2,
         plan.chronological[targetIndex],
         Boolean(optimized.errors.form2),
+        bucketIndex,
       );
       onProgress({
         phase: 'holdout-policies',

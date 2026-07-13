@@ -21,6 +21,8 @@ const required = [
   'function startBacktest()',
   'function cancelBacktest(reason)',
   'function loadCompatibleBacktestCache(rows)',
+  'function isCompatibleBacktestResult(result, rows)',
+  'function getEffectiveBacktestRows()',
   'function saveBacktestCache(result)',
   'function applyFormMode(source, mode)',
   'function renderActiveForms()',
@@ -104,16 +106,7 @@ context.globalThis = context;
 vm.runInContext(scripts.at(-1), context, { filename: 'lotto_analyzer.html' });
 
 const rows = buildSyntheticDraws(502);
-const result = {
-  version: LottoStrategyCore.ALGORITHM_VERSION,
-  constraintVersion: LottoStrategyCore.CONSTRAINT_VERSION,
-  fingerprint: LottoStrategyCore.fingerprintRows(rows),
-  windows: [100, 200, 500],
-  split: { eligibleCount: 2, calibrationCount: 1, holdoutCount: 1 },
-  rankings: [],
-  policies: {},
-  currentForms: { main: null, form2: null, errors: { main: null, form2: null } },
-};
+const result = LottoStrategyCore.runWalkForwardBacktest(rows);
 context.__rows = rows;
 context.__result = result;
 assert.strictEqual(vm.runInContext('saveBacktestCache(__result)', context), true);
@@ -128,9 +121,52 @@ context.__changedRows = changedRows;
 assert.strictEqual(vm.runInContext('loadCompatibleBacktestCache(__changedRows)', context), null);
 
 const key = vm.runInContext('getBacktestCacheKey(__rows)', context);
+const corruptResult = JSON.parse(JSON.stringify(result));
+corruptResult.rankings = [];
+values.set(key, JSON.stringify(corruptResult));
+assert.strictEqual(vm.runInContext('loadCompatibleBacktestCache(__rows)', context), null);
+
+const malformedFormResult = JSON.parse(JSON.stringify(result));
+malformedFormResult.currentForms.main = {};
+context.__malformedFormResult = malformedFormResult;
+assert.doesNotThrow(() => vm.runInContext(
+  'isCompatibleBacktestResult(__malformedFormResult, __rows)',
+  context,
+));
+assert.strictEqual(vm.runInContext(
+  'isCompatibleBacktestResult(__malformedFormResult, __rows)',
+  context,
+), false);
+
 values.set(key, '{broken-json');
 assert.strictEqual(vm.runInContext('loadCompatibleBacktestCache(__rows)', context), null);
 storage.failWrites = true;
 assert.strictEqual(vm.runInContext('saveBacktestCache(__result)', context), false);
+
+storage.failWrites = false;
+context.__selectedRows = rows.slice(1);
+vm.runInContext('currentData = __rows; selectedData = __selectedRows;', context);
+assert.strictEqual(vm.runInContext('getEffectiveBacktestRows().length', context), rows.length - 1);
+vm.runInContext("setAnalyzerWorkspace('backtest')", context);
+assert.ok(elements.get('backtestDatasetMeta').textContent.startsWith(String(rows.length - 1)));
+
+context.Worker = class ThrowingWorker {
+  constructor() { throw new Error('worker blocked'); }
+};
+assert.doesNotThrow(() => vm.runInContext('startBacktest()', context));
+assert.strictEqual(vm.runInContext('currentBacktestRunId', context), null);
+
+let postedMessage = null;
+context.Worker = class CapturingWorker {
+  terminate() {}
+  postMessage(message) { postedMessage = message; }
+};
+vm.runInContext('startBacktest()', context);
+assert.strictEqual(postedMessage.rows.length, rows.length - 1);
+assert.deepStrictEqual(
+  Array.from(postedMessage.windows),
+  Array.from(LottoStrategyCore.BACKTEST_WINDOWS),
+);
+vm.runInContext("cancelBacktest('user')", context);
 
 console.log('Backtest analyzer UI verification passed');

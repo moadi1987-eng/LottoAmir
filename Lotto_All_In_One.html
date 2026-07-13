@@ -480,6 +480,7 @@
     <script>
         // ========== GLOBAL FUNCTIONS ==========
         let activeShellSection = 'form';
+        let requestedAnalyzerWorkspace = 'analysis';
 
         function updateViewportMetrics() {
             const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -501,12 +502,18 @@
         }
 
         function showChildAnalyzerWorkspace(mode) {
+            requestedAnalyzerWorkspace = mode === 'backtest' ? 'backtest' : 'analysis';
             const analyzerIframe = document.getElementById('analyzerIframe');
             if (!analyzerIframe || !analyzerIframe.contentWindow) return;
             if (typeof analyzerIframe.contentWindow.setAnalyzerWorkspace === 'function') {
-                if (mode === 'backtest') analyzerIframe.contentWindow.setAnalyzerWorkspace('backtest');
+                if (requestedAnalyzerWorkspace === 'backtest') analyzerIframe.contentWindow.setAnalyzerWorkspace('backtest');
                 else analyzerIframe.contentWindow.setAnalyzerWorkspace('analysis');
             }
+        }
+
+        function handleAnalyzerLoad() {
+            setEmbeddedAnalyzerMode();
+            showChildAnalyzerWorkspace(requestedAnalyzerWorkspace);
         }
 
         function setActiveRailButton(sectionId) {
@@ -544,7 +551,7 @@
             updateViewportMetrics();
             if (normalized === 'analyzer') {
                 setEmbeddedAnalyzerMode();
-                if (section !== 'backtest') showChildAnalyzerWorkspace('analysis');
+                showChildAnalyzerWorkspace(section === 'backtest' ? 'backtest' : 'analysis');
             }
             if (section === 'analyzer' && !options.preserveScroll) setActiveRailButton('');
             if (!options.preserveScroll) {
@@ -722,7 +729,7 @@
         // Initialize system
         updateViewportMetrics();
         setActiveSection(activeShellSection, { preserveScroll: true });
-        document.getElementById('analyzerIframe').addEventListener('load', setEmbeddedAnalyzerMode);
+        document.getElementById('analyzerIframe').addEventListener('load', handleAnalyzerLoad);
         window.addEventListener('resize', updateViewportMetrics);
         window.addEventListener('orientationchange', updateViewportMetrics);
         if (window.visualViewport) {

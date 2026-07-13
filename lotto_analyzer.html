@@ -1425,17 +1425,108 @@
             return `${BACKTEST_CACHE_PREFIX}${LottoStrategyCore.fingerprintRows(rows || [])}:${windows.join('-')}`;
         }
 
+        function getEffectiveBacktestRows() {
+            return (selectedData || currentData || []).filter(LottoStrategyCore.isValidDraw);
+        }
+
+        function isFiniteBacktestMetricSet(metrics, requiredFields) {
+            return Boolean(metrics) && requiredFields.every(function(field) {
+                return typeof metrics[field] === 'number' && Number.isFinite(metrics[field]);
+            });
+        }
+
+        function isValidCachedOptimizedForm(form, source, forbiddenKeys) {
+            if (form == null) return true;
+            if (!Array.isArray(form) || form.length !== 14) return false;
+            const keys = new Set();
+            const strongCounts = Object.fromEntries(Array.from({ length: 7 }, function(_, index) {
+                return [index + 1, 0];
+            }));
+            for (const row of form) {
+                if (!row || !Array.isArray(row.numbers) || row.numbers.length !== 6) return false;
+                const numbers = row.numbers.map(Number);
+                if (numbers.some(function(number) {
+                    return !Number.isInteger(number) || number < 1 || number > 37;
+                })) return false;
+                if (new Set(numbers).size !== 6) return false;
+                const key = numbers.slice().sort(function(a, b) { return a - b; }).join('-');
+                if (keys.has(key) || (forbiddenKeys && forbiddenKeys.has(key))) return false;
+                keys.add(key);
+                const strong = Number(row.strong);
+                if (!Number.isInteger(strong) || strong < 1 || strong > 7) return false;
+                strongCounts[strong] += 1;
+            }
+            if (Object.values(strongCounts).some(function(count) { return count !== 2; })) return false;
+            const metrics = LottoStrategyCore.getFormDiversityMetrics(form);
+            const limits = source === 'form2'
+                ? LottoStrategyCore.FORM2_OPTIONS
+                : LottoStrategyCore.FORM1_OPTIONS;
+            return metrics.uniqueCombinationCount === 14
+                && metrics.coveredNumberCount >= limits.minimumCoverage
+                && metrics.maximumExposure <= limits.maximumExposure
+                && metrics.maximumOverlap <= limits.maximumOverlap;
+        }
+
+        function isCompatibleBacktestResult(result, rows) {
+            if (!result || typeof result !== 'object') return false;
+            if (result.version !== LottoStrategyCore.ALGORITHM_VERSION) return false;
+            if (result.constraintVersion !== LottoStrategyCore.CONSTRAINT_VERSION) return false;
+            if (result.fingerprint !== LottoStrategyCore.fingerprintRows(rows)) return false;
+            if (!Array.isArray(result.windows)) return false;
+            if (result.windows.join('-') !== LottoStrategyCore.BACKTEST_WINDOWS.join('-')) return false;
+            if (!result.split || !['eligibleCount', 'calibrationCount', 'holdoutCount'].every(function(field) {
+                return Number.isInteger(result.split[field]) && result.split[field] >= 0;
+            })) return false;
+            if (result.split.calibrationCount + result.split.holdoutCount !== result.split.eligibleCount) return false;
+
+            const expectedRankingCount = result.windows.length * 28;
+            if (!Array.isArray(result.rankings) || result.rankings.length !== expectedRankingCount) return false;
+            const rankingIdentities = new Set();
+            const identityMetricFields = ['score', 'stability', 'rate3Plus', 'averagePoints'];
+            for (const ranking of result.rankings) {
+                if (!ranking || typeof ranking.identity !== 'string' || rankingIdentities.has(ranking.identity)) return false;
+                rankingIdentities.add(ranking.identity);
+                if (!Number.isInteger(Number(ranking.window)) || !result.windows.includes(Number(ranking.window))) return false;
+                if (!isFiniteBacktestMetricSet(ranking.calibration, identityMetricFields)) return false;
+                if (!isFiniteBacktestMetricSet(ranking.holdout, identityMetricFields)) return false;
+            }
+
+            if (!result.policies || !result.currentForms) return false;
+            const formMetricFields = [
+                'averageScore', 'score', 'stability', 'averageBestMatches',
+                'rate2Plus', 'rate3Plus', 'rate4Plus', 'rate5Plus', 'rate6',
+                'bestRegular', 'strongOnBestRate', 'averageCoverage',
+                'maximumExposure', 'maximumOverlap'
+            ];
+            for (const source of ['main', 'form2']) {
+                const policy = result.policies[source];
+                if (!policy || typeof policy.validated !== 'boolean') return false;
+                if (!Number.isInteger(policy.sampleCount) || policy.sampleCount < 0) return false;
+                if (!Number.isInteger(policy.selectionFailures) || policy.selectionFailures < 0) return false;
+                if (!Array.isArray(policy.reasons)) return false;
+                if (!isFiniteBacktestMetricSet(policy.baseline, formMetricFields)) return false;
+                if (!isFiniteBacktestMetricSet(policy.optimized, formMetricFields)) return false;
+                for (const metrics of [policy.baseline, policy.optimized]) {
+                    if (!Array.isArray(metrics.bucketAverages)
+                        || metrics.bucketAverages.length !== 3
+                        || metrics.bucketAverages.some(function(value) { return !Number.isFinite(Number(value)); })) return false;
+                }
+            }
+
+            const mainForm = result.currentForms.main;
+            if (!isValidCachedOptimizedForm(mainForm, 'main', null)) return false;
+            const mainKeys = new Set((Array.isArray(mainForm) ? mainForm : []).map(function(row) {
+                return row.numbers.slice().sort(function(a, b) { return a - b; }).join('-');
+            }));
+            return isValidCachedOptimizedForm(result.currentForms.form2, 'form2', mainKeys);
+        }
+
         function loadCompatibleBacktestCache(rows) {
             try {
                 const raw = localStorage.getItem(getBacktestCacheKey(rows));
                 if (!raw) return null;
                 const parsed = JSON.parse(raw);
-                if (parsed.version !== LottoStrategyCore.ALGORITHM_VERSION) return null;
-                if (parsed.constraintVersion !== LottoStrategyCore.CONSTRAINT_VERSION) return null;
-                if (parsed.fingerprint !== LottoStrategyCore.fingerprintRows(rows)) return null;
-                if (!Array.isArray(parsed.windows)) return null;
-                if (parsed.windows.join('-') !== LottoStrategyCore.BACKTEST_WINDOWS.join('-')) return null;
-                return parsed;
+                return isCompatibleBacktestResult(parsed, rows) ? parsed : null;
             } catch (error) {
                 console.warn('Backtest cache ignored:', error);
                 return null;
@@ -1962,6 +2053,12 @@
             cancelBacktest('dataset-changed');
             var data = normalizeData(rawData);
             currentData = data;
+            currentBacktestResult = null;
+            baselineForms = { main: [], form2: [] };
+            optimizedForms = { main: null, form2: null };
+            activeFormModes = { main: 'baseline', form2: 'baseline' };
+            currentCombinations = [];
+            currentCombinationsForm2 = [];
 
             const rowSelection = document.getElementById('rowSelection').value.trim();
             selectedData = rowSelection ? selectRows(data, rowSelection) : data;
@@ -1985,7 +2082,8 @@
             };
             optimizedForms = { main: null, form2: null };
             activeFormModes = { main: 'baseline', form2: 'baseline' };
-            currentBacktestResult = loadCompatibleBacktestCache(currentData);
+            const backtestRows = getEffectiveBacktestRows();
+            currentBacktestResult = loadCompatibleBacktestCache(backtestRows);
             hydrateOptimizedForms(currentBacktestResult);
             currentCombinations = cloneFormRows(getFormSet('main', activeFormModes.main));
             currentCombinationsForm2 = cloneFormRows(getFormSet('form2', activeFormModes.form2));
@@ -1993,7 +2091,7 @@
             if (currentBacktestResult) {
                 renderBacktestResult(currentBacktestResult);
             } else {
-                renderBacktestStatus(currentData.filter(LottoStrategyCore.isValidDraw).length + ' הגרלות תקינות נטענו');
+                renderBacktestStatus(backtestRows.length + ' הגרלות תקינות נטענו');
             }
 
             if (savedAnalysis) renderSavedVsCurrentComparison();
@@ -2320,7 +2418,7 @@
                     renderBacktestResult(currentBacktestResult);
                 } else {
                     renderBacktestStatus(currentData
-                        ? `${currentData.filter(LottoStrategyCore.isValidDraw).length} הגרלות תקינות נטענו`
+                        ? `${getEffectiveBacktestRows().length} הגרלות תקינות נטענו`
                         : 'יש לטעון ולנתח את קובץ המספרים.');
                 }
                 window.scrollTo({ top: 0, behavior: 'auto' });
@@ -2413,7 +2511,9 @@
                 const selectedRows = result.currentForms[source] || [];
                 return '<section class="backtest-comparison-band">' +
                     '<h3>' + label + '</h3>' +
-                    '<div class="backtest-metric-line">ציון בסיס ' + Number(policy.baseline.averageScore).toFixed(2) + ' | משופר ' + Number(policy.optimized.averageScore).toFixed(2) + '</div>' +
+                    '<div class="backtest-metric-line">מדד בסיס ' + Number(policy.baseline.score).toFixed(2) + ' | משופר ' + Number(policy.optimized.score).toFixed(2) + '</div>' +
+                    '<div class="backtest-metric-line">ממוצע ציון הגרלה: ' + Number(policy.baseline.averageScore).toFixed(2) + ' | ' + Number(policy.optimized.averageScore).toFixed(2) + '</div>' +
+                    '<div class="backtest-metric-line">יציבות: ' + formatBacktestPercent(policy.baseline.stability) + ' | ' + formatBacktestPercent(policy.optimized.stability) + '</div>' +
                     '<div class="backtest-metric-line">ממוצע שורה מיטבית: ' + Number(policy.baseline.averageBestMatches).toFixed(2) + ' | ' + Number(policy.optimized.averageBestMatches).toFixed(2) + '</div>' +
                     '<div class="backtest-metric-line">2+: ' + formatBacktestPercent(policy.baseline.rate2Plus) + ' | ' + formatBacktestPercent(policy.optimized.rate2Plus) + '</div>' +
                     '<div class="backtest-metric-line">3+: ' + formatBacktestPercent(policy.baseline.rate3Plus) + ' | ' + formatBacktestPercent(policy.optimized.rate3Plus) + '</div>' +
@@ -2451,8 +2551,8 @@
                 return;
             }
             if (message.type !== 'complete') return;
-            const expectedFingerprint = LottoStrategyCore.fingerprintRows(currentData || []);
-            if (!message.result || message.result.fingerprint !== expectedFingerprint) {
+            const effectiveRows = getEffectiveBacktestRows();
+            if (!isCompatibleBacktestResult(message.result, effectiveRows)) {
                 finishBacktestFailure('תוצאות הבדיקה אינן תואמות לקובץ הטעון.');
                 return;
             }
@@ -2468,25 +2568,36 @@
         }
 
         function startBacktest() {
-            if (!currentData || currentData.filter(LottoStrategyCore.isValidDraw).length < 501) {
+            const effectiveRows = getEffectiveBacktestRows();
+            if (effectiveRows.length < 501) {
                 renderBacktestError('נדרשות לפחות 501 הגרלות תקינות להפעלת Backtest.');
                 return;
             }
             cancelBacktest('restart');
-            currentBacktestRunId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            currentBacktestWorker = new Worker('lotto-backtest-worker.js');
-            currentBacktestWorker.onmessage = handleBacktestWorkerMessage;
-            currentBacktestWorker.onerror = function handleWorkerError() {
-                finishBacktestFailure('הבדיקה נכשלה. הטפסים הקיימים נשארו ללא שינוי.');
-            };
+            const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            currentBacktestRunId = runId;
             setBacktestRunning(true);
             renderBacktestStatus('מריץ בדיקה היסטורית...');
-            currentBacktestWorker.postMessage({
-                type: 'run',
-                runId: currentBacktestRunId,
-                rows: currentData,
-                windows: LottoStrategyCore.BACKTEST_WINDOWS
-            });
+            try {
+                const worker = new Worker('lotto-backtest-worker.js');
+                currentBacktestWorker = worker;
+                worker.onmessage = handleBacktestWorkerMessage;
+                worker.onerror = function handleWorkerError() {
+                    if (currentBacktestRunId !== runId || currentBacktestWorker !== worker) return;
+                    finishBacktestFailure('הבדיקה נכשלה. הטפסים הקיימים נשארו ללא שינוי.');
+                };
+                worker.postMessage({
+                    type: 'run',
+                    runId,
+                    rows: effectiveRows,
+                    windows: LottoStrategyCore.BACKTEST_WINDOWS
+                });
+            } catch (error) {
+                console.error('Backtest worker start error:', error);
+                if (currentBacktestRunId === runId) {
+                    finishBacktestFailure('לא ניתן להפעיל את הבדיקה בדפדפן הזה. הטפסים הקיימים נשארו ללא שינוי.');
+                }
+            }
         }
 
         function cancelBacktest(reason) {

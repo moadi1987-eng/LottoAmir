@@ -47,6 +47,9 @@ function makeResult() {
   }));
   const baselineMetrics = {
     averageScore: 9.5,
+    score: 9.12,
+    stability: 0.8,
+    bucketAverages: [9, 9.5, 10],
     averageBestMatches: 2.2,
     rate2Plus: 0.62,
     rate3Plus: 0.21,
@@ -60,6 +63,9 @@ function makeResult() {
   };
   const optimizedMetrics = {
     averageScore: 10.2,
+    score: 9.996,
+    stability: 0.9,
+    bucketAverages: [10, 10.2, 10.4],
     averageBestMatches: 2.3,
     rate2Plus: 0.66,
     rate3Plus: 0.23,
@@ -115,6 +121,7 @@ async function runViewport(browser, baseUrl, viewport, screenshotName) {
     await frame.locator(`.backtest-tab[data-panel="${panelId}"]`).click();
     assert.ok(await frame.locator(`#${panelId}`).isVisible(), `${panelId} must be visible after selection`);
   }
+  assert.ok(!(await frame.locator('#backtestComparisonPanel').textContent()).includes('NaN'));
 
   const boxes = await frame.locator('.backtest-actions button:visible').evaluateAll(buttons => buttons.map(button => {
     const rect = button.getBoundingClientRect();

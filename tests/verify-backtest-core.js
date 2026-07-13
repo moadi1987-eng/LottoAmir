@@ -63,11 +63,14 @@ assert.strictEqual(result.currentForms.form2.length, 14);
 assert.strictEqual(typeof result.policies.main.validated, 'boolean');
 assert.strictEqual(typeof result.policies.form2.validated, 'boolean');
 
-if (process.env.LOTTO_FULL_BENCHMARK === '1') {
+if (process.env.LOTTO_FULL_BENCHMARK === '1' || process.argv.includes('--full-benchmark')) {
   const benchmarkRows = buildSyntheticDraws(1712);
+  const startingHeap = process.memoryUsage().heapUsed;
   const startedAt = Date.now();
   const benchmark = core.runWalkForwardBacktest(benchmarkRows);
   const elapsedMs = Date.now() - startedAt;
+  const endingHeap = process.memoryUsage().heapUsed;
+  const peakRssKb = process.resourceUsage().maxRSS;
   assert.deepStrictEqual(benchmark.split, {
     eligibleCount: 1212,
     calibrationCount: 848,
@@ -75,7 +78,10 @@ if (process.env.LOTTO_FULL_BENCHMARK === '1') {
   });
   assert.strictEqual(benchmark.currentForms.main.length, 14);
   assert.strictEqual(benchmark.currentForms.form2.length, 14);
-  console.log(`Full Backtest benchmark: ${elapsedMs} ms`);
+  assert.ok(elapsedMs < 60000, `Full Backtest exceeded 60 seconds: ${elapsedMs} ms`);
+  assert.ok(endingHeap - startingHeap < 192 * 1024 * 1024, 'Full Backtest retained over 192 MB of heap');
+  assert.ok(peakRssKb < 512 * 1024, `Full Backtest peak RSS exceeded 512 MB: ${peakRssKb} KB`);
+  console.log(`Full Backtest benchmark: ${elapsedMs} ms, heap delta ${endingHeap - startingHeap} bytes, peak RSS ${peakRssKb} KB`);
 }
 
 console.log('Backtest core verification passed');
