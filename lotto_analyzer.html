@@ -728,6 +728,82 @@
             margin: 8px 0 12px;
         }
 
+        [hidden] { display: none !important; }
+        .backtest-workspace { padding: 18px; }
+        .backtest-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .backtest-toolbar h2 { margin: 0 0 4px; font-size: 20px; color: var(--text); }
+        .backtest-toolbar p { margin: 0; color: var(--text-muted); font-size: 13px; }
+        .backtest-actions,
+        .backtest-window-strip,
+        .backtest-tabs,
+        .form-mode-control { display: flex; gap: 8px; flex-wrap: wrap; }
+        .backtest-actions .btn { min-height: 42px; }
+        .backtest-window-strip { padding: 14px 0; align-items: center; }
+        .backtest-window-strip::before { content: 'חלונות למידה'; color: var(--text-muted); font-size: 12px; }
+        .backtest-window-strip span {
+            min-width: 54px;
+            text-align: center;
+            padding: 7px 10px;
+            border: 1px solid var(--success-border);
+            border-radius: 6px;
+            color: var(--success);
+            background: var(--success-bg);
+            font-weight: 700;
+        }
+        .backtest-progress-wrap { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+        .backtest-progress-wrap progress { width: min(560px, 100%); height: 12px; accent-color: var(--success); }
+        .backtest-progress-wrap span { min-width: 70px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .backtest-tabs { border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+        .backtest-tab,
+        .form-mode-control button {
+            min-height: 36px;
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px 6px 0 0;
+            background: var(--bg-card);
+            color: var(--text-muted);
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .backtest-tab.active,
+        .form-mode-control button.active,
+        .form-mode-control button[aria-pressed="true"] {
+            color: var(--text);
+            border-color: var(--success-border);
+            background: var(--success-bg);
+        }
+        .form-mode-control { justify-content: center; margin: 0 0 14px; }
+        .form-mode-control button { border-radius: 6px; min-width: 86px; }
+        .form-mode-control button:disabled { opacity: .4; cursor: not-allowed; }
+        .combo-backtest-meta { margin-top: 8px; color: var(--success); font-size: 11px; font-weight: 700; }
+        .backtest-panel { min-height: 180px; }
+        .backtest-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+        .backtest-strategy-row {
+            display: grid;
+            grid-template-columns: minmax(180px, 1.4fr) .6fr .75fr .75fr .75fr .75fr;
+            gap: 8px;
+            align-items: center;
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .backtest-strategy-row strong { color: var(--text); overflow-wrap: anywhere; }
+        .backtest-comparison-band { padding: 14px 0 18px; border-bottom: 1px solid var(--border); }
+        .backtest-comparison-band h3 { margin: 0 0 10px; color: var(--text); }
+        .backtest-metric-line { padding: 4px 0; color: var(--text-muted); font-size: 13px; }
+        .backtest-comparison-band ol { margin: 12px 0 0; padding-inline-start: 24px; color: var(--text); }
+        .backtest-comparison-band li { padding: 3px 0; overflow-wrap: anywhere; }
+        .backtest-disclaimer { margin: 16px 0 0; color: var(--warning); font-size: 12px; }
+
         /* ===== MOBILE RESPONSIVE ===== */
         @media (max-width: 768px) {
             body { padding: 6px; }
@@ -751,6 +827,13 @@
 
             .card { padding: 10px 12px; }
             .card-header { font-size: 12px; }
+
+            .backtest-workspace { padding: 10px; }
+            .backtest-toolbar { align-items: stretch; flex-direction: column; }
+            .backtest-actions > * { flex: 1 1 140px; }
+            .backtest-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .backtest-strategy-row { grid-template-columns: 1fr 1fr; }
+            .backtest-strategy-row > *:first-child { grid-column: 1 / -1; }
 
             .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
             .stat-box { padding: 8px; }
@@ -857,6 +940,8 @@
             .file-input-label { flex-basis: 100%; max-width: none; }
             .comparison-control-row { grid-template-columns: 1fr; }
             .quick-compare-row { grid-template-columns: 1fr; }
+            .backtest-summary-grid { grid-template-columns: 1fr; }
+            .backtest-actions > * { flex-basis: 100%; }
         }
     </style>
 </head>
@@ -1063,6 +1148,11 @@
                     </div>
                     <div class="pinned-status" id="pinnedMainStatus" style="display:none;"></div>
 
+                    <div class="form-mode-control" id="mainFormMode" aria-label="מצב טופס ראשון">
+                        <button type="button" data-mode="improved" onclick="applyFormMode('main', 'improved')">משופר</button>
+                        <button type="button" data-mode="baseline" onclick="applyFormMode('main', 'baseline')">בסיס</button>
+                    </div>
+
                     <div class="combinations" id="combinations"></div>
 
                     <button class="fill-all-btn" onclick="sendAllToForm()">
@@ -1083,6 +1173,10 @@
                         <button class="pin-form-btn" id="pinForm2Btn" onclick="pinCurrentForm('form2')">📌 קבע טופס שני</button>
                     </div>
                     <div class="pinned-status" id="pinnedForm2Status" style="display:none;"></div>
+                    <div class="form-mode-control" id="form2FormMode" aria-label="מצב טופס שני">
+                        <button type="button" data-mode="improved" onclick="applyFormMode('form2', 'improved')">משופר</button>
+                        <button type="button" data-mode="baseline" onclick="applyFormMode('form2', 'baseline')">בסיס</button>
+                    </div>
                     <div class="form2-quality-summary" id="form2DiversitySummary"></div>
                     <div class="combinations" id="combinationsForm2"></div>
                     <button class="fill-all-btn" onclick="sendAllToForm2()">
@@ -1164,12 +1258,50 @@
                     <div id="pinnedFutureContent"></div>
                 </div>
             </div>
+
+            <section class="backtest-workspace" id="backtestWorkspace" hidden>
+                <div class="backtest-toolbar">
+                    <div>
+                        <h2>בדיקת אסטרטגיות היסטורית</h2>
+                        <p id="backtestDatasetMeta">יש לטעון ולנתח את קובץ המספרים.</p>
+                    </div>
+                    <div class="backtest-actions">
+                        <button type="button" class="btn btn-primary" id="backtestRunBtn" onclick="startBacktest()">הפעל בדיקה</button>
+                        <button type="button" class="btn btn-danger" id="backtestCancelBtn" onclick="cancelBacktest('user')" hidden>בטל</button>
+                        <button type="button" class="btn btn-secondary" onclick="setAnalyzerWorkspace('analysis')">חזרה לניתוח</button>
+                    </div>
+                </div>
+                <div class="backtest-window-strip" aria-label="חלונות למידה">
+                    <span>100</span><span>200</span><span>500</span>
+                </div>
+                <div class="backtest-progress-wrap" id="backtestProgress" hidden>
+                    <progress id="backtestProgressBar" max="100" value="0"></progress>
+                    <span id="backtestProgressText"></span>
+                </div>
+                <div class="backtest-tabs" role="tablist">
+                    <button type="button" class="backtest-tab active" data-panel="backtestSummaryPanel" onclick="showBacktestPanel('backtestSummaryPanel')">סיכום</button>
+                    <button type="button" class="backtest-tab" data-panel="backtestStrategiesPanel" onclick="showBacktestPanel('backtestStrategiesPanel')">אסטרטגיות</button>
+                    <button type="button" class="backtest-tab" data-panel="backtestComparisonPanel" onclick="showBacktestPanel('backtestComparisonPanel')">בסיס מול משופר</button>
+                </div>
+                <div id="backtestSummaryPanel" class="backtest-panel"></div>
+                <div id="backtestStrategiesPanel" class="backtest-panel" hidden></div>
+                <div id="backtestComparisonPanel" class="backtest-panel" hidden></div>
+                <p class="backtest-disclaimer">הניתוח ההיסטורי אינו מבטיח תוצאות עתידיות או זכייה.</p>
+            </section>
         </div>
     </div>
     
     <script>
         let currentCombinations = [];
         let currentCombinationsForm2 = [];
+        const BACKTEST_CACHE_PREFIX = 'lottoBacktestCacheV1:';
+        let baselineForms = { main: [], form2: [] };
+        let optimizedForms = { main: null, form2: null };
+        let activeFormModes = { main: 'baseline', form2: 'baseline' };
+        let currentBacktestResult = null;
+        let currentBacktestWorker = null;
+        let currentBacktestRunId = null;
+        let analyzerWorkspaceMode = 'analysis';
         var comparisonFormSource = 'main';
         let currentData = null;
         const DEFAULT_NUMBERS_FILE = 'NUMBERS.xlsx';
@@ -1253,6 +1385,89 @@
 
         function getCombosForSource(source) {
             return source === 'form2' ? (currentCombinationsForm2 || []) : (currentCombinations || []);
+        }
+
+        function cloneFormRows(rows) {
+            return (rows || []).map(function(combo) {
+                return Object.assign({}, combo, { numbers: (combo.numbers || []).slice() });
+            });
+        }
+
+        function getFormSet(source, mode) {
+            if (mode === 'improved' && optimizedForms[source]) return optimizedForms[source];
+            return baselineForms[source] || [];
+        }
+
+        function updateFormModeControl(source) {
+            const controlId = source === 'form2' ? 'form2FormMode' : 'mainFormMode';
+            const activeMode = activeFormModes[source];
+            document.querySelectorAll('#' + controlId + ' button').forEach(function(button) {
+                const selected = button.dataset.mode === activeMode;
+                button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                button.classList.toggle('active', selected);
+                button.disabled = button.dataset.mode === 'improved' && !optimizedForms[source];
+            });
+        }
+
+        function applyFormMode(source, mode) {
+            if (!['main', 'form2'].includes(source)) return false;
+            if (mode === 'improved' && !optimizedForms[source]) return false;
+            activeFormModes[source] = mode === 'improved' ? 'improved' : 'baseline';
+            const active = cloneFormRows(getFormSet(source, activeFormModes[source]));
+            if (source === 'main') currentCombinations = active;
+            else currentCombinationsForm2 = active;
+            renderActiveForms();
+            updateComparison({ silent: true, scroll: false });
+            return true;
+        }
+
+        function getBacktestCacheKey(rows, windows = LottoStrategyCore.BACKTEST_WINDOWS) {
+            return `${BACKTEST_CACHE_PREFIX}${LottoStrategyCore.fingerprintRows(rows || [])}:${windows.join('-')}`;
+        }
+
+        function loadCompatibleBacktestCache(rows) {
+            try {
+                const raw = localStorage.getItem(getBacktestCacheKey(rows));
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (parsed.version !== LottoStrategyCore.ALGORITHM_VERSION) return null;
+                if (parsed.constraintVersion !== LottoStrategyCore.CONSTRAINT_VERSION) return null;
+                if (parsed.fingerprint !== LottoStrategyCore.fingerprintRows(rows)) return null;
+                if (!Array.isArray(parsed.windows)) return null;
+                if (parsed.windows.join('-') !== LottoStrategyCore.BACKTEST_WINDOWS.join('-')) return null;
+                return parsed;
+            } catch (error) {
+                console.warn('Backtest cache ignored:', error);
+                return null;
+            }
+        }
+
+        function saveBacktestCache(result) {
+            try {
+                const key = `${BACKTEST_CACHE_PREFIX}${result.fingerprint}:${result.windows.join('-')}`;
+                localStorage.setItem(key, JSON.stringify(result));
+                return true;
+            } catch (error) {
+                console.warn('Backtest cache unavailable:', error);
+                return false;
+            }
+        }
+
+        function hydrateOptimizedForms(result) {
+            optimizedForms = {
+                main: result && result.currentForms && result.currentForms.main
+                    ? cloneFormRows(result.currentForms.main)
+                    : null,
+                form2: result && result.currentForms && result.currentForms.form2
+                    ? cloneFormRows(result.currentForms.form2)
+                    : null
+            };
+            for (const source of ['main', 'form2']) {
+                const policy = result && result.policies ? result.policies[source] : null;
+                activeFormModes[source] = policy && policy.validated && optimizedForms[source]
+                    ? 'improved'
+                    : 'baseline';
+            }
         }
 
         function normalizePinnedCombination(combo, index) {
@@ -1744,6 +1959,7 @@
         }
 
         async function processAnalysisRows(rawData) {
+            cancelBacktest('dataset-changed');
             var data = normalizeData(rawData);
             currentData = data;
 
@@ -1763,7 +1979,22 @@
 
             const analysis = await analyzeData(selectedData);
             lastAnalysis = analysis;
+            baselineForms = {
+                main: cloneFormRows(analysis.combinations),
+                form2: cloneFormRows(analysis.combinationsForm2)
+            };
+            optimizedForms = { main: null, form2: null };
+            activeFormModes = { main: 'baseline', form2: 'baseline' };
+            currentBacktestResult = loadCompatibleBacktestCache(currentData);
+            hydrateOptimizedForms(currentBacktestResult);
+            currentCombinations = cloneFormRows(getFormSet('main', activeFormModes.main));
+            currentCombinationsForm2 = cloneFormRows(getFormSet('form2', activeFormModes.form2));
             displayResults(analysis);
+            if (currentBacktestResult) {
+                renderBacktestResult(currentBacktestResult);
+            } else {
+                renderBacktestStatus(currentData.filter(LottoStrategyCore.isValidDraw).length + ' הגרלות תקינות נטענו');
+            }
 
             if (savedAnalysis) renderSavedVsCurrentComparison();
 
@@ -1934,6 +2165,41 @@
                 'חפיפה מרבית ' + metrics.maximumOverlap + ' | ' +
                 strongSummary;
         }
+
+        function renderActiveForms() {
+            function renderCombo(combo, index, source) {
+                const sendFunction = source === 'form2' ? 'sendToForm2' : 'sendToForm';
+                const copyFunction = source === 'form2' ? 'copyCombo2' : 'copyCombo';
+                const score = Number(combo.backtestScore);
+                const metadata = Number.isFinite(score)
+                    ? '<div class="combo-backtest-meta">Backtest ' + score.toFixed(2) + ' · חלון ' + escapeBacktestText(combo.window) + '</div>'
+                    : '';
+                return '<div class="combo-card">' +
+                    '<div class="combo-title">' + escapeBacktestText(combo.strategy || (index + 1)) + '</div>' +
+                    '<div class="combo-numbers">' + (combo.numbers || []).map(function(number) {
+                        return '<div class="combo-number">' + number + '</div>';
+                    }).join('') + '</div>' +
+                    '<div class="combo-strong"><div>💪 מספר חזק:</div><div class="combo-strong-number">' +
+                        (combo.strong != null ? combo.strong : '') + '</div></div>' +
+                    metadata +
+                    '<div class="combo-buttons">' +
+                        '<button class="transfer-btn" onclick="' + sendFunction + '(' + index + ')">📝 שלח לטופס</button>' +
+                        '<button class="copy-btn" onclick="' + copyFunction + '(' + index + ')">📋 העתק</button>' +
+                    '</div></div>';
+            }
+
+            document.getElementById('combinations').innerHTML = (currentCombinations || [])
+                .map(function(combo, index) { return renderCombo(combo, index, 'main'); })
+                .join('');
+            document.getElementById('combinationsForm2').innerHTML = (currentCombinationsForm2 || [])
+                .map(function(combo, index) { return renderCombo(combo, index, 'form2'); })
+                .join('');
+            document.getElementById('saveCombosBtn').disabled = !(currentCombinations || []).length;
+            renderForm2DiversitySummary(currentCombinationsForm2 || []);
+            updateFormModeControl('main');
+            updateFormModeControl('form2');
+        }
+
         function displayResults(analysis) {
             // קבע את הודעת הטווח
             const rowSelection = document.getElementById('rowSelection').value.trim();
@@ -2039,40 +2305,196 @@
                 quartetNote.style.display = 'none';
             }
             
-            // Combinations
-            const combosHtml = analysis.combinations.map((combo, index) => `
-                <div class="combo-card">
-                    <div class="combo-title">${combo.strategy}</div>
-                    <div class="combo-numbers">
-                        ${combo.numbers.map(n => `<div class="combo-number">${n}</div>`).join('')}
-                    </div>
-                    <div class="combo-strong">
-                        <div>💪 מספר חזק:</div>
-                        <div class="combo-strong-number">${combo.strong}</div>
-                    </div>
-                    <div class="combo-buttons">
-                        <button class="transfer-btn" onclick="sendToForm(${index})">📝 שלח לטופס</button>
-                        <button class="copy-btn" onclick="copyCombo(${index})">📋 העתק</button>
-                    </div>
-                </div>
-            `).join('');
-            
-            document.getElementById('combinations').innerHTML = combosHtml;
-            document.getElementById('saveCombosBtn').disabled = false;
-            
-            var form2 = (analysis.combinationsForm2 || currentCombinationsForm2 || []);
-            var form2Html = form2.map(function(combo, index) {
-                return '<div class="combo-card">' +
-                    '<div class="combo-title">' + (combo.strategy || (index + 1)) + '</div>' +
-                    '<div class="combo-numbers">' + (combo.numbers || []).map(function(n) { return '<div class="combo-number">' + n + '</div>'; }).join('') + '</div>' +
-                    '<div class="combo-strong"><div>💪 מספר חזק:</div><div class="combo-strong-number">' + (combo.strong != null ? combo.strong : '') + '</div></div>' +
-                    '<div class="combo-buttons">' +
-                    '<button class="transfer-btn" onclick="sendToForm2(' + index + ')">📝 שלח לטופס</button>' +
-                    '<button class="copy-btn" onclick="copyCombo2(' + index + ')">📋 העתק</button>' +
-                    '</div></div>';
+            renderActiveForms();
+        }
+
+        function setAnalyzerWorkspace(mode) {
+            analyzerWorkspaceMode = mode === 'backtest' ? 'backtest' : 'analysis';
+            const isBacktest = analyzerWorkspaceMode === 'backtest';
+            document.getElementById('backtestWorkspace').hidden = !isBacktest;
+            document.querySelector('.upload-section').hidden = isBacktest;
+            document.getElementById('sideNav').hidden = isBacktest;
+            document.getElementById('results').hidden = isBacktest;
+            if (isBacktest) {
+                if (currentBacktestResult) {
+                    renderBacktestResult(currentBacktestResult);
+                } else {
+                    renderBacktestStatus(currentData
+                        ? `${currentData.filter(LottoStrategyCore.isValidDraw).length} הגרלות תקינות נטענו`
+                        : 'יש לטעון ולנתח את קובץ המספרים.');
+                }
+                window.scrollTo({ top: 0, behavior: 'auto' });
+            }
+        }
+
+        function setBacktestRunning(isRunning) {
+            document.getElementById('backtestRunBtn').hidden = isRunning;
+            document.getElementById('backtestCancelBtn').hidden = !isRunning;
+            document.getElementById('backtestProgress').hidden = !isRunning;
+            if (isRunning) {
+                document.getElementById('backtestProgressBar').value = 0;
+                document.getElementById('backtestProgressText').textContent = '0%';
+            }
+        }
+
+        function renderBacktestStatus(message) {
+            document.getElementById('backtestDatasetMeta').textContent = message;
+        }
+
+        function renderBacktestError(message) {
+            renderBacktestStatus(message);
+            document.getElementById('backtestSummaryPanel').innerHTML = '<div class="error">' +
+                escapeBacktestText(message) + '</div>';
+            showBacktestPanel('backtestSummaryPanel');
+        }
+
+        function finishBacktestFailure(message) {
+            if (currentBacktestWorker) currentBacktestWorker.terminate();
+            currentBacktestWorker = null;
+            currentBacktestRunId = null;
+            setBacktestRunning(false);
+            renderBacktestError(message);
+        }
+
+        function showBacktestPanel(panelId) {
+            document.querySelectorAll('.backtest-panel').forEach(function(panel) {
+                panel.hidden = panel.id !== panelId;
+            });
+            document.querySelectorAll('.backtest-tab').forEach(function(tab) {
+                tab.classList.toggle('active', tab.dataset.panel === panelId);
+            });
+        }
+
+        function escapeBacktestText(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatBacktestPercent(value) {
+            return `${(Number(value || 0) * 100).toFixed(1)}%`;
+        }
+
+        function renderBacktestResult(result) {
+            const policyCards = ['main', 'form2'].map(function(source) {
+                const policy = result.policies[source];
+                const label = source === 'main' ? 'טופס ראשון' : 'טופס שני';
+                const status = policy.validated ? 'מאומת' : 'נשאר בסיס';
+                return '<div class="stat-box">' +
+                    '<div class="stat-label">' + label + '</div>' +
+                    '<div class="stat-value">' + status + '</div>' +
+                    '<div>3+: ' + formatBacktestPercent(policy.optimized.rate3Plus) + '</div>' +
+                    '</div>';
             }).join('');
-            document.getElementById('combinationsForm2').innerHTML = form2Html;
-            renderForm2DiversitySummary(form2);
+            document.getElementById('backtestSummaryPanel').innerHTML =
+                '<div class="backtest-summary-grid">' +
+                    '<div class="stat-box"><div class="stat-label">הגרלות שנבדקו</div><div class="stat-value">' + result.split.eligibleCount + '</div></div>' +
+                    '<div class="stat-box"><div class="stat-label">כיול / אימות</div><div class="stat-value">' + result.split.calibrationCount + ' / ' + result.split.holdoutCount + '</div></div>' +
+                    policyCards +
+                '</div>';
+
+            document.getElementById('backtestStrategiesPanel').innerHTML = result.rankings.map(function(ranking, index) {
+                return '<div class="backtest-strategy-row">' +
+                    '<strong>' + (index + 1) + '. ' + escapeBacktestText(ranking.identity) + '</strong>' +
+                    '<span>חלון ' + ranking.window + '</span>' +
+                    '<span>כיול ' + Number(ranking.calibration.score).toFixed(2) + '</span>' +
+                    '<span>אימות ' + Number(ranking.holdout.score).toFixed(2) + '</span>' +
+                    '<span>3+ ' + formatBacktestPercent(ranking.calibration.rate3Plus) + '</span>' +
+                    '<span>יציבות ' + formatBacktestPercent(ranking.calibration.stability) + '</span>' +
+                '</div>';
+            }).join('');
+
+            document.getElementById('backtestComparisonPanel').innerHTML = ['main', 'form2'].map(function(source) {
+                const policy = result.policies[source];
+                const label = source === 'main' ? 'טופס ראשון' : 'טופס שני';
+                const selectedRows = result.currentForms[source] || [];
+                return '<section class="backtest-comparison-band">' +
+                    '<h3>' + label + '</h3>' +
+                    '<div class="backtest-metric-line">ציון בסיס ' + Number(policy.baseline.averageScore).toFixed(2) + ' | משופר ' + Number(policy.optimized.averageScore).toFixed(2) + '</div>' +
+                    '<div class="backtest-metric-line">ממוצע שורה מיטבית: ' + Number(policy.baseline.averageBestMatches).toFixed(2) + ' | ' + Number(policy.optimized.averageBestMatches).toFixed(2) + '</div>' +
+                    '<div class="backtest-metric-line">2+: ' + formatBacktestPercent(policy.baseline.rate2Plus) + ' | ' + formatBacktestPercent(policy.optimized.rate2Plus) + '</div>' +
+                    '<div class="backtest-metric-line">3+: ' + formatBacktestPercent(policy.baseline.rate3Plus) + ' | ' + formatBacktestPercent(policy.optimized.rate3Plus) + '</div>' +
+                    '<div class="backtest-metric-line">4+: ' + formatBacktestPercent(policy.baseline.rate4Plus) + ' | ' + formatBacktestPercent(policy.optimized.rate4Plus) + '</div>' +
+                    '<div class="backtest-metric-line">5+: ' + formatBacktestPercent(policy.baseline.rate5Plus) + ' | ' + formatBacktestPercent(policy.optimized.rate5Plus) + '</div>' +
+                    '<div class="backtest-metric-line">6: ' + formatBacktestPercent(policy.baseline.rate6) + ' | ' + formatBacktestPercent(policy.optimized.rate6) + '</div>' +
+                    '<div class="backtest-metric-line">חזק בשורה הטובה: ' + formatBacktestPercent(policy.baseline.strongOnBestRate) + ' | ' + formatBacktestPercent(policy.optimized.strongOnBestRate) + '</div>' +
+                    '<div class="backtest-metric-line">כיסוי ממוצע: ' + Number(policy.baseline.averageCoverage).toFixed(1) + ' | ' + Number(policy.optimized.averageCoverage).toFixed(1) + '</div>' +
+                    '<div class="backtest-metric-line">חשיפה מרבית: ' + policy.baseline.maximumExposure + ' | ' + policy.optimized.maximumExposure + '</div>' +
+                    '<div class="backtest-metric-line">חפיפה מרבית: ' + policy.baseline.maximumOverlap + ' | ' + policy.optimized.maximumOverlap + '</div>' +
+                    '<ol>' + selectedRows.map(function(combo) {
+                        return '<li>' + escapeBacktestText(combo.strategy) + ' (' + combo.numbers.join(', ') + ')</li>';
+                    }).join('') + '</ol>' +
+                '</section>';
+            }).join('');
+
+            renderBacktestStatus('הבדיקה הסתיימה עבור ' + result.split.eligibleCount + ' הגרלות.');
+            showBacktestPanel('backtestSummaryPanel');
+        }
+
+        function handleBacktestWorkerMessage(event) {
+            const message = event.data || {};
+            if (message.runId !== currentBacktestRunId) return;
+            if (message.type === 'progress') {
+                const phaseProgress = message.total ? message.completed / message.total : 0;
+                const percentage = message.phase === 'holdout-policies'
+                    ? Math.round(75 + phaseProgress * 25)
+                    : Math.round(phaseProgress * 75);
+                document.getElementById('backtestProgressBar').value = percentage;
+                document.getElementById('backtestProgressText').textContent = percentage + '%';
+                return;
+            }
+            if (message.type === 'error') {
+                finishBacktestFailure(message.message || 'הבדיקה נכשלה.');
+                return;
+            }
+            if (message.type !== 'complete') return;
+            const expectedFingerprint = LottoStrategyCore.fingerprintRows(currentData || []);
+            if (!message.result || message.result.fingerprint !== expectedFingerprint) {
+                finishBacktestFailure('תוצאות הבדיקה אינן תואמות לקובץ הטעון.');
+                return;
+            }
+            currentBacktestResult = message.result;
+            saveBacktestCache(message.result);
+            hydrateOptimizedForms(message.result);
+            for (const source of ['main', 'form2']) applyFormMode(source, activeFormModes[source]);
+            renderBacktestResult(message.result);
+            if (currentBacktestWorker) currentBacktestWorker.terminate();
+            currentBacktestWorker = null;
+            currentBacktestRunId = null;
+            setBacktestRunning(false);
+        }
+
+        function startBacktest() {
+            if (!currentData || currentData.filter(LottoStrategyCore.isValidDraw).length < 501) {
+                renderBacktestError('נדרשות לפחות 501 הגרלות תקינות להפעלת Backtest.');
+                return;
+            }
+            cancelBacktest('restart');
+            currentBacktestRunId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            currentBacktestWorker = new Worker('lotto-backtest-worker.js');
+            currentBacktestWorker.onmessage = handleBacktestWorkerMessage;
+            currentBacktestWorker.onerror = function handleWorkerError() {
+                finishBacktestFailure('הבדיקה נכשלה. הטפסים הקיימים נשארו ללא שינוי.');
+            };
+            setBacktestRunning(true);
+            renderBacktestStatus('מריץ בדיקה היסטורית...');
+            currentBacktestWorker.postMessage({
+                type: 'run',
+                runId: currentBacktestRunId,
+                rows: currentData,
+                windows: LottoStrategyCore.BACKTEST_WINDOWS
+            });
+        }
+
+        function cancelBacktest(reason) {
+            if (currentBacktestWorker) currentBacktestWorker.terminate();
+            currentBacktestWorker = null;
+            currentBacktestRunId = null;
+            setBacktestRunning(false);
+            if (reason === 'user') renderBacktestStatus('הבדיקה בוטלה. לא בוצע שינוי בטפסים.');
         }
         
         async function saveCombosOnly() {

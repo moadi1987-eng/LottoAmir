@@ -38,6 +38,9 @@ assert(/pinCurrentForm\('form2'\)/.test(html), 'Form2 PIN button must pin second
 assert(/currentCombinationsForm2/.test(html), 'PIN feature must reference second form combinations');
 assert(/draw\.drawNumber\s*>\s*pin\.anchorDrawNumber/.test(html), 'Future filtering must prefer draw number comparison');
 assert(/confirm\(/.test(html), 'Replacing an existing PIN must require confirmation');
+assert(/function applyFormMode\(source, mode\)/.test(html), 'Form mode switching must be explicit');
+assert(/function pinCurrentForm\(source\)[\s\S]*getCombosForSource\(source\)/.test(html), 'PIN must snapshot the active form mode');
+assert(/cancelBacktest\('dataset-changed'\)/.test(html), 'Loading another dataset must cancel an active Backtest');
 assert(shellHtml.includes('data-target="pinnedFutureCard"'), 'ALL_IN_ONE analyzer rail must link to pinned future comparisons');
 assert(shellHtml.includes("goToAnalyzerSection('pinnedFutureCard')"), 'ALL_IN_ONE analyzer rail must scroll to pinned future card');
 
