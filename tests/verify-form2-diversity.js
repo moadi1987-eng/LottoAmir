@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
+const LottoStrategyCore = require('../lotto-strategy-core.js');
 
 const html = fs.readFileSync('lotto_analyzer.html', 'utf8');
 const scriptBlocks = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)]
@@ -61,6 +62,7 @@ const context = vm.createContext({
   console: { log() {}, warn() {}, error() {} },
   document,
   localStorage,
+  LottoStrategyCore,
   setTimeout,
   clearTimeout,
   alert() {},
