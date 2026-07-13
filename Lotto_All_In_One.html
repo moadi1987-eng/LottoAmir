@@ -425,6 +425,7 @@
             <button class="nav-btn primary active" id="navFormBtn" onclick="setActiveSection('form')" aria-pressed="true">📝 טפסים</button>
             <button class="nav-btn" id="navAnalyzerBtn" onclick="setActiveSection('analyzer')" aria-pressed="false">📊 ניתוח</button>
             <button class="nav-btn" id="navCompareBtn" onclick="openComparisonView()" aria-pressed="false">🎯 השוואה</button>
+            <button class="nav-btn" id="navBacktestBtn" onclick="openBacktestView()" aria-pressed="false">📈 Backtest</button>
             <button class="nav-btn print-nav" id="navPrintBtn" onclick="printForm()">🖨️ הדפסה</button>
         </div>
     </div>
@@ -432,6 +433,7 @@
     <nav class="analyzer-rail" id="analyzerRail" aria-label="ניווט ניתוח תוצאות">
         <button type="button" class="analyzer-rail-btn" data-target="comparisonCard" onclick="goToAnalyzerSection('comparisonCard')">🎯 השוואה</button>
         <button type="button" class="analyzer-rail-btn" data-target="combosCard" onclick="goToAnalyzerSection('combosCard')">✨ קומבינציות</button>
+        <button type="button" class="analyzer-rail-btn" data-target="backtestWorkspace" onclick="openBacktestView()">📈 Backtest</button>
         <button type="button" class="analyzer-rail-btn" data-target="combosForm2Card" onclick="goToAnalyzerSection('combosForm2Card')">📋 טופס 2</button>
         <button type="button" class="analyzer-rail-btn" data-target="statsCard" onclick="goToAnalyzerSection('statsCard')">📊 סטטיסטיקות</button>
         <button type="button" class="analyzer-rail-btn" data-target="hotCard" onclick="goToAnalyzerSection('hotCard')">🔥 חמים</button>
@@ -498,6 +500,15 @@
             }
         }
 
+        function showChildAnalyzerWorkspace(mode) {
+            const analyzerIframe = document.getElementById('analyzerIframe');
+            if (!analyzerIframe || !analyzerIframe.contentWindow) return;
+            if (typeof analyzerIframe.contentWindow.setAnalyzerWorkspace === 'function') {
+                if (mode === 'backtest') analyzerIframe.contentWindow.setAnalyzerWorkspace('backtest');
+                else analyzerIframe.contentWindow.setAnalyzerWorkspace('analysis');
+            }
+        }
+
         function setActiveRailButton(sectionId) {
             document.querySelectorAll('.analyzer-rail-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.target === sectionId);
@@ -506,8 +517,8 @@
 
         function setActiveSection(section, options) {
             options = options || {};
-            const normalized = section === 'analyzer' || section === 'compare' ? 'analyzer' : 'form';
-            const activeNav = options.navTarget || (section === 'compare' ? 'compare' : normalized);
+            const normalized = ['analyzer', 'compare', 'backtest'].includes(section) ? 'analyzer' : 'form';
+            const activeNav = options.navTarget || (section === 'compare' ? 'compare' : section === 'backtest' ? 'backtest' : normalized);
             activeShellSection = normalized;
             document.body.classList.toggle('shell-analyzer-active', normalized === 'analyzer');
 
@@ -517,7 +528,8 @@
             const navMap = {
                 form: document.getElementById('navFormBtn'),
                 analyzer: document.getElementById('navAnalyzerBtn'),
-                compare: document.getElementById('navCompareBtn')
+                compare: document.getElementById('navCompareBtn'),
+                backtest: document.getElementById('navBacktestBtn')
             };
 
             Object.keys(navMap).forEach(key => {
@@ -530,7 +542,11 @@
             });
 
             updateViewportMetrics();
-            if (normalized === 'analyzer') setEmbeddedAnalyzerMode();
+            if (normalized === 'analyzer') {
+                setEmbeddedAnalyzerMode();
+                if (section !== 'backtest') showChildAnalyzerWorkspace('analysis');
+            }
+            if (section === 'analyzer' && !options.preserveScroll) setActiveRailButton('');
             if (!options.preserveScroll) {
                 window.scrollTo({ top: 0, behavior: options.smooth ? 'smooth' : 'auto' });
             }
@@ -541,6 +557,7 @@
             setActiveRailButton(sectionId);
 
             setTimeout(() => {
+                showChildAnalyzerWorkspace('analysis');
                 const analyzerIframe = document.getElementById('analyzerIframe');
                 if (!analyzerIframe || !analyzerIframe.contentWindow) return;
 
@@ -563,6 +580,14 @@
         function openComparisonView() {
             setActiveSection('compare', { navTarget: 'compare', smooth: true });
             goToAnalyzerSection('comparisonCard', 'compare');
+        }
+
+        function openBacktestView() {
+            setActiveSection('backtest', { preserveScroll: true, navTarget: 'backtest' });
+            setActiveRailButton('backtestWorkspace');
+            setTimeout(function focusBacktestWorkspace() {
+                showChildAnalyzerWorkspace('backtest');
+            }, 180);
         }
         
         // Scroll to section

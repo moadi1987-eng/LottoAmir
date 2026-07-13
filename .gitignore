@@ -1,6 +1,7 @@
 .vscode/
 .superpowers/
 .worktrees/
+test-results/
 backup_2025-02-18/
 
 # Local data and generated analysis files
