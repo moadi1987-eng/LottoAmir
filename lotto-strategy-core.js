@@ -9,6 +9,18 @@
   const CONSTRAINT_VERSION = 'forms-v1';
   const BACKTEST_WINDOWS = Object.freeze([100, 200, 500]);
   const REGULAR_POINTS = Object.freeze([0, 1, 3, 10, 35, 120, 400]);
+  const FORM1_OPTIONS = Object.freeze({
+    minimumCoverage: 28,
+    maximumExposure: 8,
+    maximumOverlap: 5,
+    maximumReplacements: 2,
+  });
+  const FORM2_OPTIONS = Object.freeze({
+    minimumCoverage: 30,
+    maximumExposure: 7,
+    maximumOverlap: 4,
+    minimumRetained: 3,
+  });
   const FORM2_STRATEGY_LABELS = Object.freeze([
     'בשלים + תדירות', 'פריצת קור', 'מגמת עלייה מואצת', 'פער אופטימלי',
     'איזון פיזור', 'זוגות מאמצע הדירוג', 'שלישייה מובילה + קרים',
@@ -613,8 +625,18 @@
     return priority;
   }
 
-  function findForm2FallbackCombination(priority, accepted, exposure, covered, targetCoverage, options) {
+  function findForm2FallbackCombination(
+    priority,
+    accepted,
+    exposure,
+    covered,
+    targetCoverage,
+    options,
+    baseNumbers,
+    forbiddenKeys,
+  ) {
     const acceptedKeys = new Set(accepted.map(combo => getCombinationKey(combo.numbers)));
+    const baseSet = new Set(baseNumbers || []);
     const ordered = priority.slice().sort((a, b) => {
       const aCovered = covered.has(a) ? 1 : 0;
       const bCovered = covered.has(b) ? 1 : 0;
@@ -627,8 +649,11 @@
       if (found) return;
       if (selected.length === 6) {
         const numbers = selected.slice().sort((a, b) => a - b);
+        const key = getCombinationKey(numbers);
         if (covered.size + newCount < targetCoverage) return;
-        if (acceptedKeys.has(getCombinationKey(numbers))) return;
+        if (options.enforceMinimumRetained
+          && getOverlap(numbers, baseNumbers) < options.minimumRetained) return;
+        if (acceptedKeys.has(key) || forbiddenKeys.has(key)) return;
         found = numbers;
         return;
       }
@@ -643,6 +668,12 @@
           return overlap > options.maximumOverlap;
         });
         if (overlapsTooMuch) continue;
+        if (options.enforceMinimumRetained) {
+          const retainedSoFar = selected.filter(value => baseSet.has(value)).length + (baseSet.has(number) ? 1 : 0);
+          const slotsAfterPick = remaining - 1;
+          const remainingBaseNumbers = ordered.slice(index + 1).filter(value => baseSet.has(value)).length;
+          if (retainedSoFar + Math.min(slotsAfterPick, remainingBaseNumbers) < options.minimumRetained) continue;
+        }
         selected.push(number);
         search(index + 1, selected, newCount + (covered.has(number) ? 0 : 1));
         selected.pop();
@@ -658,7 +689,11 @@
       minimumCoverage: 30,
       maximumExposure: 7,
       maximumOverlap: 4,
+      minimumRetained: 3,
+      enforceMinimumRetained: false,
+      forbiddenKeys: [],
     }, options || {});
+    const forbiddenKeys = new Set(settings.forbiddenKeys || []);
     const priority = buildForm2CandidatePriority(candidatePriority, [], [], []);
     const priorityIndex = new Map(priority.map((number, index) => [number, index]));
     const accepted = [];
@@ -676,7 +711,7 @@
         Math.ceil(settings.minimumCoverage * (comboIndex + 1) / Math.max(1, total)),
       );
       let chosen = null;
-      for (let retainedCount = 6; retainedCount >= 3 && !chosen; retainedCount -= 1) {
+      for (let retainedCount = 6; retainedCount >= settings.minimumRetained && !chosen; retainedCount -= 1) {
         const keptSelections = getNumberSelections(baseNumbers, retainedCount);
         const replacementSelections = getNumberSelections(replacements, 6 - retainedCount);
         let best = null;
@@ -684,7 +719,7 @@
           replacementSelections.forEach(replacement => {
             const numbers = [...kept, ...replacement].sort((a, b) => a - b);
             const key = getCombinationKey(numbers);
-            if (acceptedKeys.has(key)) return;
+            if (acceptedKeys.has(key) || forbiddenKeys.has(key)) return;
             if (numbers.some(number => (exposure[number] || 0) >= settings.maximumExposure)) return;
             if (accepted.some(combo => getOverlap(numbers, combo.numbers) > settings.maximumOverlap)) return;
             const newCount = numbers.filter(number => !covered.has(number)).length;
@@ -705,7 +740,16 @@
         if (best) chosen = best.numbers;
       }
       if (!chosen) {
-        chosen = findForm2FallbackCombination(priority, accepted, exposure, covered, targetCoverage, settings);
+        chosen = findForm2FallbackCombination(
+          priority,
+          accepted,
+          exposure,
+          covered,
+          targetCoverage,
+          settings,
+          baseNumbers,
+          forbiddenKeys,
+        );
       }
       if (!chosen) throw new Error('Unable to create 14 distinct combinations for form 2.');
       const finalCombo = Object.assign({}, baseCombo, { numbers: chosen });
@@ -974,6 +1018,281 @@
     return { main, form2, snapshot };
   }
 
+  function createSelectionError(code) {
+    const error = new Error(code);
+    error.code = code;
+    return error;
+  }
+
+  function normalizeCandidateNumbers(values) {
+    const numbers = [...new Set((values || [])
+      .map(Number)
+      .filter(number => Number.isInteger(number) && number >= 1 && number <= 37))]
+      .sort((a, b) => a - b);
+    return numbers.length === 6 ? numbers : null;
+  }
+
+  function normalizeRanking(ranking, fallbackIndex) {
+    const calibration = ranking && ranking.calibration ? ranking.calibration : {};
+    return {
+      score: Number.isFinite(Number(calibration.score)) ? Number(calibration.score) : Number.NEGATIVE_INFINITY,
+      stability: Number.isFinite(Number(calibration.stability)) ? Number(calibration.stability) : 0,
+      rate3Plus: Number.isFinite(Number(calibration.rate3Plus)) ? Number(calibration.rate3Plus) : 0,
+      order: fallbackIndex,
+      raw: ranking || null,
+    };
+  }
+
+  function compareDescending(first, second) {
+    if (first === second) return 0;
+    return first > second ? -1 : 1;
+  }
+
+  function compareCandidateRecords(first, second) {
+    return compareDescending(first.rank.score, second.rank.score)
+      || compareDescending(first.rank.stability, second.rank.stability)
+      || compareDescending(first.rank.rate3Plus, second.rank.rate3Plus)
+      || first.rank.order - second.rank.order
+      || first.strategyId - second.strategyId
+      || first.window - second.window
+      || first.key.localeCompare(second.key)
+      || first.identity.localeCompare(second.identity);
+  }
+
+  function buildRankedCandidateRecords(candidates, rankings) {
+    const rankingMap = new Map((rankings || []).map((ranking, index) => [
+      ranking.identity,
+      { ranking, index },
+    ]));
+    const grouped = new Map();
+    (candidates || []).forEach((candidate, candidateIndex) => {
+      const numbers = normalizeCandidateNumbers(candidate.numbers);
+      if (!numbers) return;
+      const key = getCombinationKey(numbers);
+      const rankingEntry = rankingMap.get(candidate.identity);
+      const record = {
+        comboNum: candidate.comboNum,
+        strategy: candidate.strategy || String(candidate.strategyId || candidate.comboNum || ''),
+        numbers,
+        strong: Number(candidate.strong) || 1,
+        source: candidate.source || 'main',
+        strategyId: Number(candidate.strategyId || candidate.comboNum) || 0,
+        window: Number(candidate.window) || 0,
+        identity: candidate.identity || `candidate:${candidateIndex}`,
+        key,
+        rank: normalizeRanking(
+          rankingEntry && rankingEntry.ranking,
+          rankingEntry ? rankingEntry.index : (rankings || []).length + candidateIndex,
+        ),
+      };
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(record);
+    });
+    return Array.from(grouped.values()).map(group => {
+      group.sort(compareCandidateRecords);
+      return {
+        ...group[0],
+        identities: group.map(record => record.identity),
+      };
+    }).sort(compareCandidateRecords);
+  }
+
+  function buildRankedNumberPriority(records, training500) {
+    const weightedScores = Object.fromEntries(Array.from({ length: 37 }, (_, index) => [index + 1, 0]));
+    records.forEach((record, index) => {
+      const weight = records.length - index;
+      record.numbers.forEach(number => { weightedScores[number] += weight; });
+    });
+    const snapshot = buildAnalysisSnapshot((training500 || []).slice(0, 500));
+    const frequencyRank = new Map(snapshot.numbers.map((item, index) => [item.number, index]));
+    return Array.from({ length: 37 }, (_, index) => index + 1).sort((first, second) => (
+      weightedScores[second] - weightedScores[first]
+      || (frequencyRank.get(first) || 0) - (frequencyRank.get(second) || 0)
+      || first - second
+    ));
+  }
+
+  function toSelectorCombo(record) {
+    return {
+      comboNum: record.comboNum,
+      strategy: record.strategy,
+      numbers: record.numbers.slice(),
+      strong: record.strong,
+      source: record.source,
+      strategyId: record.strategyId,
+      window: record.window,
+      identity: record.identity,
+      identities: record.identities.slice(),
+      sourceNumbers: record.numbers.slice(),
+      backtestScore: Number.isFinite(record.rank.score) ? record.rank.score : 0,
+    };
+  }
+
+  function formSatisfiesConstraints(combos, settings, forbiddenKeys) {
+    if (!Array.isArray(combos) || combos.length !== 14) return false;
+    if (combos.some(combo => !normalizeCandidateNumbers(combo.numbers))) return false;
+    if (combos.some(combo => combo.sourceNumbers
+      && getOverlap(combo.numbers, combo.sourceNumbers) < settings.minimumRetained)) return false;
+    const forbidden = new Set(forbiddenKeys || []);
+    if (combos.some(combo => forbidden.has(getCombinationKey(combo.numbers)))) return false;
+    const metrics = getFormDiversityMetrics(combos);
+    return metrics.uniqueCombinationCount === 14
+      && metrics.coveredNumberCount >= settings.minimumCoverage
+      && metrics.maximumExposure <= settings.maximumExposure
+      && metrics.maximumOverlap <= settings.maximumOverlap;
+  }
+
+  function finalizeSelectedForm(combos, training500, settings, code, forbiddenKeys) {
+    if (!formSatisfiesConstraints(combos, settings, forbiddenKeys)) throw createSelectionError(code);
+    const rotation = buildBalancedStrongRotation(buildAnalysisSnapshot((training500 || []).slice(0, 500)).strong);
+    return combos.map((combo, index) => ({
+      comboNum: index + 1,
+      strategy: `${combo.strategy} · חלון ${combo.window}`,
+      numbers: combo.numbers.slice().sort((a, b) => a - b),
+      strong: rotation[index],
+      source: combo.source,
+      strategyId: combo.strategyId,
+      window: combo.window,
+      identity: combo.identity,
+      identities: combo.identities.slice(),
+      backtestScore: combo.backtestScore,
+      diversified: getCombinationKey(combo.numbers) !== getCombinationKey(combo.sourceNumbers),
+    }));
+  }
+
+  function selectPerformanceForm(candidates, rankings, training500, options = FORM1_OPTIONS) {
+    const settings = {
+      ...FORM1_OPTIONS,
+      ...(options || {}),
+      minimumRetained: 6 - Number((options || FORM1_OPTIONS).maximumReplacements ?? FORM1_OPTIONS.maximumReplacements),
+      enforceMinimumRetained: true,
+    };
+    const records = buildRankedCandidateRecords(candidates, rankings);
+    if (records.length < 14) throw createSelectionError('FORM1_SELECTION_FAILED');
+    const base = records.slice(0, 14).map(toSelectorCombo);
+    let selected = base;
+    if (!formSatisfiesConstraints(selected, settings, [])) {
+      try {
+        selected = diversifyForm2Combinations(base, buildRankedNumberPriority(records, training500), settings);
+      } catch (error) {
+        throw createSelectionError('FORM1_SELECTION_FAILED');
+      }
+    }
+    return finalizeSelectedForm(selected, training500, settings, 'FORM1_SELECTION_FAILED', []);
+  }
+
+  function selectDiversityBase(records, form1Rows, settings, medianScore) {
+    const form1Keys = new Set((form1Rows || []).map(combo => getCombinationKey(combo.numbers)));
+    const available = records.filter(record => !form1Keys.has(record.key));
+    if (available.length < 14) throw createSelectionError('FORM2_SELECTION_FAILED');
+    const thresholdCount = available.filter(record => record.rank.score >= medianScore).length;
+    let eligibleLimit = Math.min(available.length, Math.max(14, thresholdCount));
+    const selected = [];
+    const selectedKeys = new Set();
+    const covered = new Set();
+    const exposure = {};
+
+    while (selected.length < 14) {
+      const feasible = available.slice(0, eligibleLimit).filter(record => {
+        if (selectedKeys.has(record.key)) return false;
+        if (record.numbers.some(number => (exposure[number] || 0) + 1 > settings.maximumExposure)) return false;
+        return selected.every(previous => getOverlap(record.numbers, previous.numbers) <= settings.maximumOverlap);
+      });
+      if (feasible.length === 0) {
+        if (eligibleLimit < available.length) {
+          eligibleLimit += 1;
+          continue;
+        }
+        const fallback = available.find(record => !selectedKeys.has(record.key));
+        if (!fallback) break;
+        feasible.push(fallback);
+      }
+      feasible.sort((first, second) => {
+        const firstNew = first.numbers.filter(number => !covered.has(number)).length;
+        const secondNew = second.numbers.filter(number => !covered.has(number)).length;
+        if (firstNew !== secondNew) return secondNew - firstNew;
+        const crossAverage = record => {
+          if (!form1Rows || form1Rows.length === 0) return 0;
+          return form1Rows.reduce((sum, row) => sum + getOverlap(record.numbers, row.numbers), 0) / form1Rows.length;
+        };
+        const firstCross = crossAverage(first);
+        const secondCross = crossAverage(second);
+        if (firstCross !== secondCross) return firstCross - secondCross;
+        const firstExposure = first.numbers.reduce((sum, number) => sum + (exposure[number] || 0), 0);
+        const secondExposure = second.numbers.reduce((sum, number) => sum + (exposure[number] || 0), 0);
+        return firstExposure - secondExposure || compareCandidateRecords(first, second);
+      });
+      const chosen = feasible[0];
+      selected.push(chosen);
+      selectedKeys.add(chosen.key);
+      chosen.numbers.forEach(number => {
+        exposure[number] = (exposure[number] || 0) + 1;
+        covered.add(number);
+      });
+    }
+    if (selected.length !== 14) throw createSelectionError('FORM2_SELECTION_FAILED');
+    return selected;
+  }
+
+  function selectDiversityForm(candidates, rankings, training500, form1Rows, options = FORM2_OPTIONS) {
+    const settings = { ...FORM2_OPTIONS, ...(options || {}), enforceMinimumRetained: true };
+    const records = buildRankedCandidateRecords(candidates, rankings);
+    if (records.length < 14) throw createSelectionError('FORM2_SELECTION_FAILED');
+    const sortedScores = records.map(record => record.rank.score).sort((a, b) => a - b);
+    const middle = Math.floor(sortedScores.length / 2);
+    const medianScore = sortedScores.length % 2
+      ? sortedScores[middle]
+      : (sortedScores[middle - 1] + sortedScores[middle]) / 2;
+    const baseRecords = selectDiversityBase(records, form1Rows, settings, medianScore);
+    const base = baseRecords.map(toSelectorCombo);
+    const forbiddenKeys = new Set((form1Rows || []).map(combo => getCombinationKey(combo.numbers)));
+    let selected = base;
+    if (!formSatisfiesConstraints(selected, settings, forbiddenKeys)) {
+      try {
+        selected = diversifyForm2Combinations(
+          base,
+          buildRankedNumberPriority(records, training500),
+          { ...settings, forbiddenKeys },
+        );
+      } catch (error) {
+        throw createSelectionError('FORM2_SELECTION_FAILED');
+      }
+    }
+    return finalizeSelectedForm(
+      selected,
+      training500,
+      settings,
+      'FORM2_SELECTION_FAILED',
+      forbiddenKeys,
+    );
+  }
+
+  function selectOptimizedForms(candidates, rankings, training500) {
+    const result = { main: null, form2: null, errors: { main: null, form2: null } };
+    try {
+      result.main = selectPerformanceForm(candidates, rankings, training500, FORM1_OPTIONS);
+    } catch (error) {
+      result.errors.main = error && error.code ? error.code : 'FORM1_SELECTION_FAILED';
+    }
+    try {
+      result.form2 = selectDiversityForm(
+        candidates,
+        rankings,
+        training500,
+        result.main || [],
+        FORM2_OPTIONS,
+      );
+    } catch (error) {
+      result.errors.form2 = error && error.code ? error.code : 'FORM2_SELECTION_FAILED';
+    }
+    return result;
+  }
+
+  function buildCurrentOptimizedForms(rows, rankings, windows = BACKTEST_WINDOWS) {
+    const candidates = windows.flatMap(windowSize => generateRawCandidates(rows, windowSize));
+    return selectOptimizedForms(candidates, rankings, rows.slice(0, 500));
+  }
+
   function fingerprintRows(rows) {
     const canonical = toChronological(rows).map(row => [
       row.drawNumber == null ? '' : row.drawNumber,
@@ -1212,11 +1531,165 @@
     };
   }
 
+  function createEmptyFormAccumulator() {
+    return {
+      drawScoreTotal: 0,
+      bestMatchTotal: 0,
+      exactBestHits: [0, 0, 0, 0, 0, 0, 0],
+      strongOnBest: 0,
+      bestRegular: 0,
+      coverageTotal: 0,
+      maximumExposure: 0,
+      maximumOverlap: 0,
+    };
+  }
+
+  function createEmptyPolicyAggregate() {
+    return {
+      sampleCount: 0,
+      selectionFailures: 0,
+      baseline: createEmptyFormAccumulator(),
+      optimized: createEmptyFormAccumulator(),
+    };
+  }
+
+  function createEmptyPolicyAggregates() {
+    return { main: createEmptyPolicyAggregate(), form2: createEmptyPolicyAggregate() };
+  }
+
+  function addFormResult(accumulator, form, draw) {
+    const evaluation = scoreForm(form, draw);
+    const diversity = getFormDiversityMetrics(form);
+    accumulator.drawScoreTotal += evaluation.drawScore;
+    accumulator.bestMatchTotal += evaluation.best.regularMatches;
+    accumulator.exactBestHits[evaluation.best.regularMatches] += 1;
+    accumulator.strongOnBest += evaluation.best.strongMatch ? 1 : 0;
+    accumulator.bestRegular = Math.max(accumulator.bestRegular, evaluation.best.regularMatches);
+    accumulator.coverageTotal += diversity.coveredNumberCount;
+    accumulator.maximumExposure = Math.max(accumulator.maximumExposure, diversity.maximumExposure);
+    accumulator.maximumOverlap = Math.max(accumulator.maximumOverlap, diversity.maximumOverlap);
+  }
+
+  function addPolicyDraw(aggregate, baselineForm, optimizedForm, draw, selectionFailed) {
+    aggregate.sampleCount += 1;
+    aggregate.selectionFailures += selectionFailed ? 1 : 0;
+    addFormResult(aggregate.baseline, baselineForm, draw);
+    addFormResult(aggregate.optimized, optimizedForm, draw);
+  }
+
+  function finalizeFormAccumulator(accumulator, sampleCount) {
+    const samples = Math.max(1, sampleCount);
+    const rateAtLeast = threshold => accumulator.exactBestHits
+      .slice(threshold)
+      .reduce((sum, count) => sum + count, 0) / samples;
+    return {
+      averageScore: accumulator.drawScoreTotal / samples,
+      averageBestMatches: accumulator.bestMatchTotal / samples,
+      rate2Plus: rateAtLeast(2),
+      rate3Plus: rateAtLeast(3),
+      rate4Plus: rateAtLeast(4),
+      rate5Plus: rateAtLeast(5),
+      rate6: rateAtLeast(6),
+      bestRegular: accumulator.bestRegular,
+      strongOnBestRate: accumulator.strongOnBest / samples,
+      averageCoverage: accumulator.coverageTotal / samples,
+      maximumExposure: accumulator.maximumExposure,
+      maximumOverlap: accumulator.maximumOverlap,
+    };
+  }
+
+  function finalizePolicyAggregate(aggregate) {
+    const baseline = finalizeFormAccumulator(aggregate.baseline, aggregate.sampleCount);
+    const optimized = finalizeFormAccumulator(aggregate.optimized, aggregate.sampleCount);
+    const reasons = [];
+    if (aggregate.selectionFailures > 0) reasons.push('selection-failure');
+    if (optimized.averageScore < baseline.averageScore) reasons.push('score-regression');
+    if (optimized.rate3Plus < baseline.rate3Plus - 0.01) reasons.push('three-plus-regression');
+    return {
+      sampleCount: aggregate.sampleCount,
+      selectionFailures: aggregate.selectionFailures,
+      baseline,
+      optimized,
+      validated: reasons.length === 0,
+      reasons,
+    };
+  }
+
+  function finalizePolicyAggregates(aggregates) {
+    return {
+      main: finalizePolicyAggregate(aggregates.main),
+      form2: finalizePolicyAggregate(aggregates.form2),
+    };
+  }
+
+  function runWalkForwardBacktest(rows, options = {}) {
+    const windows = options.windows || BACKTEST_WINDOWS;
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : function noop() {};
+    const isCancelled = typeof options.isCancelled === 'function'
+      ? options.isCancelled
+      : function neverCancelled() { return false; };
+    const plan = createBacktestPlan(rows, windows);
+    const identityEvaluation = evaluateStrategyWindows(rows, plan.windows, { onProgress, isCancelled });
+    const rankings = identityEvaluation.rankings;
+    const policyAggregates = createEmptyPolicyAggregates();
+
+    plan.holdoutTargets.forEach((targetIndex, index) => {
+      if (isCancelled()) {
+        const error = new Error('Backtest cancelled');
+        error.code = 'CANCELLED';
+        throw error;
+      }
+      const pool = buildWindowCandidatePool(plan.chronological, targetIndex, plan.windows);
+      const training500 = plan.chronological.slice(targetIndex - 500, targetIndex).reverse();
+      const allEarlier = plan.chronological.slice(0, targetIndex).reverse();
+      const optimized = selectOptimizedForms(pool, rankings, training500);
+      const baseline = generateBaselineForms(allEarlier);
+      addPolicyDraw(
+        policyAggregates.main,
+        baseline.main,
+        optimized.main || baseline.main,
+        plan.chronological[targetIndex],
+        Boolean(optimized.errors.main),
+      );
+      addPolicyDraw(
+        policyAggregates.form2,
+        baseline.form2,
+        optimized.form2 || baseline.form2,
+        plan.chronological[targetIndex],
+        Boolean(optimized.errors.form2),
+      );
+      onProgress({
+        phase: 'holdout-policies',
+        completed: index + 1,
+        total: plan.holdoutTargets.length,
+      });
+    });
+
+    const policies = finalizePolicyAggregates(policyAggregates);
+    const currentForms = buildCurrentOptimizedForms(rows, rankings, plan.windows);
+    return {
+      version: ALGORITHM_VERSION,
+      constraintVersion: CONSTRAINT_VERSION,
+      fingerprint: fingerprintRows(rows),
+      windows: plan.windows.slice(),
+      split: {
+        eligibleCount: plan.eligibleTargets.length,
+        calibrationCount: plan.calibrationTargets.length,
+        holdoutCount: plan.holdoutTargets.length,
+      },
+      rankings,
+      policies,
+      currentForms,
+    };
+  }
+
   return {
     ALGORITHM_VERSION,
     CONSTRAINT_VERSION,
     BACKTEST_WINDOWS,
     REGULAR_POINTS,
+    FORM1_OPTIONS,
+    FORM2_OPTIONS,
     FORM2_STRATEGY_LABELS,
     isValidDraw,
     toChronological,
@@ -1235,5 +1708,10 @@
     scoreForm,
     aggregateIdentityMetrics,
     evaluateStrategyWindows,
+    selectPerformanceForm,
+    selectDiversityForm,
+    selectOptimizedForms,
+    buildCurrentOptimizedForms,
+    runWalkForwardBacktest,
   };
 }));

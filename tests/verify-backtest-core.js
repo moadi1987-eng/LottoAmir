@@ -53,4 +53,29 @@ const secondEvaluation = core.evaluateStrategyWindows(rows, [100, 200, 500]);
 assert.strictEqual(firstEvaluation.rankings.length, 84);
 assert.deepStrictEqual(firstEvaluation, secondEvaluation);
 
+const result = core.runWalkForwardBacktest(rows);
+const repeatedResult = core.runWalkForwardBacktest(rows);
+assert.deepStrictEqual(result, repeatedResult);
+assert.deepStrictEqual(result.windows, [100, 200, 500]);
+assert.deepStrictEqual(result.split, { eligibleCount: 40, calibrationCount: 28, holdoutCount: 12 });
+assert.strictEqual(result.currentForms.main.length, 14);
+assert.strictEqual(result.currentForms.form2.length, 14);
+assert.strictEqual(typeof result.policies.main.validated, 'boolean');
+assert.strictEqual(typeof result.policies.form2.validated, 'boolean');
+
+if (process.env.LOTTO_FULL_BENCHMARK === '1') {
+  const benchmarkRows = buildSyntheticDraws(1712);
+  const startedAt = Date.now();
+  const benchmark = core.runWalkForwardBacktest(benchmarkRows);
+  const elapsedMs = Date.now() - startedAt;
+  assert.deepStrictEqual(benchmark.split, {
+    eligibleCount: 1212,
+    calibrationCount: 848,
+    holdoutCount: 364,
+  });
+  assert.strictEqual(benchmark.currentForms.main.length, 14);
+  assert.strictEqual(benchmark.currentForms.form2.length, 14);
+  console.log(`Full Backtest benchmark: ${elapsedMs} ms`);
+}
+
 console.log('Backtest core verification passed');
