@@ -8,6 +8,7 @@
   const ALGORITHM_VERSION = 'lotto-backtest-v1';
   const CONSTRAINT_VERSION = 'forms-v1';
   const BACKTEST_WINDOWS = Object.freeze([100, 200, 500]);
+  const REGULAR_POINTS = Object.freeze([0, 1, 3, 10, 35, 120, 400]);
   const FORM2_STRATEGY_LABELS = Object.freeze([
     'בשלים + תדירות', 'פריצת קור', 'מגמת עלייה מואצת', 'פער אופטימלי',
     'איזון פיזור', 'זוגות מאמצע הדירוג', 'שלישייה מובילה + קרים',
@@ -973,10 +974,249 @@
     return { main, form2, snapshot };
   }
 
+  function fingerprintRows(rows) {
+    const canonical = toChronological(rows).map(row => [
+      row.drawNumber == null ? '' : row.drawNumber,
+      row.date == null ? '' : row.date,
+      ...row.numbers,
+      row.strong,
+    ].join('|')).join('\n');
+    let hash = 2166136261;
+    for (let index = 0; index < canonical.length; index += 1) {
+      hash ^= canonical.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `${ALGORITHM_VERSION}:${CONSTRAINT_VERSION}:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  }
+
+  function normalizeBacktestWindows(windows) {
+    const normalized = [...new Set((windows || []).map(Number))]
+      .filter(windowSize => Number.isInteger(windowSize) && windowSize > 0)
+      .sort((a, b) => a - b);
+    if (normalized.length === 0) {
+      const error = new Error('Backtest requires at least one positive window');
+      error.code = 'INVALID_WINDOWS';
+      throw error;
+    }
+    return normalized;
+  }
+
+  function createBacktestPlan(rows, windows = BACKTEST_WINDOWS) {
+    const normalizedWindows = normalizeBacktestWindows(windows);
+    const maximumWindow = Math.max(...normalizedWindows);
+    const chronological = toChronological(rows);
+    if (chronological.length <= maximumWindow) {
+      const error = new Error(`Backtest requires at least ${maximumWindow + 1} valid draws`);
+      error.code = 'INSUFFICIENT_HISTORY';
+      throw error;
+    }
+    const eligibleTargets = Array.from(
+      { length: chronological.length - maximumWindow },
+      (_, index) => maximumWindow + index,
+    );
+    const calibrationCount = Math.floor(eligibleTargets.length * 0.70);
+    if (calibrationCount < 1 || calibrationCount >= eligibleTargets.length) {
+      const error = new Error('Backtest requires at least two eligible targets');
+      error.code = 'INSUFFICIENT_TARGETS';
+      throw error;
+    }
+    return {
+      chronological,
+      windows: normalizedWindows,
+      maximumWindow,
+      eligibleTargets,
+      calibrationTargets: eligibleTargets.slice(0, calibrationCount),
+      holdoutTargets: eligibleTargets.slice(calibrationCount),
+    };
+  }
+
+  function buildWindowCandidatePool(chronological, targetIndex, windows = BACKTEST_WINDOWS) {
+    const normalizedWindows = normalizeBacktestWindows(windows);
+    if (!Number.isInteger(targetIndex) || targetIndex < Math.max(...normalizedWindows)
+      || targetIndex >= chronological.length) {
+      const error = new Error('Target index cannot satisfy the requested training windows');
+      error.code = 'INVALID_TARGET_INDEX';
+      throw error;
+    }
+    return normalizedWindows.flatMap(windowSize => {
+      const trainingRows = chronological.slice(targetIndex - windowSize, targetIndex).reverse();
+      return generateRawCandidates(trainingRows, windowSize);
+    });
+  }
+
+  function scoreLine(combo, draw) {
+    const drawNumbers = new Set(draw.numbers);
+    const regularMatches = combo.numbers.filter(number => drawNumbers.has(number)).length;
+    const strongMatch = Number(combo.strong) === Number(draw.strong);
+    const regularPoints = REGULAR_POINTS[regularMatches];
+    const rowPoints = strongMatch ? regularPoints * 1.10 : regularPoints;
+    return { regularMatches, strongMatch, regularPoints, rowPoints };
+  }
+
+  function scoreForm(combos, draw) {
+    const rows = combos.map(combo => scoreLine(combo, draw));
+    const ordered = rows.slice().sort((a, b) => b.rowPoints - a.rowPoints);
+    const best = ordered[0]
+      || { regularMatches: 0, strongMatch: false, regularPoints: 0, rowPoints: 0 };
+    const otherPoints = ordered.slice(1).reduce((sum, row) => sum + row.rowPoints, 0);
+    return { rows, best, drawScore: best.rowPoints + otherPoints * 0.05 };
+  }
+
+  function createEmptyIdentityAccumulator() {
+    return {
+      totalRegularPoints: 0,
+      totalRegularMatches: 0,
+      sampleCount: 0,
+      hitCounts: Array(7).fill(0),
+      bucketPoints: Array(3).fill(0),
+      bucketCounts: Array(3).fill(0),
+    };
+  }
+
+  function addIdentityObservation(accumulator, lineScore, bucketIndex) {
+    accumulator.totalRegularPoints += lineScore.regularPoints;
+    accumulator.totalRegularMatches += lineScore.regularMatches;
+    accumulator.sampleCount += 1;
+    accumulator.hitCounts[lineScore.regularMatches] += 1;
+    if (bucketIndex >= 0 && bucketIndex < 3) {
+      accumulator.bucketPoints[bucketIndex] += lineScore.regularPoints;
+      accumulator.bucketCounts[bucketIndex] += 1;
+    }
+  }
+
+  function aggregateIdentityMetrics(accumulator) {
+    const sampleCount = accumulator.sampleCount || 0;
+    const averagePoints = sampleCount ? accumulator.totalRegularPoints / sampleCount : 0;
+    const averageRegularMatches = sampleCount ? accumulator.totalRegularMatches / sampleCount : 0;
+    const bucketAverages = accumulator.bucketPoints.map((total, index) => (
+      accumulator.bucketCounts[index] ? total / accumulator.bucketCounts[index] : 0
+    ));
+    const minimumBucket = Math.min(...bucketAverages);
+    const stability = averagePoints === 0
+      ? 0
+      : Math.max(0, Math.min(1, minimumBucket / averagePoints));
+    const rateAtLeast = threshold => {
+      if (!sampleCount) return 0;
+      return accumulator.hitCounts.slice(threshold).reduce((sum, count) => sum + count, 0) / sampleCount;
+    };
+    let bestRegularMatches = 0;
+    for (let matches = 6; matches >= 0; matches -= 1) {
+      if (accumulator.hitCounts[matches] > 0) {
+        bestRegularMatches = matches;
+        break;
+      }
+    }
+    return {
+      sampleCount,
+      totalRegularPoints: accumulator.totalRegularPoints,
+      averagePoints,
+      averageRegularMatches,
+      hitCounts: accumulator.hitCounts.slice(),
+      rate2Plus: rateAtLeast(2),
+      rate3Plus: rateAtLeast(3),
+      rate4Plus: rateAtLeast(4),
+      rate5Plus: rateAtLeast(5),
+      rate6: rateAtLeast(6),
+      bestRegularMatches,
+      bucketAverages,
+      stability,
+      score: averagePoints * 0.80 + averagePoints * stability * 0.20,
+    };
+  }
+
+  function getChronologyBucket(position, total) {
+    return Math.min(2, Math.floor(position * 3 / Math.max(1, total)));
+  }
+
+  function compareIdentityRankings(first, second) {
+    return second.calibration.score - first.calibration.score
+      || second.calibration.stability - first.calibration.stability
+      || second.calibration.rate3Plus - first.calibration.rate3Plus
+      || first.strategyId - second.strategyId
+      || first.window - second.window
+      || first.source.localeCompare(second.source)
+      || first.identity.localeCompare(second.identity);
+  }
+
+  function evaluateStrategyWindows(rows, windows = BACKTEST_WINDOWS, options = {}) {
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : function noop() {};
+    const isCancelled = typeof options.isCancelled === 'function'
+      ? options.isCancelled
+      : function neverCancelled() { return false; };
+    const plan = createBacktestPlan(rows, windows);
+    const calibrationPositions = new Map(plan.calibrationTargets.map((target, index) => [target, index]));
+    const holdoutPositions = new Map(plan.holdoutTargets.map((target, index) => [target, index]));
+    const aggregates = new Map();
+
+    plan.eligibleTargets.forEach((targetIndex, targetPosition) => {
+      if (isCancelled()) {
+        const error = new Error('Backtest cancelled');
+        error.code = 'CANCELLED';
+        throw error;
+      }
+      const isCalibration = calibrationPositions.has(targetIndex);
+      const partition = isCalibration ? 'calibration' : 'holdout';
+      const partitionPosition = isCalibration
+        ? calibrationPositions.get(targetIndex)
+        : holdoutPositions.get(targetIndex);
+      const partitionTotal = isCalibration
+        ? plan.calibrationTargets.length
+        : plan.holdoutTargets.length;
+      const bucketIndex = getChronologyBucket(partitionPosition, partitionTotal);
+      const pool = buildWindowCandidatePool(plan.chronological, targetIndex, plan.windows);
+      const targetDraw = plan.chronological[targetIndex];
+
+      pool.forEach(candidate => {
+        if (!aggregates.has(candidate.identity)) {
+          aggregates.set(candidate.identity, {
+            identity: candidate.identity,
+            source: candidate.source,
+            strategy: candidate.strategy,
+            strategyId: candidate.strategyId,
+            window: candidate.window,
+            calibration: createEmptyIdentityAccumulator(),
+            holdout: createEmptyIdentityAccumulator(),
+          });
+        }
+        const lineScore = scoreLine(candidate, targetDraw);
+        addIdentityObservation(aggregates.get(candidate.identity)[partition], lineScore, bucketIndex);
+      });
+      onProgress({
+        phase: 'identity-evaluation',
+        completed: targetPosition + 1,
+        total: plan.eligibleTargets.length,
+      });
+    });
+
+    const rankings = Array.from(aggregates.values())
+      .map(record => ({
+        identity: record.identity,
+        source: record.source,
+        strategy: record.strategy,
+        strategyId: record.strategyId,
+        window: record.window,
+        calibration: aggregateIdentityMetrics(record.calibration),
+        holdout: aggregateIdentityMetrics(record.holdout),
+      }))
+      .sort(compareIdentityRankings)
+      .map((record, index) => ({ ...record, rank: index + 1 }));
+
+    return {
+      windows: plan.windows.slice(),
+      split: {
+        eligibleCount: plan.eligibleTargets.length,
+        calibrationCount: plan.calibrationTargets.length,
+        holdoutCount: plan.holdoutTargets.length,
+      },
+      rankings,
+    };
+  }
+
   return {
     ALGORITHM_VERSION,
     CONSTRAINT_VERSION,
     BACKTEST_WINDOWS,
+    REGULAR_POINTS,
     FORM2_STRATEGY_LABELS,
     isValidDraw,
     toChronological,
@@ -988,5 +1228,12 @@
     diversifyForm2Combinations,
     buildBalancedStrongRotation,
     getFormDiversityMetrics,
+    fingerprintRows,
+    createBacktestPlan,
+    buildWindowCandidatePool,
+    scoreLine,
+    scoreForm,
+    aggregateIdentityMetrics,
+    evaluateStrategyWindows,
   };
 }));
