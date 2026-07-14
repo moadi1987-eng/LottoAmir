@@ -424,7 +424,6 @@
         <div class="nav-buttons">
             <button class="nav-btn primary active" id="navFormBtn" onclick="setActiveSection('form')" aria-pressed="true">📝 טפסים</button>
             <button class="nav-btn" id="navAnalyzerBtn" onclick="setActiveSection('analyzer')" aria-pressed="false">📊 ניתוח</button>
-            <button class="nav-btn" id="navCompareBtn" onclick="openComparisonView()" aria-pressed="false">🎯 השוואה</button>
             <button class="nav-btn" id="navBacktestBtn" onclick="openBacktestView()" aria-pressed="false">📈 Backtest</button>
             <button class="nav-btn print-nav" id="navPrintBtn" onclick="printForm()">🖨️ הדפסה</button>
         </div>
@@ -524,8 +523,8 @@
 
         function setActiveSection(section, options) {
             options = options || {};
-            const normalized = ['analyzer', 'compare', 'backtest'].includes(section) ? 'analyzer' : 'form';
-            const activeNav = options.navTarget || (section === 'compare' ? 'compare' : section === 'backtest' ? 'backtest' : normalized);
+            const normalized = ['analyzer', 'backtest'].includes(section) ? 'analyzer' : 'form';
+            const activeNav = options.navTarget || (section === 'backtest' ? 'backtest' : normalized);
             activeShellSection = normalized;
             document.body.classList.toggle('shell-analyzer-active', normalized === 'analyzer');
 
@@ -535,7 +534,6 @@
             const navMap = {
                 form: document.getElementById('navFormBtn'),
                 analyzer: document.getElementById('navAnalyzerBtn'),
-                compare: document.getElementById('navCompareBtn'),
                 backtest: document.getElementById('navBacktestBtn')
             };
 
@@ -582,11 +580,6 @@
                     console.log('Analyzer section focus skipped:', e);
                 }
             }, 180);
-        }
-
-        function openComparisonView() {
-            setActiveSection('compare', { navTarget: 'compare', smooth: true });
-            goToAnalyzerSection('comparisonCard', 'compare');
         }
 
         function openBacktestView() {

@@ -108,6 +108,9 @@ async function runViewport(browser, baseUrl, viewport, screenshotName) {
   const page = await browser.newPage({ viewport });
   await page.route(/fonts\.googleapis\.com|cdn\.sheetjs\.com/, route => route.abort());
   await page.goto(`${baseUrl}/Lotto_All_In_One.html`, { waitUntil: 'domcontentloaded' });
+  assert.strictEqual(await page.locator('#navCompareBtn').count(), 0, 'Top comparison navigation must stay removed');
+  assert.strictEqual(await page.locator('.main-header .nav-btn').count(), 4, 'Top navigation must contain four actions');
+  assert.strictEqual(await page.locator('[data-target="comparisonCard"]').count(), 1, 'Analyzer comparison rail shortcut must remain');
   await page.locator('#navBacktestBtn').click();
   await page.waitForTimeout(250);
 
