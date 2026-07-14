@@ -7,6 +7,8 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
+const outputDir = path.join(root, 'test-results');
+fs.mkdirSync(outputDir, { recursive: true });
 
 function contentType(filePath) {
   return ({
@@ -70,6 +72,69 @@ async function openAnalyzer(browser, baseUrl, initState) {
   await page.goto(`${baseUrl}/lotto_analyzer.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof loadPinnedForms === 'function');
   return { context, page };
+}
+
+async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName) {
+  const session = await openAnalyzer(browser, baseUrl);
+  await session.page.setViewportSize(viewport);
+  const pins = {
+    version: 2,
+    main: {
+      baseline: makePin('main', 'baseline', 1),
+      improved: makePin('main', 'improved', 8),
+    },
+    form2: {
+      baseline: makePin('form2', 'baseline', 15),
+      improved: makePin('form2', 'improved', 22),
+    },
+  };
+  pins.main.improved.anchorDrawNumber = 4001;
+  pins.main.improved.anchorDrawDate = '17/07/2026';
+
+  await session.page.evaluate(pinnedState => {
+    pinnedForms = pinnedState;
+    currentData = [
+      { drawNumber: 4002, date: '20/07/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
+      { drawNumber: 4001, date: '17/07/2026', numbers: [7, 8, 9, 10, 11, 12], strong: 2 },
+    ];
+    document.getElementById('results').style.display = 'block';
+    renderPinnedFormStatus();
+    renderPinnedFutureComparisons();
+  }, pins);
+
+  assert.strictEqual(await session.page.locator('.pinned-future-group').count(), 2);
+  assert.strictEqual(await session.page.locator('.pinned-future-source').count(), 4);
+  const modes = await session.page.locator('.pinned-future-source').evaluateAll(nodes =>
+    nodes.map(node => node.dataset.pinMode)
+  );
+  assert.deepStrictEqual(modes, ['baseline', 'improved', 'baseline', 'improved']);
+
+  const mainGroup = session.page.locator('.pinned-future-group[data-pin-source="main"]');
+  assert.ok((await mainGroup.locator('[data-pin-mode="baseline"]').textContent())
+    .includes('2 הגרלות עתידיות'));
+  assert.ok((await mainGroup.locator('[data-pin-mode="improved"]').textContent())
+    .includes('1 הגרלות עתידיות'));
+
+  const width = await session.page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  assert.ok(width.scroll <= width.client + 1, 'Analyzer must not overflow horizontally');
+
+  const firstGroupSlots = mainGroup.locator('.pinned-future-source');
+  const boxes = await firstGroupSlots.evaluateAll(nodes => nodes.map(node => {
+    const rect = node.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width };
+  }));
+  if (viewport.width > 768) {
+    assert.ok(Math.abs(boxes[0].top - boxes[1].top) < 2, 'Desktop slots must be side by side');
+    assert.ok(boxes[1].left !== boxes[0].left, 'Desktop slots must occupy separate columns');
+  } else {
+    assert.ok(boxes[1].top > boxes[0].top, 'Mobile slots must stack');
+  }
+
+  await session.page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
+  await session.context.close();
 }
 
 (async function verifyPinnedForms() {
@@ -258,6 +323,19 @@ async function openAnalyzer(browser, baseUrl, initState) {
     assert.strictEqual(atomicFailure.saved, false);
     assert.strictEqual(atomicFailure.before, atomicFailure.after);
     await cleanSession.context.close();
+
+    await verifyResponsiveGroups(
+      browser,
+      baseUrl,
+      { width: 1440, height: 900 },
+      'pin-slots-desktop.png',
+    );
+    await verifyResponsiveGroups(
+      browser,
+      baseUrl,
+      { width: 390, height: 844 },
+      'pin-slots-mobile.png',
+    );
 
     console.log('Pinned forms Playwright verification passed');
   } finally {

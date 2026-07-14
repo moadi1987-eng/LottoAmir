@@ -709,12 +709,36 @@
             color: var(--text-muted);
             text-align: center;
         }
+        .pinned-future-group {
+            margin-bottom: 18px;
+        }
+        .pinned-future-group:last-child {
+            margin-bottom: 0;
+        }
+        .pinned-future-group-title {
+            margin: 0 0 10px;
+            font-size: 15px;
+            color: var(--text);
+        }
+        .pinned-future-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            align-items: start;
+        }
         .pinned-future-source {
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 14px;
             background: var(--bg-elevated);
-            margin-bottom: 14px;
+            min-width: 0;
+            margin: 0;
+        }
+        .pinned-future-empty {
+            min-height: 96px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         .pinned-future-title {
             display: flex;
@@ -943,6 +967,7 @@
             .pinned-status-main { align-items: stretch; }
             .pinned-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
             .pinned-actions .pill-btn { width: 100%; }
+            .pinned-future-grid { grid-template-columns: 1fr; }
             .pinned-future-source { padding: 10px; }
             .future-draw summary { font-size: 12px; }
             .future-draw-body { padding: 10px; }
@@ -1945,18 +1970,37 @@
         function renderPinnedFutureComparisons() {
             const container = document.getElementById('pinnedFutureContent');
             if (!container) return;
-            const activePins = listPinnedForms();
-            if (activePins.length === 0) {
+            if (listPinnedForms().length === 0) {
                 container.innerHTML = '<p class="pinned-empty-message">אין עדיין טפסים מקובעים.</p>';
                 return;
             }
-            container.innerHTML = activePins.map(renderPinnedFutureSource).join('');
+            container.innerHTML = ['main', 'form2'].map(renderPinnedFutureGroup).join('');
+        }
+
+        function renderPinnedFutureGroup(source) {
+            const sourceMeta = PINNED_FORM_SOURCES[source];
+            const slots = ['baseline', 'improved'].map(function(mode) {
+                const pin = getPinnedForm(source, mode);
+                if (pin) return renderPinnedFutureSource(pin);
+                return `
+                    <div class="pinned-future-source pinned-future-empty" data-pin-mode="${mode}">
+                        <div class="pinned-future-title">${PINNED_FORM_MODES[mode].label}</div>
+                        <div class="pinned-status-meta">לא קובע</div>
+                    </div>
+                `;
+            }).join('');
+            return `
+                <section class="pinned-future-group" data-pin-source="${source}">
+                    <h3 class="pinned-future-group-title">${sourceMeta.label}</h3>
+                    <div class="pinned-future-grid">${slots}</div>
+                </section>
+            `;
         }
 
         function renderPinnedFutureSource(pin) {
             if (!currentData || currentData.length === 0) {
                 return `
-                    <div class="pinned-future-source">
+                    <div class="pinned-future-source" data-pin-mode="${pin.mode}">
                         <div class="pinned-future-title">
                             <span>📌 ${pin.fullLabel || pin.label}</span>
                             <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
@@ -1969,7 +2013,7 @@
             const futureRows = getFutureRowsForPin(pin);
             if (futureRows.length === 0) {
                 return `
-                    <div class="pinned-future-source">
+                    <div class="pinned-future-source" data-pin-mode="${pin.mode}">
                         <div class="pinned-future-title">
                             <span>📌 ${pin.fullLabel || pin.label}</span>
                             <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
@@ -2009,7 +2053,7 @@
             }).join('');
 
             return `
-                <div class="pinned-future-source">
+                <div class="pinned-future-source" data-pin-mode="${pin.mode}">
                     <div class="pinned-future-title">
                         <span>📌 ${pin.fullLabel || pin.label}</span>
                         <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>

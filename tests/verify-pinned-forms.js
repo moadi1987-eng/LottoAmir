@@ -51,6 +51,9 @@ assert(/polic(?:y|ies)[\s\S]*validated/.test(html), 'Improved PIN must require a
 assert(/draw\.drawNumber\s*>\s*pin\.anchorDrawNumber/.test(html), 'Future filtering must prefer draw number comparison');
 assert(/confirm\(/.test(html), 'Replacing an existing slot must require confirmation');
 assert(/cancelBacktest\('dataset-changed'\)/.test(html), 'Loading another dataset must cancel an active Backtest');
+assert(html.includes('function renderPinnedFutureGroup(source)'), 'Future PIN results must group by source');
+assert(html.includes('class="pinned-future-grid"'), 'Future source group must contain a baseline/improved grid');
+assert(html.includes('data-pin-mode="${mode}"'), 'Rendered PIN slots must expose their mode');
 assert(shellHtml.includes('data-target="pinnedFutureCard"'), 'ALL_IN_ONE analyzer rail must link to pinned future comparisons');
 assert(shellHtml.includes("goToAnalyzerSection('pinnedFutureCard')"), 'ALL_IN_ONE analyzer rail must scroll to pinned future card');
 
