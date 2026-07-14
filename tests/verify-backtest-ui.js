@@ -31,8 +31,8 @@ const required = [
 ];
 for (const token of required) assert.ok(html.includes(token), `Missing Backtest UI contract: ${token}`);
 
-assert.ok(/function getCombosForSource\(source\)[\s\S]*currentCombinationsForm2/.test(html));
-assert.ok(/pinCurrentForm\(source\)[\s\S]*getCombosForSource\(source\)/.test(html));
+assert.ok(/function canPinForm\(source, mode\)[\s\S]*policy\.validated === true/.test(html));
+assert.ok(/function pinForm\(source, mode\)[\s\S]*getFormSet\(source, mode\)/.test(html));
 
 const scripts = [...html.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map(match => match[1]);

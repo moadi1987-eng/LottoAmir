@@ -647,11 +647,23 @@
             font-family: inherit;
             transition: all 0.15s;
         }
-        .pin-form-btn:hover {
+        .pin-form-btn:hover:not(:disabled) {
             background: rgba(245, 158, 11, 0.22);
             box-shadow: 0 4px 16px rgba(245, 158, 11, 0.16);
         }
+        .pin-form-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .pin-form-btn-improved {
+            border-color: var(--success-border);
+            background: rgba(16, 185, 129, 0.10);
+            color: var(--success);
+        }
         .pinned-status {
+            display: grid;
+            gap: 8px;
             margin: 0 0 16px;
             padding: 12px;
             border: 1px solid var(--warning-border);
@@ -666,7 +678,16 @@
             justify-content: space-between;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 10px;
+            margin: 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .pinned-status-main:last-child {
+            padding-bottom: 0;
+            border-bottom: 0;
+        }
+        .pinned-status-empty {
+            min-height: 38px;
         }
         .pinned-status-title {
             color: var(--warning);
@@ -683,6 +704,10 @@
         }
         .pinned-actions .pill-btn {
             border-radius: 7px;
+        }
+        .pinned-empty-message {
+            color: var(--text-muted);
+            text-align: center;
         }
         .pinned-future-source {
             border: 1px solid var(--border);
@@ -913,7 +938,7 @@
             .fill-all-btn { padding: 11px; font-size: 13px; margin-top: 12px; }
 
             .quick-btn, .pill-btn { padding: 7px 11px; font-size: 11px; }
-            .pin-toolbar { display: grid; grid-template-columns: 1fr; gap: 8px; }
+            .pin-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
             .pin-form-btn { width: 100%; min-height: 42px; }
             .pinned-status-main { align-items: stretch; }
             .pinned-actions { display: grid; grid-template-columns: 1fr; width: 100%; }
@@ -930,6 +955,7 @@
         }
 
         @media (max-width: 480px) {
+            .pin-toolbar { grid-template-columns: 1fr; }
             body { padding: 4px; }
             .header h1 { font-size: 13px; }
             .header p { font-size: 9px; }
@@ -1143,10 +1169,11 @@
                         </div>
                     </div>
 
-                    <div class="pin-toolbar">
-                        <button class="pin-form-btn" id="pinMainFormBtn" onclick="pinCurrentForm('main')">📌 קבע טופס ראשון</button>
+                    <div class="pin-toolbar" aria-label="קיבוע טופס ראשון">
+                        <button type="button" class="pin-form-btn" id="pinMainBaselineBtn" onclick="pinForm('main', 'baseline')" disabled>📌 PIN בסיס</button>
+                        <button type="button" class="pin-form-btn pin-form-btn-improved" id="pinMainImprovedBtn" onclick="pinForm('main', 'improved')" disabled>📌 PIN משופר</button>
                     </div>
-                    <div class="pinned-status" id="pinnedMainStatus" style="display:none;"></div>
+                    <div class="pinned-status" id="pinnedMainStatus"></div>
 
                     <div class="form-mode-control" id="mainFormMode" aria-label="מצב טופס ראשון">
                         <button type="button" data-mode="improved" onclick="applyFormMode('main', 'improved')">משופר</button>
@@ -1169,10 +1196,11 @@
                     <div class="info-note" style="text-align: center;">
                         💪 <strong>רוטציית חזק:</strong> כל מספר חזק (1-7) מופיע בדיוק בשני כרטיסים לכיסוי מלא.
                     </div>
-                    <div class="pin-toolbar">
-                        <button class="pin-form-btn" id="pinForm2Btn" onclick="pinCurrentForm('form2')">📌 קבע טופס שני</button>
+                    <div class="pin-toolbar" aria-label="קיבוע טופס שני">
+                        <button type="button" class="pin-form-btn" id="pinForm2BaselineBtn" onclick="pinForm('form2', 'baseline')" disabled>📌 PIN בסיס</button>
+                        <button type="button" class="pin-form-btn pin-form-btn-improved" id="pinForm2ImprovedBtn" onclick="pinForm('form2', 'improved')" disabled>📌 PIN משופר</button>
                     </div>
-                    <div class="pinned-status" id="pinnedForm2Status" style="display:none;"></div>
+                    <div class="pinned-status" id="pinnedForm2Status"></div>
                     <div class="form-mode-control" id="form2FormMode" aria-label="מצב טופס שני">
                         <button type="button" data-mode="improved" onclick="applyFormMode('form2', 'improved')">משופר</button>
                         <button type="button" data-mode="baseline" onclick="applyFormMode('form2', 'baseline')">בסיס</button>
@@ -1309,12 +1337,26 @@
         let loadedExcelRows = null;
         let comparisonLiveUpdateTimer = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
-        const PINNED_FORMS_STORAGE_KEY = 'lottoPinnedFormsV1';
+        const PINNED_FORMS_STORAGE_KEY_V1 = 'lottoPinnedFormsV1';
+        const PINNED_FORMS_STORAGE_KEY = 'lottoPinnedFormsV2';
         const PINNED_FORM_SOURCES = {
             main: { label: 'טופס ראשון', fullLabel: 'טופס ראשון – 14 קומבינציות מומלצות' },
             form2: { label: 'טופס שני', fullLabel: 'טופס שני – 14 קומבינציות (1 עד 14)' }
         };
-        let pinnedForms = { version: 1, main: null, form2: null };
+        const PINNED_FORM_MODES = {
+            baseline: { label: 'בסיס' },
+            improved: { label: 'משופר' }
+        };
+
+        function createEmptyPinnedForms() {
+            return {
+                version: 2,
+                main: { baseline: null, improved: null },
+                form2: { baseline: null, improved: null }
+            };
+        }
+
+        let pinnedForms = createEmptyPinnedForms();
         
         function detectDataFormat(data) {
             if (!data || data.length === 0) return { numStart: 0, strongIdx: 6, hasDrawDate: false };
@@ -1352,39 +1394,90 @@
         let lastAnalysis = null;   // הניתוח האחרון (לשמירה)
         let savedAnalysis = null;  // ניתוח שמור (להשוואה)
 
+        function normalizePinnedSlot(pin, source, mode) {
+            if (!pin || typeof pin !== 'object' || !Array.isArray(pin.combinations)) return null;
+            const sourceMeta = PINNED_FORM_SOURCES[source];
+            const modeMeta = PINNED_FORM_MODES[mode];
+            if (!sourceMeta || !modeMeta) return null;
+            const combinations = pin.combinations
+                .filter(function(combo) {
+                    return combo && typeof combo === 'object' && Array.isArray(combo.numbers);
+                })
+                .map(normalizePinnedCombination)
+                .filter(function(combo) { return combo.numbers.length === 6; })
+                .slice(0, 14);
+            if (combinations.length === 0) return null;
+            return {
+                source: source,
+                mode: mode,
+                label: sourceMeta.label + ' - ' + modeMeta.label,
+                fullLabel: sourceMeta.fullLabel + ' - ' + modeMeta.label,
+                pinnedAt: pin.pinnedAt || new Date().toISOString(),
+                anchorDrawNumber: pin.anchorDrawNumber != null ? pin.anchorDrawNumber : null,
+                anchorDrawDate: pin.anchorDrawDate != null ? pin.anchorDrawDate : null,
+                combinations: combinations
+            };
+        }
+
+        function normalizePinnedFormsDocument(parsed) {
+            const normalized = createEmptyPinnedForms();
+            for (const source of ['main', 'form2']) {
+                for (const mode of ['baseline', 'improved']) {
+                    normalized[source][mode] = normalizePinnedSlot(
+                        parsed && parsed[source] ? parsed[source][mode] : null,
+                        source,
+                        mode
+                    );
+                }
+            }
+            return normalized;
+        }
+
+        function migratePinnedFormsV1(parsed) {
+            const migrated = createEmptyPinnedForms();
+            migrated.main.baseline = normalizePinnedSlot(parsed && parsed.main, 'main', 'baseline');
+            migrated.form2.baseline = normalizePinnedSlot(parsed && parsed.form2, 'form2', 'baseline');
+            return migrated;
+        }
+
         function loadPinnedForms() {
             try {
-                const raw = localStorage.getItem(PINNED_FORMS_STORAGE_KEY);
-                if (!raw) {
-                    pinnedForms = { version: 1, main: null, form2: null };
+                const rawV2 = localStorage.getItem(PINNED_FORMS_STORAGE_KEY);
+                if (rawV2 !== null) {
+                    pinnedForms = normalizePinnedFormsDocument(JSON.parse(rawV2));
                     return pinnedForms;
                 }
-                const parsed = JSON.parse(raw);
-                pinnedForms = {
-                    version: 1,
-                    main: parsed && parsed.main ? parsed.main : null,
-                    form2: parsed && parsed.form2 ? parsed.form2 : null
-                };
+                const rawV1 = localStorage.getItem(PINNED_FORMS_STORAGE_KEY_V1);
+                const migrated = rawV1
+                    ? migratePinnedFormsV1(JSON.parse(rawV1))
+                    : createEmptyPinnedForms();
+                if (!savePinnedForms(migrated, { silent: true })) pinnedForms = migrated;
             } catch (error) {
                 console.warn('Pinned forms load error:', error);
-                pinnedForms = { version: 1, main: null, form2: null };
+                pinnedForms = createEmptyPinnedForms();
             }
             return pinnedForms;
         }
 
-        function savePinnedForms() {
+        function savePinnedForms(nextState, options = {}) {
+            const normalized = normalizePinnedFormsDocument(nextState);
             try {
-                localStorage.setItem(PINNED_FORMS_STORAGE_KEY, JSON.stringify(pinnedForms));
+                localStorage.setItem(PINNED_FORMS_STORAGE_KEY, JSON.stringify(normalized));
+                pinnedForms = normalized;
                 return true;
             } catch (error) {
-                alert('❌ הדפדפן לא הצליח לשמור את ה-PIN. נסה לפנות מקום או לבדוק הרשאות אחסון.');
+                if (!options.silent) {
+                    alert('הדפדפן לא הצליח לשמור את ה-PIN. המצב הקודם נשאר ללא שינוי.');
+                }
                 console.warn('Pinned forms save error:', error);
                 return false;
             }
         }
 
-        function getCombosForSource(source) {
-            return source === 'form2' ? (currentCombinationsForm2 || []) : (currentCombinations || []);
+        function getPinnedForm(source, mode) {
+            return pinnedForms[source] && pinnedForms[source][mode]
+                ? pinnedForms[source][mode]
+                : null;
         }
 
         function cloneFormRows(rows) {
@@ -1559,6 +1652,7 @@
                     ? 'improved'
                     : 'baseline';
             }
+            renderPinnedFormStatus();
         }
 
         function normalizePinnedCombination(combo, index) {
@@ -1646,103 +1740,151 @@
             return parts.length ? parts.join(' • ') : 'ללא עוגן הגרלה';
         }
 
-        function pinCurrentForm(source) {
-            const meta = PINNED_FORM_SOURCES[source] || PINNED_FORM_SOURCES.main;
-            const combos = getCombosForSource(source);
+        function canPinForm(source, mode) {
+            if (!['main', 'form2'].includes(source) || !['baseline', 'improved'].includes(mode)) {
+                return false;
+            }
+            if (!currentData || currentData.length === 0 || !lastAnalysis) return false;
+            const rows = getFormSet(source, mode);
+            if (!rows || rows.length === 0) return false;
+            if (mode === 'baseline') return true;
+            const policy = currentBacktestResult && currentBacktestResult.policies
+                ? currentBacktestResult.policies[source]
+                : null;
+            return Boolean(policy && policy.validated === true && optimizedForms[source]);
+        }
+
+        function pinForm(source, mode) {
+            const sourceMeta = PINNED_FORM_SOURCES[source];
+            const modeMeta = PINNED_FORM_MODES[mode];
+            if (!sourceMeta || !modeMeta) return false;
             if (!currentData || currentData.length === 0 || !lastAnalysis) {
                 alert('הרץ ניתוח קודם כדי לקבע את הקומבינציות.');
-                return;
+                return false;
             }
-            if (!combos || combos.length === 0) {
+            if (mode === 'improved' && !canPinForm(source, mode)) {
+                alert('יש להריץ Backtest מאומת עבור הטופס הזה לפני קיבוע טופס משופר.');
+                return false;
+            }
+            const combinations = getFormSet(source, mode);
+            if (!combinations || combinations.length === 0) {
                 alert('אין קומבינציות לקיבוע בטופס הזה.');
-                return;
+                return false;
             }
-            if (pinnedForms[source]) {
-                const ok = confirm('כבר קיים PIN עבור ' + meta.label + '. להחליף אותו בקומבינציות הנוכחיות?');
-                if (!ok) return;
+            const existingPin = getPinnedForm(source, mode);
+            if (existingPin && !confirm('כבר קיים PIN עבור ' + sourceMeta.label + ' - ' + modeMeta.label + '. להחליף אותו?')) {
+                return false;
             }
             const anchor = getLatestDrawAnchor();
-            pinnedForms[source] = {
+            const nextState = normalizePinnedFormsDocument(pinnedForms);
+            nextState[source][mode] = {
                 source: source,
-                label: meta.label,
-                fullLabel: meta.fullLabel,
+                mode: mode,
+                label: sourceMeta.label + ' - ' + modeMeta.label,
+                fullLabel: sourceMeta.fullLabel + ' - ' + modeMeta.label,
                 pinnedAt: new Date().toISOString(),
                 anchorDrawNumber: anchor.anchorDrawNumber,
                 anchorDrawDate: anchor.anchorDrawDate,
-                combinations: combos.slice(0, 14).map(normalizePinnedCombination)
+                combinations: cloneFormRows(combinations)
+                    .slice(0, 14)
+                    .map(normalizePinnedCombination)
             };
-            if (!savePinnedForms()) return;
+            if (!savePinnedForms(nextState)) return false;
             renderPinnedFormStatus();
             renderPinnedFutureComparisons();
-            alert('✅ ' + meta.label + ' קובע ונשמר עם ' + pinnedForms[source].combinations.length + ' קומבינציות.');
+            alert(sourceMeta.label + ' - ' + modeMeta.label + ' קובע ונשמר.');
+            return true;
         }
 
-        function clearPinnedForm(source) {
-            const meta = PINNED_FORM_SOURCES[source] || PINNED_FORM_SOURCES.main;
-            if (!pinnedForms[source]) return;
-            if (!confirm('לבטל את ה-PIN של ' + meta.label + '?')) return;
-            pinnedForms[source] = null;
-            if (!savePinnedForms()) return;
+        function clearPinnedForm(source, mode) {
+            const pin = getPinnedForm(source, mode);
+            if (!pin) return false;
+            if (!confirm('לבטל את ה-PIN של ' + pin.label + '?')) return false;
+            const nextState = normalizePinnedFormsDocument(pinnedForms);
+            nextState[source][mode] = null;
+            if (!savePinnedForms(nextState)) return false;
             renderPinnedFormStatus();
             renderPinnedFutureComparisons();
+            return true;
         }
 
-        function sendPinnedToForm(source) {
-            const pin = pinnedForms[source];
-            if (!pin || !pin.combinations || pin.combinations.length === 0) {
+        function sendPinnedFormToForm(source, mode) {
+            const pin = getPinnedForm(source, mode);
+            if (!pin || !pin.combinations.length) {
                 alert('אין טופס מקובע לשליחה.');
-                return;
+                return false;
             }
-            const combos = pin.combinations.slice(0, 14);
+            const combinations = cloneFormRows(pin.combinations).slice(0, 14);
             if (window.parent !== window) {
                 window.parent.postMessage({
                     type: 'FILL_ALL_TABLES',
-                    combinations: combos
+                    combinations: combinations
                 }, '*');
-                alert('✅ ' + combos.length + ' קומבינציות מקובעות נשלחו לטופס!');
             } else {
                 localStorage.setItem('lottoFillAll', JSON.stringify({
-                    combinations: combos,
+                    combinations: combinations,
                     timestamp: Date.now(),
                     source: source,
+                    mode: mode,
                     pinned: true
                 }));
-                alert('✅ הקומבינציות המקובעות נשמרו לטופס!');
+            }
+            alert(combinations.length + ' קומבינציות מקובעות נשלחו לטופס.');
+            return true;
+        }
+
+        function updatePinActionState(source) {
+            const prefix = source === 'form2' ? 'pinForm2' : 'pinMain';
+            const baselineButton = document.getElementById(prefix + 'BaselineBtn');
+            const improvedButton = document.getElementById(prefix + 'ImprovedBtn');
+            if (baselineButton) baselineButton.disabled = !canPinForm(source, 'baseline');
+            if (improvedButton) {
+                improvedButton.disabled = !canPinForm(source, 'improved');
+                improvedButton.title = improvedButton.disabled
+                    ? 'זמין לאחר Backtest מאומת עבור הטופס הזה'
+                    : 'קבע את הקומבינציות המשופרות הנוכחיות';
             }
         }
 
         function renderPinnedFormStatus() {
             renderPinnedStatusForSource('main', 'pinnedMainStatus');
             renderPinnedStatusForSource('form2', 'pinnedForm2Status');
+            updatePinActionState('main');
+            updatePinActionState('form2');
         }
 
         function renderPinnedStatusForSource(source, elementId) {
-            const el = document.getElementById(elementId);
-            if (!el) return;
-            const pin = pinnedForms[source];
-            if (!pin) {
-                el.style.display = 'none';
-                el.innerHTML = '';
-                return;
-            }
-            el.style.display = 'block';
-            el.innerHTML = `
-                <div class="pinned-status-main">
-                    <div>
-                        <div class="pinned-status-title">📌 ${pin.fullLabel || pin.label || 'טופס מקובע'}</div>
-                        <div class="pinned-status-meta">
-                            קובע: ${formatPinnedDate(pin.pinnedAt)}<br>
-                            עוגן: ${buildAnchorLabel(pin)} • ${(pin.combinations || []).length} קומבינציות
+            const element = document.getElementById(elementId);
+            if (!element) return;
+            element.innerHTML = ['baseline', 'improved'].map(function(mode) {
+                const pin = getPinnedForm(source, mode);
+                const modeLabel = PINNED_FORM_MODES[mode].label;
+                if (!pin) {
+                    return `
+                        <div class="pinned-status-main pinned-status-empty" data-pin-source="${source}" data-pin-mode="${mode}">
+                            <div class="pinned-status-title">${modeLabel}</div>
+                            <div class="pinned-status-meta">לא קובע</div>
+                        </div>
+                    `;
+                }
+                return `
+                    <div class="pinned-status-main" data-pin-source="${source}" data-pin-mode="${mode}">
+                        <div>
+                            <div class="pinned-status-title">📌 ${pin.label}</div>
+                            <div class="pinned-status-meta">
+                                קובע: ${formatPinnedDate(pin.pinnedAt)}<br>
+                                עוגן: ${buildAnchorLabel(pin)} • ${pin.combinations.length} קומבינציות
+                            </div>
+                        </div>
+                        <div class="pinned-actions">
+                            <button class="pill-btn" onclick="renderPinnedFutureComparisons(); scrollToSection('pinnedFutureCard')">השווה עתידי</button>
+                            <button class="pill-btn" onclick="sendPinnedFormToForm('${source}', '${mode}')">שלח לטופס</button>
+                            <button class="pill-btn" onclick="pinForm('${source}', '${mode}')">החלף</button>
+                            <button class="pill-btn" onclick="clearPinnedForm('${source}', '${mode}')">בטל PIN</button>
                         </div>
                     </div>
-                    <div class="pinned-actions">
-                        <button class="pill-btn" onclick="renderPinnedFutureComparisons(); scrollToSection('pinnedFutureCard')">🔎 השווה עתידי</button>
-                        <button class="pill-btn" onclick="sendPinnedToForm('${source}')">📝 שלח PIN לטופס</button>
-                        <button class="pill-btn" onclick="pinCurrentForm('${source}')">🔁 החלף PIN</button>
-                        <button class="pill-btn" onclick="clearPinnedForm('${source}')">🗑️ בטל PIN</button>
-                    </div>
-                </div>
-            `;
+                `;
+            }).join('');
         }
 
         function getFutureRowsForPin(pin) {
@@ -1792,12 +1934,20 @@
             };
         }
 
+        function listPinnedForms() {
+            return ['main', 'form2'].flatMap(function(source) {
+                return ['baseline', 'improved']
+                    .map(function(mode) { return getPinnedForm(source, mode); })
+                    .filter(Boolean);
+            });
+        }
+
         function renderPinnedFutureComparisons() {
             const container = document.getElementById('pinnedFutureContent');
             if (!container) return;
-            const activePins = ['main', 'form2'].map(function(source) { return pinnedForms[source]; }).filter(Boolean);
+            const activePins = listPinnedForms();
             if (activePins.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted); text-align:center;">אין עדיין טפסים מקובעים. לחץ PIN ליד אחד מטפסי הקומבינציות אחרי ניתוח.</p>';
+                container.innerHTML = '<p class="pinned-empty-message">אין עדיין טפסים מקובעים.</p>';
                 return;
             }
             container.innerHTML = activePins.map(renderPinnedFutureSource).join('');
@@ -2052,6 +2202,7 @@
         async function processAnalysisRows(rawData) {
             cancelBacktest('dataset-changed');
             var data = normalizeData(rawData);
+            lastAnalysis = null;
             currentData = data;
             currentBacktestResult = null;
             baselineForms = { main: [], form2: [] };
@@ -2059,6 +2210,7 @@
             activeFormModes = { main: 'baseline', form2: 'baseline' };
             currentCombinations = [];
             currentCombinationsForm2 = [];
+            renderPinnedFormStatus();
 
             const rowSelection = document.getElementById('rowSelection').value.trim();
             selectedData = rowSelection ? selectRows(data, rowSelection) : data;
