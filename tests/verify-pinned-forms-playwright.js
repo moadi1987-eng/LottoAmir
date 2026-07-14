@@ -191,6 +191,41 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     const normalizedMalformedState = await migratedSession.page.evaluate(() => pinnedForms);
     assert.ok(normalizedMalformedState.main.baseline);
     assert.strictEqual(normalizedMalformedState.main.improved, null);
+
+    const hostilePin = makePin('main', 'baseline', 11);
+    hostilePin.pinnedAt = '<img id="pin-date-markup" src=x>';
+    hostilePin.anchorDrawDate = '<img id="pin-anchor-markup" src=x>';
+    hostilePin.combinations[0].comboNum = '<img id="pin-combo-markup" src=x>';
+    hostilePin.combinations[0].strategy = '<img id="pin-strategy-markup" src=x>';
+    await migratedSession.page.evaluate(pin => {
+      localStorage.setItem('lottoPinnedFormsV2', JSON.stringify({
+        version: 2,
+        main: { baseline: pin, improved: null },
+        form2: { baseline: null, improved: null },
+      }));
+    }, hostilePin);
+    await migratedSession.page.reload({ waitUntil: 'domcontentloaded' });
+    await migratedSession.page.evaluate(() => {
+      currentData = [{
+        drawNumber: 4001,
+        date: '17/07/2026',
+        numbers: [1, 2, 3, 4, 5, 6],
+        strong: 1,
+      }];
+      renderPinnedFormStatus();
+      renderPinnedFutureComparisons();
+    });
+    for (const id of [
+      'pin-date-markup',
+      'pin-anchor-markup',
+      'pin-combo-markup',
+      'pin-strategy-markup',
+    ]) {
+      assert.strictEqual(await migratedSession.page.locator(`#${id}`).count(), 0);
+    }
+    assert.ok((await migratedSession.page
+      .locator('[data-pin-source="main"][data-pin-mode="baseline"]')
+      .textContent()).includes('<img id="pin-date-markup" src=x>'));
     await migratedSession.context.close();
 
     const cleanSession = await openAnalyzer(browser, baseUrl);
@@ -302,6 +337,12 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     assert.ok((await cleanSession.page
       .locator('[data-pin-source="main"][data-pin-mode="improved"]')
       .textContent()).includes('משופר'));
+    const savedImprovedStatus = cleanSession.page
+      .locator('[data-pin-source="main"][data-pin-mode="improved"]');
+    assert.strictEqual(await savedImprovedStatus.locator('[data-pin-action="replace"]').count(), 1);
+    assert.ok(await savedImprovedStatus.locator('[data-pin-action="replace"]').isDisabled());
+    assert.ok(!(await savedImprovedStatus.locator('[data-pin-action="send"]').isDisabled()));
+    assert.ok(!(await savedImprovedStatus.locator('[data-pin-action="clear"]').isDisabled()));
 
     const atomicFailure = await cleanSession.page.evaluate(() => {
       const before = JSON.stringify(pinnedForms);
