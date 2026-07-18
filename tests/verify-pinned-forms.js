@@ -36,12 +36,14 @@ const requiredText = [
   'function scorePinnedFormAgainstDraw(pin, drawRow)',
   'function createPinnedDrawMetrics(pin, item)',
   'function renderPinnedDrawMetricAttributes(metrics)',
+  'function parsePinnedFiniteNumber(value)',
   'function readPinnedDrawMetrics(detail)',
   'function getPinnedDrawMetricDisplay(metrics)',
   'function renderPinnedOpenDrawStats(metrics)',
   'function updatePinnedOpenDrawStats(card, detail)',
   'function handlePinnedFutureToggle(event)',
   'data-pin-open-draw-stats',
+  'data-pin-combination-count',
   'data-pin-stat="draw"',
   'data-pin-stat="regular"',
   'data-pin-stat="strong"',
@@ -77,6 +79,10 @@ assert(
 assert(
   html.includes('פתח הגרלה להצגת נתונים'),
   'PIN future summary must define the no-open-draw state',
+);
+assert(
+  !html.includes('data-pin-hit-rate'),
+  'PIN future metrics must calculate rates from the saved combination count',
 );
 assert(shellHtml.includes('data-target="pinnedFutureCard"'), 'ALL_IN_ONE analyzer rail must link to pinned future comparisons');
 assert(shellHtml.includes("goToAnalyzerSection('pinnedFutureCard')"), 'ALL_IN_ONE analyzer rail must scroll to pinned future card');

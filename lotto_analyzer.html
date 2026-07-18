@@ -1988,16 +1988,17 @@
         function createPinnedDrawMetrics(pin, item) {
             const draw = item && item.draw ? item.draw : {};
             const score = item && item.score ? item.score : {};
-            const combinationCount = pin && Array.isArray(pin.combinations)
+            const combinationCount = parsePinnedFiniteNumber(pin && Array.isArray(pin.combinations)
                 ? pin.combinations.length
-                : 0;
-            const totalRegular = Number(score.totalRegular);
-            const totalStrong = Number(score.totalStrong);
-            const bestRegular = score.best ? Number(score.best.regularMatches) : null;
-            const maxRegular = combinationCount * 6;
-            if (combinationCount <= 0
-                || !Number.isFinite(totalRegular)
-                || !Number.isFinite(totalStrong)) {
+                : null);
+            const totalRegular = parsePinnedFiniteNumber(score.totalRegular);
+            const totalStrong = parsePinnedFiniteNumber(score.totalStrong);
+            const bestRegular = score.best ? parsePinnedFiniteNumber(score.best.regularMatches) : null;
+            if (combinationCount == null
+                || combinationCount <= 0
+                || totalRegular == null
+                || totalStrong == null
+                || bestRegular == null) {
                 return null;
             }
             return {
@@ -2008,9 +2009,9 @@
                     ? formatDrawDateForDisplay(draw.date)
                     : '',
                 totalRegular: totalRegular,
-                hitRate: maxRegular > 0 ? (totalRegular / maxRegular) * 100 : 0,
+                combinationCount: combinationCount,
                 totalStrong: totalStrong,
-                bestRegular: Number.isFinite(bestRegular) ? bestRegular : null,
+                bestRegular: bestRegular,
                 bestStrong: Boolean(score.best && score.best.strongMatch)
             };
         }
@@ -2021,32 +2022,39 @@
                 'data-pin-draw-label="' + escapeBacktestText(metrics.drawLabel) + '"',
                 'data-pin-draw-date="' + escapeBacktestText(metrics.drawDate) + '"',
                 'data-pin-total-regular="' + metrics.totalRegular + '"',
-                'data-pin-hit-rate="' + metrics.hitRate + '"',
+                'data-pin-combination-count="' + metrics.combinationCount + '"',
                 'data-pin-total-strong="' + metrics.totalStrong + '"',
                 'data-pin-best-regular="' + (metrics.bestRegular == null ? '' : metrics.bestRegular) + '"',
                 'data-pin-best-strong="' + (metrics.bestStrong ? '1' : '0') + '"'
             ].join(' ');
         }
 
+        function parsePinnedFiniteNumber(value) {
+            if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
+            const number = Number(value);
+            return Number.isFinite(number) ? number : null;
+        }
+
         function readPinnedDrawMetrics(detail) {
             if (!detail || !detail.dataset) return null;
-            const totalRegular = Number(detail.dataset.pinTotalRegular);
-            const hitRate = Number(detail.dataset.pinHitRate);
-            const totalStrong = Number(detail.dataset.pinTotalStrong);
-            const bestRaw = detail.dataset.pinBestRegular;
-            const bestRegular = bestRaw === '' ? null : Number(bestRaw);
+            const totalRegular = parsePinnedFiniteNumber(detail.dataset.pinTotalRegular);
+            const combinationCount = parsePinnedFiniteNumber(detail.dataset.pinCombinationCount);
+            const totalStrong = parsePinnedFiniteNumber(detail.dataset.pinTotalStrong);
+            const bestRegular = parsePinnedFiniteNumber(detail.dataset.pinBestRegular);
             if (!detail.dataset.pinDrawLabel
-                || !Number.isFinite(totalRegular)
-                || !Number.isFinite(hitRate)
-                || !Number.isFinite(totalStrong)
-                || (bestRegular != null && !Number.isFinite(bestRegular))) {
+                || totalRegular == null
+                || combinationCount == null
+                || combinationCount <= 0
+                || totalStrong == null
+                || bestRegular == null
+                || !['0', '1'].includes(detail.dataset.pinBestStrong)) {
                 return null;
             }
             return {
                 drawLabel: detail.dataset.pinDrawLabel,
                 drawDate: detail.dataset.pinDrawDate || '',
                 totalRegular: totalRegular,
-                hitRate: hitRate,
+                combinationCount: combinationCount,
                 totalStrong: totalStrong,
                 bestRegular: bestRegular,
                 bestStrong: detail.dataset.pinBestStrong === '1'
@@ -2064,11 +2072,12 @@
                     best: '—'
                 };
             }
+            const maxRegular = metrics.combinationCount * 6;
             return {
                 draw: metrics.drawLabel,
                 drawDate: metrics.drawDate,
                 regular: String(metrics.totalRegular),
-                rate: metrics.hitRate.toFixed(1) + '%',
+                rate: ((metrics.totalRegular / maxRegular) * 100).toFixed(1) + '%',
                 strong: String(metrics.totalStrong),
                 best: metrics.bestRegular == null
                     ? '—'
@@ -2165,6 +2174,12 @@
             `;
         }
 
+        function getValidPinnedDrawNumber(value) {
+            if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
+            const number = Number(value);
+            return Number.isFinite(number) ? number : null;
+        }
+
         function renderPinnedFutureSource(pin) {
             if (!currentData || currentData.length === 0) {
                 return `
@@ -2181,10 +2196,10 @@
             const futureRows = getFutureRowsForPin(pin).slice().sort(function(a, b) {
                 const aDraw = a && a.draw ? a.draw : {};
                 const bDraw = b && b.draw ? b.draw : {};
-                const aDrawNumber = Number(aDraw.drawNumber);
-                const bDrawNumber = Number(bDraw.drawNumber);
-                if (Number.isFinite(aDrawNumber)
-                    && Number.isFinite(bDrawNumber)
+                const aDrawNumber = getValidPinnedDrawNumber(aDraw.drawNumber);
+                const bDrawNumber = getValidPinnedDrawNumber(bDraw.drawNumber);
+                if (aDrawNumber != null
+                    && bDrawNumber != null
                     && aDrawNumber !== bDrawNumber) {
                     return bDrawNumber - aDrawNumber;
                 }
