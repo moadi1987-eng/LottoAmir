@@ -2178,7 +2178,23 @@
                 `;
             }
 
-            const futureRows = getFutureRowsForPin(pin);
+            const futureRows = getFutureRowsForPin(pin).slice().sort(function(a, b) {
+                const aDraw = a && a.draw ? a.draw : {};
+                const bDraw = b && b.draw ? b.draw : {};
+                const aDrawNumber = Number(aDraw.drawNumber);
+                const bDrawNumber = Number(bDraw.drawNumber);
+                if (Number.isFinite(aDrawNumber)
+                    && Number.isFinite(bDrawNumber)
+                    && aDrawNumber !== bDrawNumber) {
+                    return bDrawNumber - aDrawNumber;
+                }
+                const aDate = parseDrawDate(aDraw.date);
+                const bDate = parseDrawDate(bDraw.date);
+                if (aDate != null && bDate != null && aDate !== bDate) {
+                    return bDate - aDate;
+                }
+                return 0;
+            });
             if (futureRows.length === 0) {
                 return `
                     <div class="pinned-future-source" data-pin-mode="${pin.mode}">

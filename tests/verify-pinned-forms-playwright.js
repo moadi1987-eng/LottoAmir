@@ -114,8 +114,8 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   await session.page.evaluate(pinnedState => {
     pinnedForms = pinnedState;
     currentData = [
-      { drawNumber: 4002, date: '20/07/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
       { drawNumber: 4001, date: '17/07/2026', numbers: [7, 8, 9, 10, 11, 12], strong: 2 },
+      { drawNumber: 4002, date: '20/07/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
     ];
     document.getElementById('results').style.display = 'block';
     renderPinnedFormStatus();
@@ -138,11 +138,17 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   const baselineCard = mainGroup.locator('[data-pin-mode="baseline"]');
   const improvedCard = mainGroup.locator('[data-pin-mode="improved"]');
   const baselineDraws = baselineCard.locator('details.future-draw');
+  const newestDraw = baselineCard.locator('details.future-draw[data-pin-draw-label="#4002"]');
+  const olderDraw = baselineCard.locator('details.future-draw[data-pin-draw-label="#4001"]');
 
   assert.strictEqual(await baselineDraws.count(), 2);
-  assert.ok(await baselineDraws.nth(0).evaluate(node => node.open));
-  assert.ok(!(await baselineDraws.nth(1).evaluate(node => node.open)));
+  assert.ok(await newestDraw.evaluate(node => node.open));
+  assert.ok(!(await olderDraw.evaluate(node => node.open)));
   assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 1);
+  assert.strictEqual(
+    await baselineCard.locator('details.future-draw[open]').getAttribute('data-pin-draw-label'),
+    '#4002',
+  );
   assert.strictEqual(await baselineCard.locator('[data-pin-open-draw-stats]').getAttribute('aria-live'), 'polite');
 
   const newestStats = await readPinnedOpenDrawStats(baselineCard);
@@ -157,9 +163,9 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   });
 
   const improvedBefore = await readPinnedOpenDrawStats(improvedCard);
-  await baselineDraws.nth(1).locator('summary').click();
-  assert.ok(!(await baselineDraws.nth(0).evaluate(node => node.open)));
-  assert.ok(await baselineDraws.nth(1).evaluate(node => node.open));
+  await olderDraw.locator('summary').click();
+  assert.ok(await olderDraw.evaluate(node => node.open));
+  assert.ok(!(await newestDraw.evaluate(node => node.open)));
   assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 1);
   const olderStats = await readPinnedOpenDrawStats(baselineCard);
   assert.ok(olderStats.drawDate.includes('2026'));
@@ -174,8 +180,12 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   });
   assert.deepStrictEqual(await readPinnedOpenDrawStats(improvedCard), improvedBefore);
 
-  await baselineDraws.nth(1).locator('summary').click();
+  await olderDraw.locator('summary').click();
   assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 0);
+  await session.page.waitForFunction(() => {
+    const card = document.querySelector('.pinned-future-group[data-pin-source="main"] [data-pin-mode="baseline"]');
+    return card.querySelector('[data-pin-stat="draw"]').textContent.trim() === '—';
+  });
   assert.deepStrictEqual(await readPinnedOpenDrawStats(baselineCard), {
     draw: '—',
     drawDate: 'פתח הגרלה להצגת נתונים',
