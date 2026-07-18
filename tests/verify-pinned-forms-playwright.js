@@ -74,6 +74,20 @@ async function openAnalyzer(browser, baseUrl, initState) {
   return { context, page };
 }
 
+async function readPinnedOpenDrawStats(card) {
+  const read = async name => (await card
+    .locator(`[data-pin-stat="${name}"]`)
+    .textContent()).trim();
+  return {
+    draw: await read('draw'),
+    drawDate: await read('draw-date'),
+    regular: await read('regular'),
+    rate: await read('rate'),
+    strong: await read('strong'),
+    best: await read('best'),
+  };
+}
+
 async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName) {
   const session = await openAnalyzer(browser, baseUrl);
   await session.page.setViewportSize(viewport);
@@ -88,6 +102,12 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
       improved: makePin('form2', 'improved', 22),
     },
   };
+  pins.main.baseline.combinations = Array.from({ length: 14 }, (_, index) => ({
+    comboNum: index + 1,
+    strategy: `deterministic ${index + 1}`,
+    numbers: [1, 2, 3, 4, 5, 6],
+    strong: 1,
+  }));
   pins.main.improved.anchorDrawNumber = 4001;
   pins.main.improved.anchorDrawDate = '17/07/2026';
 
@@ -114,6 +134,64 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     .includes('2 הגרלות עתידיות'));
   assert.ok((await mainGroup.locator('[data-pin-mode="improved"]').textContent())
     .includes('1 הגרלות עתידיות'));
+
+  const baselineCard = mainGroup.locator('[data-pin-mode="baseline"]');
+  const improvedCard = mainGroup.locator('[data-pin-mode="improved"]');
+  const baselineDraws = baselineCard.locator('details.future-draw');
+
+  assert.strictEqual(await baselineDraws.count(), 2);
+  assert.ok(await baselineDraws.nth(0).evaluate(node => node.open));
+  assert.ok(!(await baselineDraws.nth(1).evaluate(node => node.open)));
+  assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 1);
+  assert.strictEqual(await baselineCard.locator('[data-pin-open-draw-stats]').getAttribute('aria-live'), 'polite');
+
+  const newestStats = await readPinnedOpenDrawStats(baselineCard);
+  assert.ok(newestStats.drawDate.includes('2026'));
+  assert.deepStrictEqual({ ...newestStats, drawDate: '<localized-date>' }, {
+    draw: '#4002',
+    drawDate: '<localized-date>',
+    regular: '84',
+    rate: '100.0%',
+    strong: '14',
+    best: '6/6 + חזק',
+  });
+
+  const improvedBefore = await readPinnedOpenDrawStats(improvedCard);
+  await baselineDraws.nth(1).locator('summary').click();
+  assert.ok(!(await baselineDraws.nth(0).evaluate(node => node.open)));
+  assert.ok(await baselineDraws.nth(1).evaluate(node => node.open));
+  assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 1);
+  const olderStats = await readPinnedOpenDrawStats(baselineCard);
+  assert.ok(olderStats.drawDate.includes('2026'));
+  assert.notStrictEqual(olderStats.drawDate, newestStats.drawDate);
+  assert.deepStrictEqual({ ...olderStats, drawDate: '<localized-date>' }, {
+    draw: '#4001',
+    drawDate: '<localized-date>',
+    regular: '0',
+    rate: '0.0%',
+    strong: '0',
+    best: '0/6',
+  });
+  assert.deepStrictEqual(await readPinnedOpenDrawStats(improvedCard), improvedBefore);
+
+  await baselineDraws.nth(1).locator('summary').click();
+  assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 0);
+  assert.deepStrictEqual(await readPinnedOpenDrawStats(baselineCard), {
+    draw: '—',
+    drawDate: 'פתח הגרלה להצגת נתונים',
+    regular: '—',
+    rate: '—',
+    strong: '—',
+    best: '—',
+  });
+
+  await session.page.evaluate(() => renderPinnedFutureComparisons());
+  const resetBaselineCard = mainGroup.locator('[data-pin-mode="baseline"]');
+  assert.strictEqual(await resetBaselineCard.locator('details.future-draw[open]').count(), 1);
+  assert.strictEqual(
+    (await resetBaselineCard.locator('[data-pin-stat="draw"]').textContent()).trim(),
+    '#4002',
+  );
 
   const width = await session.page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,

@@ -754,6 +754,20 @@
             font-weight: 800;
             margin-bottom: 10px;
         }
+        .pinned-open-draw-stats .stat-box {
+            min-width: 0;
+        }
+        .pinned-open-draw-stats .stat-value {
+            overflow-wrap: anywhere;
+        }
+        .pinned-stat-meta {
+            min-height: 16px;
+            margin-top: 4px;
+            color: var(--text-muted);
+            font-size: 11px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
         .future-draw {
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -1971,6 +1985,148 @@
             };
         }
 
+        function createPinnedDrawMetrics(pin, item) {
+            const draw = item && item.draw ? item.draw : {};
+            const score = item && item.score ? item.score : {};
+            const combinationCount = pin && Array.isArray(pin.combinations)
+                ? pin.combinations.length
+                : 0;
+            const totalRegular = Number(score.totalRegular);
+            const totalStrong = Number(score.totalStrong);
+            const bestRegular = score.best ? Number(score.best.regularMatches) : null;
+            const maxRegular = combinationCount * 6;
+            if (combinationCount <= 0
+                || !Number.isFinite(totalRegular)
+                || !Number.isFinite(totalStrong)) {
+                return null;
+            }
+            return {
+                drawLabel: draw.drawNumber != null && draw.drawNumber !== ''
+                    ? '#' + draw.drawNumber
+                    : 'שורה ' + item.rowNumber,
+                drawDate: draw.date != null && draw.date !== ''
+                    ? formatDrawDateForDisplay(draw.date)
+                    : '',
+                totalRegular: totalRegular,
+                hitRate: maxRegular > 0 ? (totalRegular / maxRegular) * 100 : 0,
+                totalStrong: totalStrong,
+                bestRegular: Number.isFinite(bestRegular) ? bestRegular : null,
+                bestStrong: Boolean(score.best && score.best.strongMatch)
+            };
+        }
+
+        function renderPinnedDrawMetricAttributes(metrics) {
+            if (!metrics) return '';
+            return [
+                'data-pin-draw-label="' + escapeBacktestText(metrics.drawLabel) + '"',
+                'data-pin-draw-date="' + escapeBacktestText(metrics.drawDate) + '"',
+                'data-pin-total-regular="' + metrics.totalRegular + '"',
+                'data-pin-hit-rate="' + metrics.hitRate + '"',
+                'data-pin-total-strong="' + metrics.totalStrong + '"',
+                'data-pin-best-regular="' + (metrics.bestRegular == null ? '' : metrics.bestRegular) + '"',
+                'data-pin-best-strong="' + (metrics.bestStrong ? '1' : '0') + '"'
+            ].join(' ');
+        }
+
+        function readPinnedDrawMetrics(detail) {
+            if (!detail || !detail.dataset) return null;
+            const totalRegular = Number(detail.dataset.pinTotalRegular);
+            const hitRate = Number(detail.dataset.pinHitRate);
+            const totalStrong = Number(detail.dataset.pinTotalStrong);
+            const bestRaw = detail.dataset.pinBestRegular;
+            const bestRegular = bestRaw === '' ? null : Number(bestRaw);
+            if (!detail.dataset.pinDrawLabel
+                || !Number.isFinite(totalRegular)
+                || !Number.isFinite(hitRate)
+                || !Number.isFinite(totalStrong)
+                || (bestRegular != null && !Number.isFinite(bestRegular))) {
+                return null;
+            }
+            return {
+                drawLabel: detail.dataset.pinDrawLabel,
+                drawDate: detail.dataset.pinDrawDate || '',
+                totalRegular: totalRegular,
+                hitRate: hitRate,
+                totalStrong: totalStrong,
+                bestRegular: bestRegular,
+                bestStrong: detail.dataset.pinBestStrong === '1'
+            };
+        }
+
+        function getPinnedDrawMetricDisplay(metrics) {
+            if (!metrics) {
+                return {
+                    draw: '—',
+                    drawDate: 'פתח הגרלה להצגת נתונים',
+                    regular: '—',
+                    rate: '—',
+                    strong: '—',
+                    best: '—'
+                };
+            }
+            return {
+                draw: metrics.drawLabel,
+                drawDate: metrics.drawDate,
+                regular: String(metrics.totalRegular),
+                rate: metrics.hitRate.toFixed(1) + '%',
+                strong: String(metrics.totalStrong),
+                best: metrics.bestRegular == null
+                    ? '—'
+                    : metrics.bestRegular + '/6' + (metrics.bestStrong ? ' + חזק' : '')
+            };
+        }
+
+        function renderPinnedOpenDrawStats(metrics) {
+            const display = getPinnedDrawMetricDisplay(metrics);
+            return `
+                <div class="stats-grid pinned-open-draw-stats" data-pin-open-draw-stats aria-live="polite" style="margin-bottom: 10px;">
+                    <div class="stat-box">
+                        <div class="stat-label">הגרלה פתוחה</div>
+                        <div class="stat-value" data-pin-stat="draw">${escapeBacktestText(display.draw)}</div>
+                        <div class="pinned-stat-meta" data-pin-stat="draw-date">${escapeBacktestText(display.drawDate)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">סך פגיעות רגילות</div>
+                        <div class="stat-value" data-pin-stat="regular" style="color: var(--success);">${escapeBacktestText(display.regular)}</div>
+                        <div class="pinned-stat-meta" data-pin-stat="rate">${escapeBacktestText(display.rate)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">פגיעות חזק</div>
+                        <div class="stat-value" data-pin-stat="strong">${escapeBacktestText(display.strong)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">התוצאה הטובה ביותר</div>
+                        <div class="stat-value" data-pin-stat="best" style="color: var(--warning);">${escapeBacktestText(display.best)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updatePinnedOpenDrawStats(card, detail) {
+            if (!card) return;
+            const display = getPinnedDrawMetricDisplay(readPinnedDrawMetrics(detail));
+            Object.keys(display).forEach(function(name) {
+                const statName = name === 'drawDate' ? 'draw-date' : name;
+                const target = card.querySelector('[data-pin-stat="' + statName + '"]');
+                if (target) target.textContent = display[name];
+            });
+        }
+
+        function handlePinnedFutureToggle(event) {
+            const detail = event.target;
+            if (!detail || !detail.matches || !detail.matches('details.future-draw')) return;
+            const card = detail.closest('.pinned-future-source');
+            if (!card) return;
+            if (detail.open) {
+                card.querySelectorAll('details.future-draw[open]').forEach(function(sibling) {
+                    if (sibling !== detail) sibling.open = false;
+                });
+                updatePinnedOpenDrawStats(card, detail);
+                return;
+            }
+            updatePinnedOpenDrawStats(card, card.querySelector('details.future-draw[open]'));
+        }
+
         function listPinnedForms() {
             return ['main', 'form2'].flatMap(function(source) {
                 return ['baseline', 'improved']
@@ -2038,30 +2194,13 @@
 
             const scoredRows = futureRows.map(function(item) {
                 const score = scorePinnedFormAgainstDraw(pin, item.draw);
-                return Object.assign({}, item, { score: score });
+                const scoredItem = Object.assign({}, item, { score: score });
+                scoredItem.metrics = createPinnedDrawMetrics(pin, scoredItem);
+                return scoredItem;
             });
-            const aggregateRegular = scoredRows.reduce(function(sum, item) { return sum + item.score.totalRegular; }, 0);
-            const aggregateStrong = scoredRows.reduce(function(sum, item) { return sum + item.score.totalStrong; }, 0);
-            const bestOverall = scoredRows
-                .map(function(item) {
-                    return {
-                        item: item,
-                        best: item.score.best
-                    };
-                })
-                .filter(function(entry) { return entry.best; })
-                .sort(function(a, b) {
-                    return b.best.regularMatches - a.best.regularMatches || b.best.strongMatch - a.best.strongMatch;
-                })[0];
-
-            const maxRegular = futureRows.length * (pin.combinations || []).length * 6;
-            const hitRate = maxRegular > 0 ? ((aggregateRegular / maxRegular) * 100).toFixed(1) : '0.0';
-            const bestText = bestOverall && bestOverall.best
-                ? bestOverall.best.regularMatches + '/6' + (bestOverall.best.strongMatch ? ' + חזק' : '')
-                : '-';
 
             const drawDetails = scoredRows.map(function(item, drawIndex) {
-                return renderFutureDrawDetails(pin, item, drawIndex === 0);
+                return renderFutureDrawDetails(pin, item, drawIndex === 0, item.metrics);
             }).join('');
 
             return `
@@ -2071,31 +2210,13 @@
                         <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
                     </div>
                     <div class="pinned-status-meta" style="margin-bottom: 10px;">עוגן: ${buildAnchorLabel(pin)} • נמצאו ${futureRows.length} הגרלות עתידיות</div>
-                    <div class="stats-grid" style="margin-bottom: 10px;">
-                        <div class="stat-box">
-                            <div class="stat-label">הגרלות חדשות</div>
-                            <div class="stat-value">${futureRows.length}</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-label">סך פגיעות רגילות</div>
-                            <div class="stat-value" style="color: var(--success);">${aggregateRegular}</div>
-                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${hitRate}%</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-label">פגיעות חזק</div>
-                            <div class="stat-value">${aggregateStrong}</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-label">התוצאה הטובה ביותר</div>
-                            <div class="stat-value" style="color: var(--warning);">${bestText}</div>
-                        </div>
-                    </div>
+                    ${renderPinnedOpenDrawStats(scoredRows[0].metrics)}
                     ${drawDetails}
                 </div>
             `;
         }
 
-        function renderFutureDrawDetails(pin, item, shouldOpen) {
+        function renderFutureDrawDetails(pin, item, shouldOpen, metrics) {
             const draw = item.draw || {};
             const score = item.score;
             const drawNumbers = (draw.numbers || []).filter(function(n) { return !isNaN(n) && n >= 1 && n <= 37; });
@@ -2133,7 +2254,7 @@
             }).join('');
 
             return `
-                <details class="future-draw" ${shouldOpen ? 'open' : ''}>
+                <details class="future-draw" ${renderPinnedDrawMetricAttributes(metrics)} ${shouldOpen ? 'open' : ''}>
                     <summary>${drawNumberLabel}${dateLabel} • ${bestSummary} • סך רגילות: ${score.totalRegular} • חזק: ${score.totalStrong}</summary>
                     <div class="future-draw-body">
                         <div class="future-draw-numbers">
@@ -2177,6 +2298,8 @@
         });
 
         document.getElementById('defaultDataBtn').addEventListener('click', loadDefaultNumbersFile);
+        document.getElementById('pinnedFutureContent')
+            .addEventListener('toggle', handlePinnedFutureToggle, true);
         document.getElementById('comparisonRowInput').addEventListener('input', scheduleComparisonLiveUpdate);
         document.getElementById('comparisonRowInput').addEventListener('change', function() {
             scheduleComparisonLiveUpdate(0);

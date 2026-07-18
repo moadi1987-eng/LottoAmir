@@ -34,6 +34,18 @@ const requiredText = [
   'function getLatestDrawAnchor()',
   'function getFutureRowsForPin(pin)',
   'function scorePinnedFormAgainstDraw(pin, drawRow)',
+  'function createPinnedDrawMetrics(pin, item)',
+  'function renderPinnedDrawMetricAttributes(metrics)',
+  'function readPinnedDrawMetrics(detail)',
+  'function getPinnedDrawMetricDisplay(metrics)',
+  'function renderPinnedOpenDrawStats(metrics)',
+  'function updatePinnedOpenDrawStats(card, detail)',
+  'function handlePinnedFutureToggle(event)',
+  'data-pin-open-draw-stats',
+  'data-pin-stat="draw"',
+  'data-pin-stat="regular"',
+  'data-pin-stat="strong"',
+  'data-pin-stat="best"',
   'function renderPinnedFormStatus()',
   'function renderPinnedFutureComparisons()'
 ];
@@ -54,6 +66,18 @@ assert(/cancelBacktest\('dataset-changed'\)/.test(html), 'Loading another datase
 assert(html.includes('function renderPinnedFutureGroup(source)'), 'Future PIN results must group by source');
 assert(html.includes('class="pinned-future-grid"'), 'Future source group must contain a baseline/improved grid');
 assert(html.includes('data-pin-mode="${mode}"'), 'Rendered PIN slots must expose their mode');
+assert(
+  html.includes("addEventListener('toggle', handlePinnedFutureToggle, true)"),
+  'PIN future metrics must use one captured details toggle handler',
+);
+assert(
+  html.includes('הגרלה פתוחה'),
+  'PIN future summary must identify the currently open draw',
+);
+assert(
+  html.includes('פתח הגרלה להצגת נתונים'),
+  'PIN future summary must define the no-open-draw state',
+);
 assert(shellHtml.includes('data-target="pinnedFutureCard"'), 'ALL_IN_ONE analyzer rail must link to pinned future comparisons');
 assert(shellHtml.includes("goToAnalyzerSection('pinnedFutureCard')"), 'ALL_IN_ONE analyzer rail must scroll to pinned future card');
 
