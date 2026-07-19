@@ -336,6 +336,20 @@ class LocalSchedulerContractTests(unittest.TestCase):
         self.assertFalse((workflows / "update-lotto-results.yml").exists())
         self.assertFalse((workflows / "diagnose-pais.yml").exists())
 
+    def test_scheduler_preserves_porcelain_paths_and_fails_closed_on_ambiguity(self):
+        runner = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "run_scheduled_update.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("Substring(3).Trim()", runner)
+        self.assertIn("Could not safely parse git status entry", runner)
+        self.assertIn(
+            "git -C $repositoryPath diff --name-only --no-renames origin/main...main",
+            runner,
+        )
+
 
 @unittest.skipUnless(os.name == "nt", "Windows Task Scheduler runner test")
 class WindowsSchedulerRecoveryTests(unittest.TestCase):
@@ -420,11 +434,55 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             capture_output=True,
         )
 
-    def test_recovers_allowed_data_changes_and_diverged_data_commit(self):
+    def create_managed_repo(self):
         first_run = self.run_scheduler()
         self.assertEqual(first_run.returncode, 0, first_run.stdout + first_run.stderr)
+        return self.automation_root / "repo"
 
-        managed_repo = self.automation_root / "repo"
+    def recovery_directories(self):
+        return list(self.automation_root.glob("repo-recovery-*"))
+
+    def advance_remote(self, filename, contents):
+        remote_writer = self.root / "remote-writer"
+        self.run_command(["git", "clone", str(self.remote), str(remote_writer)])
+        self.run_command(["git", "config", "user.name", "Remote User"], remote_writer)
+        self.run_command(
+            ["git", "config", "user.email", "remote@example.com"], remote_writer
+        )
+        (remote_writer / filename).write_text(contents, encoding="utf-8")
+        self.run_command(["git", "add", filename], remote_writer)
+        self.run_command(["git", "commit", "-m", "remote advance"], remote_writer)
+        self.run_command(["git", "push", "origin", "main"], remote_writer)
+
+    def test_recovers_numbers_workbook_only(self):
+        managed_repo = self.create_managed_repo()
+        (managed_repo / "NUMBERS.xlsx").write_text("interrupted\n", encoding="utf-8")
+
+        recovery = self.run_scheduler()
+
+        self.assertEqual(recovery.returncode, 0, recovery.stdout + recovery.stderr)
+        self.assertEqual(
+            (managed_repo / "NUMBERS.xlsx").read_text(encoding="utf-8"), "3944\n"
+        )
+        self.assertEqual(len(self.recovery_directories()), 1)
+
+    def test_recovers_prize_data_only(self):
+        managed_repo = self.create_managed_repo()
+        (managed_repo / "LOTTO_PRIZES.json").write_text(
+            "interrupted\n", encoding="utf-8"
+        )
+
+        recovery = self.run_scheduler()
+
+        self.assertEqual(recovery.returncode, 0, recovery.stdout + recovery.stderr)
+        self.assertIn(
+            '"schemaVersion":1',
+            (managed_repo / "LOTTO_PRIZES.json").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(len(self.recovery_directories()), 1)
+
+    def test_recovers_allowed_data_changes_and_diverged_data_commit(self):
+        managed_repo = self.create_managed_repo()
         (managed_repo / "NUMBERS.xlsx").write_text("interrupted\n", encoding="utf-8")
         (managed_repo / "LOTTO_PRIZES.json").write_text(
             "interrupted\n", encoding="utf-8"
@@ -457,16 +515,7 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         )
         self.run_command(["git", "commit", "-m", "pending data"], managed_repo)
 
-        remote_writer = self.root / "remote-writer"
-        self.run_command(["git", "clone", str(self.remote), str(remote_writer)])
-        self.run_command(["git", "config", "user.name", "Remote User"], remote_writer)
-        self.run_command(
-            ["git", "config", "user.email", "remote@example.com"], remote_writer
-        )
-        (remote_writer / "README.md").write_text("remote advance\n", encoding="utf-8")
-        self.run_command(["git", "add", "README.md"], remote_writer)
-        self.run_command(["git", "commit", "-m", "remote advance"], remote_writer)
-        self.run_command(["git", "push", "origin", "main"], remote_writer)
+        self.advance_remote("README.md", "remote advance\n")
 
         divergence_recovery = self.run_scheduler()
         self.assertEqual(
@@ -479,8 +528,107 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             "remote advance\n",
         )
         self.assertGreaterEqual(
-            len(list(self.automation_root.glob("repo-recovery-*"))), 2
+            len(self.recovery_directories()), 2
         )
+
+    def test_rejects_unrelated_dirty_change(self):
+        managed_repo = self.create_managed_repo()
+        (managed_repo / "README.md").write_text("interrupted\n", encoding="utf-8")
+
+        recovery = self.run_scheduler()
+
+        self.assertNotEqual(recovery.returncode, 0)
+        self.assertIn(
+            "Automation clone has unexpected local changes; refusing recovery.",
+            recovery.stdout,
+        )
+        self.assertEqual(len(self.recovery_directories()), 0)
+
+    def test_rejects_whitespace_confusable_dirty_change(self):
+        managed_repo = self.create_managed_repo()
+        (managed_repo / " NUMBERS.xlsx").write_text("unrelated\n", encoding="utf-8")
+
+        recovery = self.run_scheduler()
+
+        self.assertNotEqual(recovery.returncode, 0)
+        self.assertIn("Could not safely parse git status entry", recovery.stdout)
+        self.assertEqual(len(self.recovery_directories()), 0)
+
+    def test_rejects_renamed_allowed_file_as_ambiguous_dirty_change(self):
+        managed_repo = self.create_managed_repo()
+        self.run_command(
+            ["git", "mv", "NUMBERS.xlsx", "NUMBERS-renamed.xlsx"], managed_repo
+        )
+
+        recovery = self.run_scheduler()
+
+        self.assertNotEqual(recovery.returncode, 0)
+        self.assertIn("Could not safely parse git status entry", recovery.stdout)
+        self.assertEqual(len(self.recovery_directories()), 0)
+
+    def test_rejects_diverged_commit_with_unrelated_path(self):
+        managed_repo = self.create_managed_repo()
+        self.run_command(["git", "config", "user.name", "Updater"], managed_repo)
+        self.run_command(
+            ["git", "config", "user.email", "updater@example.com"], managed_repo
+        )
+        (managed_repo / "README.md").write_text("pending local change\n", encoding="utf-8")
+        self.run_command(["git", "add", "README.md"], managed_repo)
+        self.run_command(["git", "commit", "-m", "pending unrelated data"], managed_repo)
+        self.advance_remote("REMOTE.md", "remote advance\n")
+
+        recovery = self.run_scheduler()
+
+        self.assertNotEqual(recovery.returncode, 0)
+        self.assertIn(
+            "Automation clone diverged with changes outside the allowed data files.",
+            recovery.stdout,
+        )
+        self.assertEqual(len(self.recovery_directories()), 0)
+
+    def test_recovers_allowed_partial_update_after_failed_updater(self):
+        failure_marker = self.root / "failed-once.txt"
+        (self.seed / "scripts" / "update_lotto_results.py").write_text(
+            "from pathlib import Path\n"
+            f"marker = Path({str(failure_marker)!r})\n"
+            "if not marker.exists():\n"
+            '    Path("NUMBERS.xlsx").write_text("partial\\n", encoding="utf-8")\n'
+            '    marker.write_text("failed\\n", encoding="utf-8")\n'
+            "    raise SystemExit(1)\n"
+            "print('fixture updater: no changes')\n",
+            encoding="utf-8",
+        )
+        self.run_command(
+            ["git", "add", "scripts/update_lotto_results.py"], self.seed
+        )
+        self.run_command(["git", "commit", "-m", "fixture failed updater"], self.seed)
+        self.run_command(["git", "push", "origin", "main"], self.seed)
+
+        failed_run = self.run_scheduler()
+        self.assertNotEqual(failed_run.returncode, 0)
+        self.assertIn("official results update failed", failed_run.stdout)
+
+        managed_repo = self.automation_root / "repo"
+        self.assertEqual(
+            (managed_repo / "NUMBERS.xlsx").read_text(encoding="utf-8"), "partial\n"
+        )
+        self.assertEqual(
+            self.run_command(["git", "show", "main:NUMBERS.xlsx"], self.seed).stdout,
+            "3944\n",
+        )
+
+        recovery = self.run_scheduler()
+
+        self.assertEqual(recovery.returncode, 0, recovery.stdout + recovery.stderr)
+        self.assertTrue(failure_marker.exists())
+        self.assertEqual(
+            (managed_repo / "NUMBERS.xlsx").read_text(encoding="utf-8"), "3944\n"
+        )
+        self.assertEqual(
+            self.run_command(["git", "show", "main:NUMBERS.xlsx"], self.seed).stdout,
+            "3944\n",
+        )
+        self.assertEqual(len(self.recovery_directories()), 1)
 
 
 if __name__ == "__main__":

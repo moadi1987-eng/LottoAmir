@@ -39,12 +39,27 @@ function Assert-LastExitCode {
 function Get-ChangedPaths {
     param([string[]]$StatusEntries)
 
-    return @(
-        $StatusEntries |
-            Where-Object { $_.Length -ge 4 } |
-            ForEach-Object { $_.Substring(3).Trim() } |
-            Sort-Object -Unique
-    )
+    $paths = @()
+    foreach ($entry in $StatusEntries) {
+        if ($entry.Length -lt 4 -or $entry[2] -ne " ") {
+            throw "Could not safely parse git status entry: $entry"
+        }
+
+        $status = $entry.Substring(0, 2)
+        $path = $entry.Substring(3)
+        if (
+            $status.Contains("R") -or
+            $status.Contains("C") -or
+            $path.Length -eq 0 -or
+            $path.StartsWith('"')
+        ) {
+            throw "Could not safely parse git status entry: $entry"
+        }
+
+        $paths += $path
+    }
+
+    return @($paths | Sort-Object -Unique)
 }
 
 function Test-OnlyAllowedDataPaths {
@@ -91,7 +106,7 @@ function Prepare-AutomationClone {
             New-AutomationClone
         }
 
-        $workingChanges = @(& git -C $repositoryPath status --porcelain --untracked-files=all)
+        $workingChanges = @(& git -C $repositoryPath status --porcelain=v1 --untracked-files=all)
         Assert-LastExitCode "git status"
         if ($workingChanges.Count -gt 0) {
             $workingPaths = @(Get-ChangedPaths $workingChanges)
@@ -118,7 +133,7 @@ function Prepare-AutomationClone {
         $remoteAhead = [int]$counts[1]
         if ($localAhead -gt 0 -and $remoteAhead -gt 0) {
             $localCommitPaths = @(
-                & git -C $repositoryPath diff --name-only origin/main...main
+                & git -C $repositoryPath diff --name-only --no-renames origin/main...main
             )
             Assert-LastExitCode "local commit path check"
             $localCommitPaths = @($localCommitPaths | Sort-Object -Unique)
@@ -165,7 +180,7 @@ try {
         & $PythonExecutable scripts/update_lotto_prizes.py
         Assert-LastExitCode "official prize update"
 
-        $changedEntries = @(& git status --porcelain --untracked-files=all)
+        $changedEntries = @(& git status --porcelain=v1 --untracked-files=all)
         Assert-LastExitCode "git status after data update"
         $changedPaths = @(Get-ChangedPaths $changedEntries)
 
