@@ -89,6 +89,14 @@ async function readPinnedOpenDrawStats(card) {
   };
 }
 
+async function readPinnedWinnings(card) {
+  const band = card.locator('[data-pin-winnings-band]');
+  return {
+    value: (await band.locator('[data-pin-winnings="value"]').textContent()).trim(),
+    meta: (await band.locator('[data-pin-winnings="meta"]').textContent()).trim(),
+  };
+}
+
 async function readPinnedOpenDrawCardState(card) {
   const openDraws = card.locator('details.future-draw[open]');
   const openPanelCount = await openDraws.count();
@@ -98,6 +106,7 @@ async function readPinnedOpenDrawCardState(card) {
       ? await openDraws.getAttribute('data-pin-draw-label')
       : null,
     metrics: await readPinnedOpenDrawStats(card),
+    winnings: await readPinnedWinnings(card),
   };
 }
 
@@ -119,9 +128,11 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     { comboNum: 1, strategy: '3 + strong', numbers: [1, 2, 3, 20, 21, 22], strong: 1 },
     { comboNum: 2, strategy: '3', numbers: [1, 2, 3, 23, 24, 25], strong: 2 },
     { comboNum: 3, strategy: '3 second', numbers: [4, 5, 6, 26, 27, 28], strong: 2 },
-    ...Array.from({ length: 11 }, (_, index) => ({
-      comboNum: index + 4,
-      strategy: `no prize ${index + 4}`,
+    { comboNum: 4, strategy: 'missing tier', numbers: [1, 2, 20, 21, 22, 23], strong: 2 },
+    { comboNum: 5, strategy: 'not distributed', numbers: [20, 21, 22, 23, 24, 25], strong: 2 },
+    ...Array.from({ length: 9 }, (_, index) => ({
+      comboNum: index + 6,
+      strategy: `no prize ${index + 6}`,
       numbers: [20, 21, 22, 23, 24, 25],
       strong: 2,
     })),
@@ -295,6 +306,7 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
           regular: {
             '3+strong': { winnerCount: 10, prizeIls: 59 },
             3: { winnerCount: 20, prizeIls: 15 },
+            0: { winnerCount: 0, prizeIls: 0 },
             '6+strong': { winnerCount: 0, prizeIls: 0 },
           },
         },
@@ -355,7 +367,12 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     await baselineCard.locator('details.future-draw[open]').getAttribute('data-pin-draw-label'),
     'שורה 2',
   );
-  assert.strictEqual(await baselineCard.locator('[data-pin-open-draw-stats]').getAttribute('aria-live'), 'polite');
+  assert.strictEqual(await baselineCard.locator('[data-pin-open-draw-summary]').getAttribute('aria-live'), 'polite');
+  assert.strictEqual(await baselineCard.locator('[data-pin-open-draw-stats]').getAttribute('aria-live'), null);
+  assert.deepStrictEqual(await readPinnedWinnings(baselineCard), {
+    value: '—',
+    meta: 'נתוני זכייה לא זמינים',
+  });
 
   const newestStats = await readPinnedOpenDrawStats(baselineCard);
   assert.ok(newestStats.drawDate.includes('2026'));
@@ -419,11 +436,32 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   assert.deepStrictEqual({ ...olderStats, drawDate: '<localized-date>' }, {
     draw: '#4002',
     drawDate: '<localized-date>',
-    regular: '9',
-    rate: '10.7%',
+    regular: '11',
+    rate: '13.1%',
     strong: '1',
     best: '3/6 + חזק',
   });
+  assert.deepStrictEqual(await readPinnedWinnings(baselineCard), {
+    value: '₪89',
+    meta: '3 קומבינציות זוכות',
+  });
+  assert.deepStrictEqual(
+    await olderNumberedDraw.locator('[data-pin-line-prize]').evaluateAll(nodes =>
+      nodes.slice(0, 4).map(node => node.textContent.trim())
+    ),
+    ['₪59', '₪15', '₪15', 'ללא זכייה'],
+  );
+  assert.strictEqual(
+    (await olderNumberedDraw.locator('[data-pin-line-prize]').nth(4).textContent()).trim(),
+    '₪0 · לא חולק',
+  );
+  const sourceLink = olderNumberedDraw.locator('[data-pin-prize-source]');
+  assert.strictEqual(
+    await sourceLink.getAttribute('href'),
+    'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=4002',
+  );
+  assert.strictEqual(await sourceLink.getAttribute('target'), '_blank');
+  assert.ok((await sourceLink.getAttribute('rel')).includes('noopener'));
   assert.deepStrictEqual(await readPinnedOpenDrawCardState(improvedCard), improvedBefore);
   assert.deepStrictEqual(await readPinnedOpenDrawCardState(form2BaselineCard), form2BaselineBefore);
 
@@ -440,6 +478,10 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     rate: '—',
     strong: '—',
     best: '—',
+  });
+  assert.deepStrictEqual(await readPinnedWinnings(baselineCard), {
+    value: '—',
+    meta: 'פתח הגרלה להצגת נתונים',
   });
 
   await session.page.evaluate(() => renderPinnedFutureComparisons());
@@ -467,6 +509,24 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   } else {
     assert.ok(boxes[1].top > boxes[0].top, 'Mobile slots must stack');
   }
+
+  const screenshotDraw = resetBaselineCard.locator('details.future-draw[data-pin-draw-label="#4002"]');
+  await screenshotDraw.locator('summary').click();
+  await session.page.waitForFunction(() => {
+    const card = document.querySelector('.pinned-future-group[data-pin-source="main"] [data-pin-mode="baseline"]');
+    return card && card.querySelector('[data-pin-winnings="value"]').textContent.trim() === '₪89';
+  });
+  assert.deepStrictEqual(await readPinnedWinnings(resetBaselineCard), {
+    value: '₪89',
+    meta: '3 קומבינציות זוכות',
+  });
+  const firstPrizeBox = await screenshotDraw.locator('[data-pin-line-prize]').first().boundingBox();
+  assert.ok(
+    firstPrizeBox
+      && firstPrizeBox.x >= 0
+      && firstPrizeBox.x + firstPrizeBox.width <= viewport.width,
+    'The per-line prize column must remain visible in the active viewport',
+  );
 
   await session.page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
   await session.context.close();

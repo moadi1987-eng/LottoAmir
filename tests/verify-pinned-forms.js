@@ -46,10 +46,21 @@ const requiredText = [
   'function getPinnedPrizeTierKey(result)',
   'function calculatePinnedDrawWinnings(score, draw)',
   'function formatPrizeIls(value)',
+  'function renderPinnedWinningsAttributes(winnings)',
+  'function readPinnedDrawWinnings(detail)',
+  'function getPinnedWinningsDisplay(winnings)',
+  'function renderPinnedWinningsBand(winnings)',
+  'function renderPinnedOpenDrawSummary(metrics, winnings)',
+  'function updatePinnedOpenDrawSummary(card, detail)',
   'function updatePinnedOpenDrawStats(card, detail)',
   'function handlePinnedFutureToggle(event)',
+  'data-pin-open-draw-summary',
   'data-pin-open-draw-stats',
   'data-pin-combination-count',
+  'data-pin-winnings-band',
+  'data-pin-winning-combination-count',
+  'data-pin-line-prize',
+  'לפי טבלת מפעל הפיס',
   'data-pin-stat="draw"',
   'data-pin-stat="regular"',
   'data-pin-stat="strong"',
@@ -85,6 +96,14 @@ assert(
 assert(
   html.includes('פתח הגרלה להצגת נתונים'),
   'PIN future summary must define the no-open-draw state',
+);
+assert(
+  /data-pin-open-draw-summary aria-live="polite"/.test(html),
+  'PIN future summary must expose one shared polite live region',
+);
+assert(
+  !/data-pin-open-draw-stats aria-live=/.test(html),
+  'PIN metric grid must not create a nested live region',
 );
 assert(
   !html.includes('data-pin-hit-rate'),

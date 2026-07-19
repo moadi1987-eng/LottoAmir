@@ -760,6 +760,36 @@
         .pinned-open-draw-stats .stat-value {
             overflow-wrap: anywhere;
         }
+        .pinned-winnings-band {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(16, 185, 129, 0.55);
+            border-radius: 6px;
+            background: rgba(16, 185, 129, 0.10);
+        }
+        .pinned-winnings-band > div:first-child { min-width: 0; }
+        .pinned-winnings-label { color: var(--text-muted); font-size: 12px; }
+        .pinned-winnings-meta { color: #a7f3d0; font-size: 12px; margin-top: 3px; }
+        .pinned-winnings-value {
+            color: #34d399;
+            font-size: 24px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .pinned-line-prize-won { color: #34d399; font-weight: 800; white-space: nowrap; }
+        .pinned-line-prize-none,
+        .pinned-line-prize-unavailable { color: var(--text-muted); white-space: nowrap; }
+        .pinned-prize-source {
+            margin-top: 8px;
+            color: var(--text-muted);
+            font-size: 11px;
+            overflow-wrap: anywhere;
+        }
+        .pinned-prize-source a { color: #60a5fa; }
         .pinned-stat-meta {
             min-height: 16px;
             margin-top: 4px;
@@ -929,6 +959,12 @@
                 white-space: nowrap;
             }
             .numbers-table th, .numbers-table td { padding: 8px 6px; font-size: 12px; }
+            .future-draw .numbers-table th:last-child,
+            .future-draw .numbers-table td:last-child {
+                position: sticky;
+                inset-inline-end: 0;
+                background: var(--bg-card);
+            }
 
             .number-badge { padding: 5px 9px; font-size: 12px; margin: 3px; }
 
@@ -987,6 +1023,8 @@
             .pinned-actions .pill-btn { width: 100%; }
             .pinned-future-grid { grid-template-columns: 1fr; }
             .pinned-future-source { padding: 10px; }
+            .pinned-winnings-band { align-items: flex-start; flex-direction: column; }
+            .pinned-winnings-value { font-size: 22px; }
             .future-draw summary { font-size: 12px; }
             .future-draw-body { padding: 10px; }
 
@@ -2115,6 +2153,16 @@
             ].join(' ');
         }
 
+        function renderPinnedWinningsAttributes(winnings) {
+            if (!winnings) return 'data-pin-winnings-status="unavailable"';
+            return [
+                'data-pin-winnings-status="' + escapeBacktestText(winnings.status) + '"',
+                'data-pin-total-prize-ils="' + (winnings.totalPrizeIls == null ? '' : winnings.totalPrizeIls) + '"',
+                'data-pin-winning-combination-count="' + (winnings.winningCombinationCount == null ? '' : winnings.winningCombinationCount) + '"',
+                'data-pin-prize-source-url="' + escapeBacktestText(winnings.sourceUrl || '') + '"'
+            ].join(' ');
+        }
+
         function parsePinnedFiniteNumber(value) {
             if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
             const number = Number(value);
@@ -2147,6 +2195,23 @@
             };
         }
 
+        function readPinnedDrawWinnings(detail) {
+            if (!detail || !detail.dataset) return null;
+            if (detail.dataset.pinWinningsStatus !== 'available') {
+                return { status: 'unavailable', totalPrizeIls: null, winningCombinationCount: null };
+            }
+            const totalPrizeIls = normalizePrizeInteger(detail.dataset.pinTotalPrizeIls);
+            const winningCombinationCount = normalizePrizeInteger(
+                detail.dataset.pinWinningCombinationCount
+            );
+            if (totalPrizeIls == null || winningCombinationCount == null) return null;
+            return {
+                status: 'available',
+                totalPrizeIls: totalPrizeIls,
+                winningCombinationCount: winningCombinationCount
+            };
+        }
+
         function getPinnedDrawMetricDisplay(metrics) {
             if (!metrics) {
                 return {
@@ -2171,10 +2236,38 @@
             };
         }
 
+        function getPinnedWinningsDisplay(winnings) {
+            const hasOpenDraw = arguments[1];
+            if (!hasOpenDraw) return { value: '—', meta: 'פתח הגרלה להצגת נתונים' };
+            if (!winnings || winnings.status !== 'available') {
+                return { value: '—', meta: 'נתוני זכייה לא זמינים' };
+            }
+            return {
+                value: formatPrizeIls(winnings.totalPrizeIls),
+                meta: winnings.winningCombinationCount === 0
+                    ? 'אין קומבינציות זוכות'
+                    : winnings.winningCombinationCount + ' קומבינציות זוכות'
+            };
+        }
+
+        function renderPinnedWinningsBand(winnings) {
+            const hasOpenDraw = arguments[1];
+            const display = getPinnedWinningsDisplay(winnings, hasOpenDraw);
+            return `
+                <div class="pinned-winnings-band" data-pin-winnings-band>
+                    <div>
+                        <div class="pinned-winnings-label">זכייה בטופס</div>
+                        <div class="pinned-winnings-meta" data-pin-winnings="meta">${escapeBacktestText(display.meta)}</div>
+                    </div>
+                    <div class="pinned-winnings-value" data-pin-winnings="value">${escapeBacktestText(display.value)}</div>
+                </div>
+            `;
+        }
+
         function renderPinnedOpenDrawStats(metrics) {
             const display = getPinnedDrawMetricDisplay(metrics);
             return `
-                <div class="stats-grid pinned-open-draw-stats" data-pin-open-draw-stats aria-live="polite" style="margin-bottom: 10px;">
+                <div class="stats-grid pinned-open-draw-stats" data-pin-open-draw-stats style="margin-bottom: 10px;">
                     <div class="stat-box">
                         <div class="stat-label">הגרלה פתוחה</div>
                         <div class="stat-value" data-pin-stat="draw">${escapeBacktestText(display.draw)}</div>
@@ -2197,6 +2290,15 @@
             `;
         }
 
+        function renderPinnedOpenDrawSummary(metrics, winnings) {
+            return `
+                <div data-pin-open-draw-summary aria-live="polite">
+                    ${renderPinnedWinningsBand(winnings, true)}
+                    ${renderPinnedOpenDrawStats(metrics)}
+                </div>
+            `;
+        }
+
         function updatePinnedOpenDrawStats(card, detail) {
             if (!card) return;
             const display = getPinnedDrawMetricDisplay(readPinnedDrawMetrics(detail));
@@ -2205,6 +2307,18 @@
                 const target = card.querySelector('[data-pin-stat="' + statName + '"]');
                 if (target) target.textContent = display[name];
             });
+        }
+
+        function updatePinnedOpenDrawSummary(card, detail) {
+            updatePinnedOpenDrawStats(card, detail);
+            const display = getPinnedWinningsDisplay(
+                readPinnedDrawWinnings(detail),
+                Boolean(detail)
+            );
+            const value = card.querySelector('[data-pin-winnings="value"]');
+            const meta = card.querySelector('[data-pin-winnings="meta"]');
+            if (value) value.textContent = display.value;
+            if (meta) meta.textContent = display.meta;
         }
 
         function handlePinnedFutureToggle(event) {
@@ -2216,10 +2330,10 @@
                 card.querySelectorAll('details.future-draw[open]').forEach(function(sibling) {
                     if (sibling !== detail) sibling.open = false;
                 });
-                updatePinnedOpenDrawStats(card, detail);
+                updatePinnedOpenDrawSummary(card, detail);
                 return;
             }
-            updatePinnedOpenDrawStats(card, card.querySelector('details.future-draw[open]'));
+            updatePinnedOpenDrawSummary(card, card.querySelector('details.future-draw[open]'));
         }
 
         function listPinnedForms() {
@@ -2402,7 +2516,7 @@
                         <span style="color: var(--text-muted); font-size: 12px;">${formatPinnedDate(pin.pinnedAt)}</span>
                     </div>
                     <div class="pinned-status-meta" style="margin-bottom: 10px;">עוגן: ${buildAnchorLabel(pin)} • נמצאו ${futureRows.length} הגרלות עתידיות</div>
-                    ${renderPinnedOpenDrawStats(scoredRows[0].metrics)}
+                    ${renderPinnedOpenDrawSummary(scoredRows[0].metrics, scoredRows[0].winnings)}
                     ${drawDetails}
                 </div>
             `;
@@ -2411,12 +2525,27 @@
         function renderFutureDrawDetails(pin, item, shouldOpen, metrics) {
             const draw = item.draw || {};
             const score = item.score;
+            const winnings = item.winnings || { status: 'unavailable', lines: [] };
             const drawNumbers = (draw.numbers || []).filter(function(n) { return !isNaN(n) && n >= 1 && n <= 37; });
             const drawStrong = draw.strong;
             const drawNumberLabel = draw.drawNumber != null && draw.drawNumber !== '' ? 'הגרלה #' + draw.drawNumber : 'שורה ' + item.rowNumber;
             const dateLabel = draw.date != null && draw.date !== '' ? ' • ' + formatDrawDateForDisplay(draw.date) : '';
             const best = score.best;
             const bestSummary = best ? 'טובה ביותר: ' + best.regularMatches + '/6' + (best.strongMatch ? ' + חזק' : '') : 'אין תוצאה';
+
+            function renderPinnedLinePrize(line) {
+                if (!line || line.status === 'unavailable') {
+                    return '<span class="pinned-line-prize-unavailable">לא זמין</span>';
+                }
+                if (line.status === 'no-prize') {
+                    return '<span class="pinned-line-prize-none">ללא זכייה</span>';
+                }
+                if (line.status === 'not-distributed') {
+                    return '<span class="pinned-line-prize-none">₪0 · לא חולק</span>';
+                }
+                return '<span class="pinned-line-prize-won">' + escapeBacktestText(formatPrizeIls(line.prizeIls)) + '</span>';
+            }
+
             const rows = score.results.map(function(result, rank) {
                 const combo = result.combo || {};
                 const drawSet = new Set(drawNumbers);
@@ -2442,11 +2571,17 @@
                     '<td>' + strongCell + '</td>' +
                     '<td style="font-size:18px; font-weight:800; color:' + matchColor + ';">' + result.regularMatches + '/6</td>' +
                     '<td style="font-size:16px;">' + (result.strongMatch ? '✅' : '❌') + '</td>' +
+                    '<td data-pin-line-prize>' + renderPinnedLinePrize(winnings.lines[rank]) + '</td>' +
                 '</tr>';
             }).join('');
+            const prizeSource = winnings.sourceUrl
+                ? '<div class="pinned-prize-source">לפי <a data-pin-prize-source href="' +
+                    escapeBacktestText(winnings.sourceUrl) +
+                    '" target="_blank" rel="noopener noreferrer" aria-label="לפי טבלת מפעל הפיס">טבלת מפעל הפיס</a> · לוטו רגיל · לפני מס</div>'
+                : '<div class="pinned-prize-source">נתוני זכייה לא זמינים</div>';
 
             return `
-                <details class="future-draw" ${renderPinnedDrawMetricAttributes(metrics)} ${shouldOpen ? 'open' : ''}>
+                <details class="future-draw" ${renderPinnedDrawMetricAttributes(metrics)} ${renderPinnedWinningsAttributes(winnings)} ${shouldOpen ? 'open' : ''}>
                     <summary>${drawNumberLabel}${dateLabel} • ${bestSummary} • סך רגילות: ${score.totalRegular} • חזק: ${score.totalStrong}</summary>
                     <div class="future-draw-body">
                         <div class="future-draw-numbers">
@@ -2466,11 +2601,13 @@
                                         <th>חזק</th>
                                         <th>פגיעות</th>
                                         <th>חזק</th>
+                                        <th>זכייה</th>
                                     </tr>
                                 </thead>
                                 <tbody>${rows}</tbody>
                             </table>
                         </div>
+                        ${prizeSource}
                     </div>
                 </details>
             `;
