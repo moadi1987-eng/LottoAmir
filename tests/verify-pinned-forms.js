@@ -40,6 +40,12 @@ const requiredText = [
   'function readPinnedDrawMetrics(detail)',
   'function getPinnedDrawMetricDisplay(metrics)',
   'function renderPinnedOpenDrawStats(metrics)',
+  "const DEFAULT_PRIZES_FILE = 'LOTTO_PRIZES.json'",
+  'function ensureDefaultPrizeData()',
+  'function normalizeLottoPrizeDocument(parsed)',
+  'function getPinnedPrizeTierKey(result)',
+  'function calculatePinnedDrawWinnings(score, draw)',
+  'function formatPrizeIls(value)',
   'function updatePinnedOpenDrawStats(card, detail)',
   'function handlePinnedFutureToggle(event)',
   'data-pin-open-draw-stats',
@@ -83,6 +89,14 @@ assert(
 assert(
   !html.includes('data-pin-hit-rate'),
   'PIN future metrics must calculate rates from the saved combination count',
+);
+assert(
+  html.includes("fetch(DEFAULT_PRIZES_FILE, { cache: 'no-store' })"),
+  'Prize data must load from the versioned static JSON without browser caching',
+);
+assert(
+  !html.includes('doubleLottoList'),
+  'The analyzer must not contain a Double-Lotto prize path',
 );
 assert(shellHtml.includes('data-target="pinnedFutureCard"'), 'ALL_IN_ONE analyzer rail must link to pinned future comparisons');
 assert(shellHtml.includes("goToAnalyzerSection('pinnedFutureCard')"), 'ALL_IN_ONE analyzer rail must scroll to pinned future card');

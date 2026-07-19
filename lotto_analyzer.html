@@ -1377,6 +1377,11 @@
         let currentData = null;
         const DEFAULT_NUMBERS_FILE = 'NUMBERS.xlsx';
         const DEFAULT_NUMBERS_LABEL = 'קובץ מספרים קבוע (NUMBERS.xlsx)';
+        const DEFAULT_PRIZES_FILE = 'LOTTO_PRIZES.json';
+        const PAIS_PRIZE_URL_PREFIX = 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=';
+        let lottoPrizeDocument = null;
+        let lottoPrizeLoadState = 'idle';
+        let lottoPrizeLoadPromise = null;
         let loadedExcelRows = null;
         let comparisonLiveUpdateTimer = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
@@ -1390,6 +1395,73 @@
             baseline: { label: 'בסיס' },
             improved: { label: 'משופר' }
         };
+
+        function normalizePrizeInteger(value) {
+            if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
+            const parsed = Number(value);
+            return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+        }
+
+        function normalizeLottoPrizeDocument(parsed) {
+            if (!parsed || parsed.schemaVersion !== 1 || !parsed.draws || typeof parsed.draws !== 'object') {
+                return null;
+            }
+            const draws = {};
+            Object.keys(parsed.draws).forEach(function(key) {
+                const raw = parsed.draws[key];
+                const drawNumber = normalizePrizeInteger(raw && raw.drawNumber);
+                if (drawNumber == null || String(drawNumber) !== String(key)) return;
+                const sourceUrl = PAIS_PRIZE_URL_PREFIX + drawNumber;
+                if (raw.sourceUrl !== sourceUrl || !raw.regular || typeof raw.regular !== 'object') return;
+                const regular = {};
+                let valid = true;
+                Object.keys(raw.regular).forEach(function(tierKey) {
+                    if (!/^[0-6](?:\+strong)?$/.test(tierKey)) {
+                        valid = false;
+                        return;
+                    }
+                    const tier = raw.regular[tierKey];
+                    const winnerCount = normalizePrizeInteger(tier && tier.winnerCount);
+                    const prizeIls = normalizePrizeInteger(tier && tier.prizeIls);
+                    if (winnerCount == null || prizeIls == null) {
+                        valid = false;
+                        return;
+                    }
+                    regular[tierKey] = { winnerCount: winnerCount, prizeIls: prizeIls };
+                });
+                if (!valid || Object.keys(regular).length === 0) return;
+                draws[String(drawNumber)] = {
+                    drawNumber: drawNumber,
+                    drawDate: typeof raw.drawDate === 'string' ? raw.drawDate : '',
+                    sourceUrl: sourceUrl,
+                    regular: regular
+                };
+            });
+            return { schemaVersion: 1, updatedAt: parsed.updatedAt || null, draws: draws };
+        }
+
+        function ensureDefaultPrizeData() {
+            if (lottoPrizeLoadPromise) return lottoPrizeLoadPromise;
+            lottoPrizeLoadState = 'loading';
+            lottoPrizeLoadPromise = fetch(DEFAULT_PRIZES_FILE, { cache: 'no-store' })
+                .then(function(response) {
+                    if (!response.ok) throw new Error('לא ניתן לטעון נתוני זכיות');
+                    return response.json();
+                })
+                .then(function(parsed) {
+                    const normalized = normalizeLottoPrizeDocument(parsed);
+                    if (!normalized) throw new Error('קובץ הזכיות אינו תקין');
+                    lottoPrizeDocument = normalized;
+                    lottoPrizeLoadState = 'ready';
+                    return true;
+                })
+                .catch(function() {
+                    lottoPrizeDocument = null;
+                    lottoPrizeLoadState = 'unavailable';
+                    return false;
+                });
+            return lottoPrizeLoadPromise;
+        }
 
         function createEmptyPinnedForms() {
             return {
@@ -2180,6 +2252,58 @@
             return Number.isFinite(number) ? number : null;
         }
 
+        function getPinnedPrizeTierKey(result) {
+            if (!result) return null;
+            const matches = normalizePrizeInteger(result.regularMatches);
+            if (matches == null || matches > 6) return null;
+            return String(matches) + (result.strongMatch ? '+strong' : '');
+        }
+
+        function calculatePinnedDrawWinnings(score, draw) {
+            const drawNumber = getValidPinnedDrawNumber(draw && draw.drawNumber);
+            const prizeDraw = drawNumber != null
+                && lottoPrizeDocument
+                && lottoPrizeDocument.draws
+                ? lottoPrizeDocument.draws[String(drawNumber)]
+                : null;
+            if (!prizeDraw || !score || !Array.isArray(score.results)) {
+                return {
+                    status: 'unavailable',
+                    totalPrizeIls: null,
+                    winningCombinationCount: null,
+                    sourceUrl: null,
+                    lines: (score && score.results || []).map(function() {
+                        return { status: 'unavailable', tierKey: null, prizeIls: null };
+                    })
+                };
+            }
+            let totalPrizeIls = 0;
+            let winningCombinationCount = 0;
+            const lines = score.results.map(function(result) {
+                const tierKey = getPinnedPrizeTierKey(result);
+                const tier = tierKey ? prizeDraw.regular[tierKey] : null;
+                if (!tier) return { status: 'no-prize', tierKey: tierKey, prizeIls: null };
+                if (tier.prizeIls === 0) {
+                    return { status: 'not-distributed', tierKey: tierKey, prizeIls: 0 };
+                }
+                totalPrizeIls += tier.prizeIls;
+                winningCombinationCount++;
+                return { status: 'won', tierKey: tierKey, prizeIls: tier.prizeIls };
+            });
+            return {
+                status: 'available',
+                totalPrizeIls: totalPrizeIls,
+                winningCombinationCount: winningCombinationCount,
+                sourceUrl: prizeDraw.sourceUrl,
+                lines: lines
+            };
+        }
+
+        function formatPrizeIls(value) {
+            const amount = normalizePrizeInteger(value);
+            return amount == null ? null : '₪' + amount.toLocaleString('he-IL');
+        }
+
         function renderPinnedFutureSource(pin) {
             if (!currentData || currentData.length === 0) {
                 return `
@@ -2226,6 +2350,7 @@
             const scoredRows = futureRows.map(function(item) {
                 const score = scorePinnedFormAgainstDraw(pin, item.draw);
                 const scoredItem = Object.assign({}, item, { score: score });
+                scoredItem.winnings = calculatePinnedDrawWinnings(score, item.draw);
                 scoredItem.metrics = createPinnedDrawMetrics(pin, scoredItem);
                 return scoredItem;
             });
@@ -2336,14 +2461,16 @@
             scheduleComparisonLiveUpdate(0);
         });
 
-        document.getElementById('analyzeBtn').addEventListener('click', function() {
+        document.getElementById('analyzeBtn').addEventListener('click', async function() {
             const file = document.getElementById('fileInput').files[0];
+            await ensureDefaultPrizeData();
             if (loadedExcelRows) runAnalysisWithRows(loadedExcelRows);
             else if (file) runAnalysisWithFile(file);
             else showError('אנא בחר קובץ תחילה');
         });
 
         async function loadDefaultNumbersFile() {
+            ensureDefaultPrizeData();
             const btn = document.getElementById('defaultDataBtn');
             const originalText = btn.textContent;
             btn.disabled = true;

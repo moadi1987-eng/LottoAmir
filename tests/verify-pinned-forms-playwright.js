@@ -14,6 +14,7 @@ function contentType(filePath) {
   return ({
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
     '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
 }
@@ -114,12 +115,17 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
       improved: makePin('form2', 'improved', 22),
     },
   };
-  pins.main.baseline.combinations = Array.from({ length: 14 }, (_, index) => ({
-    comboNum: index + 1,
-    strategy: `deterministic ${index + 1}`,
-    numbers: [1, 2, 3, 4, 5, 6],
-    strong: 1,
-  }));
+  pins.main.baseline.combinations = [
+    { comboNum: 1, strategy: '3 + strong', numbers: [1, 2, 3, 20, 21, 22], strong: 1 },
+    { comboNum: 2, strategy: '3', numbers: [1, 2, 3, 23, 24, 25], strong: 2 },
+    { comboNum: 3, strategy: '3 second', numbers: [4, 5, 6, 26, 27, 28], strong: 2 },
+    ...Array.from({ length: 11 }, (_, index) => ({
+      comboNum: index + 4,
+      strategy: `no prize ${index + 4}`,
+      numbers: [20, 21, 22, 23, 24, 25],
+      strong: 2,
+    })),
+  ];
   pins.main.baseline.anchorDrawNumber = 4001;
   pins.main.baseline.anchorDrawDate = '17/07/2026';
   pins.main.improved.anchorDrawNumber = 4001;
@@ -127,6 +133,23 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
 
   await session.page.evaluate(pinnedState => {
     pinnedForms = pinnedState;
+    lottoPrizeDocument = normalizeLottoPrizeDocument({
+      schemaVersion: 1,
+      updatedAt: '2026-07-19T00:00:00Z',
+      draws: {
+        4002: {
+          drawNumber: 4002,
+          drawDate: '20/07/2026',
+          sourceUrl: 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=4002',
+          regular: {
+            '3+strong': { winnerCount: 10, prizeIls: 59 },
+            3: { winnerCount: 20, prizeIls: 15 },
+            '6+strong': { winnerCount: 0, prizeIls: 0 },
+          },
+        },
+      },
+    });
+    lottoPrizeLoadState = 'ready';
     currentData = [
       { drawNumber: 4002, date: '20/07/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
       { drawNumber: null, date: '21/07/2026', numbers: [7, 8, 9, 10, 11, 12], strong: 2 },
@@ -136,6 +159,23 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     renderPinnedFormStatus();
     renderPinnedFutureComparisons();
   }, pins);
+
+  const calculated = await session.page.evaluate(pin => {
+    const draw = { drawNumber: 4002, numbers: [1, 2, 3, 4, 5, 6], strong: 1 };
+    const score = scorePinnedFormAgainstDraw(pin, draw);
+    return calculatePinnedDrawWinnings(score, draw);
+  }, pins.main.baseline);
+  assert.strictEqual(calculated.status, 'available');
+  assert.strictEqual(calculated.totalPrizeIls, 89);
+  assert.strictEqual(calculated.winningCombinationCount, 3);
+  assert.deepStrictEqual(
+    calculated.lines.slice(0, 3).map(line => [line.tierKey, line.prizeIls, line.status]),
+    [
+      ['3+strong', 59, 'won'],
+      ['3', 15, 'won'],
+      ['3', 15, 'won'],
+    ],
+  );
 
   assert.strictEqual(await session.page.locator('.pinned-future-group').count(), 2);
   assert.strictEqual(await session.page.locator('.pinned-future-source').count(), 4);
@@ -173,8 +213,8 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     drawDate: '<localized-date>',
     regular: '0',
     rate: '0.0%',
-    strong: '0',
-    best: '0/6',
+    strong: '13',
+    best: '0/6 + חזק',
   });
 
   const malformedMetricDisplay = await session.page.evaluate(() => {
@@ -206,8 +246,8 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     newestStats.drawDate,
     '0',
     '0.0%',
-    '0',
-    '0/6',
+    '13',
+    '0/6 + חזק',
   ]);
   assert.strictEqual(
     await newestDateOnlyDraw.getAttribute('data-pin-combination-count'),
@@ -228,10 +268,10 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   assert.deepStrictEqual({ ...olderStats, drawDate: '<localized-date>' }, {
     draw: '#4002',
     drawDate: '<localized-date>',
-    regular: '84',
-    rate: '100.0%',
-    strong: '14',
-    best: '6/6 + חזק',
+    regular: '9',
+    rate: '10.7%',
+    strong: '1',
+    best: '3/6 + חזק',
   });
   assert.deepStrictEqual(await readPinnedOpenDrawCardState(improvedCard), improvedBefore);
   assert.deepStrictEqual(await readPinnedOpenDrawCardState(form2BaselineCard), form2BaselineBefore);
