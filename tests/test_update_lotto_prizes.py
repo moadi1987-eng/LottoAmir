@@ -89,6 +89,34 @@ class PrizeParserTests(unittest.TestCase):
         with self.assertRaisesRegex(UpdateError, "prize"):
             parse_prize_page(prize_page(regular=invalid), 3947, "source")
 
+    def test_rejects_empty_row_in_regular_lotto_table(self):
+        malformed = prize_page().replace(
+            b"</ol>",
+            b'<li class="archive_list_item current"></li></ol>',
+            1,
+        )
+
+        with self.assertRaisesRegex(UpdateError, "exactly three values"):
+            parse_prize_page(malformed, 3947, "source")
+
+    def test_rejects_malformed_numeric_punctuation(self):
+        for invalid in ("1₪2", "1,2,3"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(UpdateError, "prize"):
+                    parse_prize_page(
+                        prize_page(regular=(("3", "1", invalid),)),
+                        3947,
+                        "source",
+                    )
+
+    def test_rejects_impossible_draw_date(self):
+        with self.assertRaisesRegex(UpdateError, "draw date"):
+            parse_prize_page(
+                prize_page(draw_date="31/02/2026"),
+                3947,
+                "source",
+            )
+
 
 class PrizeStoreTests(unittest.TestCase):
     def setUp(self):
@@ -120,6 +148,22 @@ class PrizeStoreTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(UpdateError, "existing prize history differs"):
             merge_record(document, changed)
+
+    def test_rejects_invalid_or_missing_persisted_draw_date(self):
+        source = "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3947"
+        record = parse_prize_page(prize_page(), 3947, source)
+        document = {"schemaVersion": 1, "updatedAt": None, "draws": {}}
+        merge_record(document, record)
+
+        for draw_date in (None, "31/02/2026"):
+            with self.subTest(draw_date=draw_date):
+                invalid = json.loads(json.dumps(document))
+                if draw_date is None:
+                    del invalid["draws"]["3947"]["drawDate"]
+                else:
+                    invalid["draws"]["3947"]["drawDate"] = draw_date
+                with self.assertRaisesRegex(UpdateError, "draw date"):
+                    write_prize_document_atomic(self.prizes, invalid)
 
 
 class PrizeUpdateTests(unittest.TestCase):

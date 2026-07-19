@@ -93,10 +93,9 @@ class RegularLottoTableParser(HTMLParser):
             self._capture = False
             self._buffer = []
         elif tag == "li" and self._in_row:
-            if len(self._row) == 3:
-                self.rows.append(tuple(self._row))
-            elif self._row:
+            if len(self._row) != 3:
                 raise UpdateError("regular Lotto row did not contain exactly three values")
+            self.rows.append(tuple(self._row))
             self._in_row = False
             self._row = []
         elif tag == "ol" and self._in_regular:
@@ -112,10 +111,23 @@ def normalize_tier_label(value: object) -> str:
 
 
 def parse_nonnegative_integer(value: object, context: str) -> int:
-    text = str(value).replace(",", "").replace("₪", "").strip()
-    if not re.fullmatch(r"\d+", text):
+    text = str(value).strip()
+    if text.endswith("₪"):
+        text = text[:-1].rstrip()
+    if not re.fullmatch(r"\d+|\d{1,3}(?:,\d{3})+", text):
         raise UpdateError(f"{context}: expected a non-negative integer, got {value!r}")
-    return int(text)
+    return int(text.replace(",", ""))
+
+
+def parse_draw_date(value: object, context: str) -> str:
+    text = str(value).strip()
+    if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", text):
+        raise UpdateError(f"{context}: expected a DD/MM/YYYY draw date, got {value!r}")
+    try:
+        datetime.strptime(text, "%d/%m/%Y")
+    except ValueError as exc:
+        raise UpdateError(f"{context}: invalid draw date {value!r}") from exc
+    return text
 
 
 def parse_prize_page(
@@ -152,7 +164,7 @@ def parse_prize_page(
         )
     return DrawPrizeRecord(
         expected_draw_number,
-        date_match.group(1),
+        parse_draw_date(date_match.group(1), "official draw date"),
         source_url,
         regular,
     )
@@ -189,6 +201,7 @@ def validate_prize_document(document: object) -> dict:
         draw_number = parse_nonnegative_integer(draw.get("drawNumber"), f"draw {key}")
         if str(draw_number) != str(key):
             raise UpdateError(f"prize draw key {key} does not match drawNumber")
+        parse_draw_date(draw.get("drawDate"), f"draw {key} draw date")
         expected_url = PRIZE_URL_TEMPLATE.format(draw_number=draw_number)
         if draw.get("sourceUrl") != expected_url:
             raise UpdateError(f"draw {key}: invalid source URL")
