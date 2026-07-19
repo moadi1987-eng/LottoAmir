@@ -1396,14 +1396,26 @@
             improved: { label: 'משופר' }
         };
 
+        function isPlainPrizeObject(value) {
+            return value !== null
+                && typeof value === 'object'
+                && !Array.isArray(value)
+                && Object.getPrototypeOf(value) === Object.prototype;
+        }
+
         function normalizePrizeInteger(value) {
-            if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
+            if (typeof value === 'number') {
+                return Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0) ? value : null;
+            }
+            if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)$/.test(value)) return null;
             const parsed = Number(value);
-            return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+            return Number.isSafeInteger(parsed) ? parsed : null;
         }
 
         function normalizeLottoPrizeDocument(parsed) {
-            if (!parsed || parsed.schemaVersion !== 1 || !parsed.draws || typeof parsed.draws !== 'object') {
+            if (!isPlainPrizeObject(parsed)
+                || parsed.schemaVersion !== 1
+                || !isPlainPrizeObject(parsed.draws)) {
                 return null;
             }
             const draws = {};
@@ -1412,7 +1424,9 @@
                 const drawNumber = normalizePrizeInteger(raw && raw.drawNumber);
                 if (drawNumber == null || String(drawNumber) !== String(key)) return;
                 const sourceUrl = PAIS_PRIZE_URL_PREFIX + drawNumber;
-                if (raw.sourceUrl !== sourceUrl || !raw.regular || typeof raw.regular !== 'object') return;
+                if (!isPlainPrizeObject(raw)
+                    || raw.sourceUrl !== sourceUrl
+                    || !isPlainPrizeObject(raw.regular)) return;
                 const regular = {};
                 let valid = true;
                 Object.keys(raw.regular).forEach(function(tierKey) {
@@ -1421,8 +1435,8 @@
                         return;
                     }
                     const tier = raw.regular[tierKey];
-                    const winnerCount = normalizePrizeInteger(tier && tier.winnerCount);
-                    const prizeIls = normalizePrizeInteger(tier && tier.prizeIls);
+                    const winnerCount = normalizePrizeInteger(isPlainPrizeObject(tier) && tier.winnerCount);
+                    const prizeIls = normalizePrizeInteger(isPlainPrizeObject(tier) && tier.prizeIls);
                     if (winnerCount == null || prizeIls == null) {
                         valid = false;
                         return;
@@ -2259,23 +2273,31 @@
             return String(matches) + (result.strongMatch ? '+strong' : '');
         }
 
+        function createPinnedWinningsUnavailable(score) {
+            const results = score && Array.isArray(score.results) ? score.results : [];
+            return {
+                status: 'unavailable',
+                totalPrizeIls: null,
+                winningCombinationCount: null,
+                sourceUrl: null,
+                lines: results.map(function() {
+                    return { status: 'unavailable', tierKey: null, prizeIls: null };
+                })
+            };
+        }
+
         function calculatePinnedDrawWinnings(score, draw) {
-            const drawNumber = getValidPinnedDrawNumber(draw && draw.drawNumber);
+            const drawNumber = normalizePrizeInteger(draw && draw.drawNumber);
             const prizeDraw = drawNumber != null
                 && lottoPrizeDocument
                 && lottoPrizeDocument.draws
                 ? lottoPrizeDocument.draws[String(drawNumber)]
                 : null;
-            if (!prizeDraw || !score || !Array.isArray(score.results)) {
-                return {
-                    status: 'unavailable',
-                    totalPrizeIls: null,
-                    winningCombinationCount: null,
-                    sourceUrl: null,
-                    lines: (score && score.results || []).map(function() {
-                        return { status: 'unavailable', tierKey: null, prizeIls: null };
-                    })
-                };
+            if (!isPlainPrizeObject(prizeDraw)
+                || !isPlainPrizeObject(prizeDraw.regular)
+                || !score
+                || !Array.isArray(score.results)) {
+                return createPinnedWinningsUnavailable(score);
             }
             let totalPrizeIls = 0;
             let winningCombinationCount = 0;
@@ -2283,13 +2305,27 @@
                 const tierKey = getPinnedPrizeTierKey(result);
                 const tier = tierKey ? prizeDraw.regular[tierKey] : null;
                 if (!tier) return { status: 'no-prize', tierKey: tierKey, prizeIls: null };
+                if (!isPlainPrizeObject(tier)
+                    || !Number.isSafeInteger(tier.winnerCount)
+                    || tier.winnerCount < 0
+                    || Object.is(tier.winnerCount, -0)
+                    || !Number.isSafeInteger(tier.prizeIls)
+                    || tier.prizeIls < 0
+                    || Object.is(tier.prizeIls, -0)) {
+                    return null;
+                }
                 if (tier.prizeIls === 0) {
                     return { status: 'not-distributed', tierKey: tierKey, prizeIls: 0 };
                 }
-                totalPrizeIls += tier.prizeIls;
+                const nextTotal = totalPrizeIls + tier.prizeIls;
+                if (!Number.isSafeInteger(nextTotal)) return null;
+                totalPrizeIls = nextTotal;
                 winningCombinationCount++;
                 return { status: 'won', tierKey: tierKey, prizeIls: tier.prizeIls };
             });
+            if (lines.some(function(line) { return line === null; })) {
+                return createPinnedWinningsUnavailable(score);
+            }
             return {
                 status: 'available',
                 totalPrizeIls: totalPrizeIls,

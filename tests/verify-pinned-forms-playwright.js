@@ -131,6 +131,157 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   pins.main.improved.anchorDrawNumber = 4001;
   pins.main.improved.anchorDrawDate = '17/07/2026';
 
+  const normalization = await session.page.evaluate(() => {
+    const sourceUrl = drawNumber => `https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=${drawNumber}`;
+    const validDraw = drawNumber => ({
+      drawNumber,
+      drawDate: '20/07/2026',
+      sourceUrl: sourceUrl(drawNumber),
+      regular: { 3: { winnerCount: 20, prizeIls: 15 } },
+    });
+    const arrayDraw = Object.assign([], validDraw(4003));
+    const arrayRegular = Object.assign([], { 3: { winnerCount: 20, prizeIls: 15 } });
+    const arrayTier = Object.assign([], { winnerCount: 20, prizeIls: 15 });
+    const normalized = normalizeLottoPrizeDocument({
+      schemaVersion: 1,
+      draws: {
+        4002: validDraw(4002),
+        4003: arrayDraw,
+        4004: Object.assign(validDraw(4004), { regular: arrayRegular }),
+        4005: Object.assign(validDraw(4005), { regular: { 3: arrayTier } }),
+        4006: Object.assign(validDraw(4006), { regular: { 3: { winnerCount: '1e3', prizeIls: 15 } } }),
+      },
+    });
+    return {
+      accepted: [0, 1, 42, '0', '42', String(Number.MAX_SAFE_INTEGER)]
+        .map(normalizePrizeInteger),
+      rejected: [true, false, '0x10', '1e3', '+1', '01', ' 1', '1 ', '1.0', 1.5, '-1', -1,
+        Number.MAX_SAFE_INTEGER + 1]
+        .map(normalizePrizeInteger),
+      rootArray: normalizeLottoPrizeDocument({ schemaVersion: 1, draws: [] }),
+      drawKeys: Object.keys(normalized.draws),
+    };
+  });
+  assert.deepStrictEqual(normalization.accepted, [0, 1, 42, 0, 42, Number.MAX_SAFE_INTEGER]);
+  assert.deepStrictEqual(normalization.rejected, Array(13).fill(null));
+  assert.strictEqual(normalization.rootArray, null);
+  assert.deepStrictEqual(normalization.drawKeys, ['4002']);
+
+  const loaderBehavior = await session.page.evaluate(async () => {
+    const sourceUrl = 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=4002';
+    const validDocument = {
+      schemaVersion: 1,
+      draws: {
+        4002: {
+          drawNumber: 4002,
+          sourceUrl,
+          regular: { 3: { winnerCount: 20, prizeIls: 15 } },
+        },
+      },
+    };
+    const originalFetch = window.fetch;
+    try {
+      let successFetches = 0;
+      lottoPrizeDocument = null;
+      lottoPrizeLoadState = 'idle';
+      lottoPrizeLoadPromise = null;
+      window.fetch = () => {
+        successFetches++;
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(validDocument) });
+      };
+      const first = ensureDefaultPrizeData();
+      const second = ensureDefaultPrizeData();
+      const sharedPromise = first === second;
+      const successResults = await Promise.all([first, second, ensureDefaultPrizeData()]);
+      const ready = lottoPrizeLoadState === 'ready' && lottoPrizeDocument
+        && Object.keys(lottoPrizeDocument.draws).join(',') === '4002';
+
+      let failedFetches = 0;
+      lottoPrizeDocument = null;
+      lottoPrizeLoadState = 'idle';
+      lottoPrizeLoadPromise = null;
+      window.fetch = () => {
+        failedFetches++;
+        return Promise.reject(new Error('offline'));
+      };
+      const failedResults = await Promise.all([ensureDefaultPrizeData(), ensureDefaultPrizeData()]);
+      const unavailable = lottoPrizeLoadState === 'unavailable' && lottoPrizeDocument === null;
+
+      let malformedFetches = 0;
+      lottoPrizeDocument = null;
+      lottoPrizeLoadState = 'idle';
+      lottoPrizeLoadPromise = null;
+      window.fetch = () => {
+        malformedFetches++;
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ schemaVersion: 1, draws: [] }) });
+      };
+      const malformedResult = await ensureDefaultPrizeData();
+      const malformedUnavailable = lottoPrizeLoadState === 'unavailable' && lottoPrizeDocument === null;
+      return {
+        sharedPromise,
+        successFetches,
+        successResults,
+        ready,
+        failedFetches,
+        failedResults,
+        unavailable,
+        malformedFetches,
+        malformedResult,
+        malformedUnavailable,
+      };
+    } finally {
+      window.fetch = originalFetch;
+      lottoPrizeDocument = null;
+      lottoPrizeLoadState = 'idle';
+      lottoPrizeLoadPromise = null;
+    }
+  });
+  assert.strictEqual(loaderBehavior.sharedPromise, true);
+  assert.strictEqual(loaderBehavior.successFetches, 1);
+  assert.deepStrictEqual(loaderBehavior.successResults, [true, true, true]);
+  assert.strictEqual(loaderBehavior.ready, true);
+  assert.strictEqual(loaderBehavior.failedFetches, 1);
+  assert.deepStrictEqual(loaderBehavior.failedResults, [false, false]);
+  assert.strictEqual(loaderBehavior.unavailable, true);
+  assert.strictEqual(loaderBehavior.malformedFetches, 1);
+  assert.strictEqual(loaderBehavior.malformedResult, false);
+  assert.strictEqual(loaderBehavior.malformedUnavailable, true);
+
+  const calculationSafety = await session.page.evaluate(() => {
+    const draw = { drawNumber: 4002, numbers: [1, 2, 3, 4, 5, 6], strong: 1 };
+    lottoPrizeDocument = {
+      draws: {
+        4002: {
+          drawNumber: 4002,
+          sourceUrl: 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=4002',
+          regular: { 3: { winnerCount: 1, prizeIls: Number.MAX_SAFE_INTEGER } },
+        },
+      },
+    };
+    const score = { results: [
+      { regularMatches: 3, strongMatch: 0 },
+      { regularMatches: 3, strongMatch: 0 },
+    ] };
+    const overflow = calculatePinnedDrawWinnings(score, draw);
+    lottoPrizeDocument.draws[4002].regular[3].prizeIls = '15';
+    const malformedTier = calculatePinnedDrawWinnings(score, draw);
+    lottoPrizeDocument.draws[4002].regular[3].prizeIls = -0;
+    const negativeZeroTier = calculatePinnedDrawWinnings(score, draw);
+    const malformedScore = calculatePinnedDrawWinnings({ results: {} }, draw);
+    return { overflow, malformedTier, negativeZeroTier, malformedScore };
+  });
+  assert.strictEqual(calculationSafety.overflow.status, 'unavailable');
+  assert.strictEqual(calculationSafety.overflow.totalPrizeIls, null);
+  assert.strictEqual(calculationSafety.malformedTier.status, 'unavailable');
+  assert.strictEqual(calculationSafety.negativeZeroTier.status, 'unavailable');
+  assert.deepStrictEqual(calculationSafety.malformedScore, {
+    status: 'unavailable',
+    totalPrizeIls: null,
+    winningCombinationCount: null,
+    sourceUrl: null,
+    lines: [],
+  });
+
   await session.page.evaluate(pinnedState => {
     pinnedForms = pinnedState;
     lottoPrizeDocument = normalizeLottoPrizeDocument({
