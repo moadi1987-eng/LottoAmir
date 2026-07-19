@@ -1450,46 +1450,58 @@
             return Number.isSafeInteger(parsed) ? parsed : null;
         }
 
+        function isValidPrizeDrawDate(value) {
+            if (typeof value !== 'string' || !/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return false;
+            const parts = value.split('/').map(Number);
+            const day = parts[0];
+            const month = parts[1];
+            const year = parts[2];
+            if (year < 1 || month < 1 || month > 12) return false;
+            const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+            const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            return day >= 1 && day <= daysInMonth[month - 1];
+        }
+
         function normalizeLottoPrizeDocument(parsed) {
             if (!isPlainPrizeObject(parsed)
                 || parsed.schemaVersion !== 1
                 || !isPlainPrizeObject(parsed.draws)) {
                 return null;
             }
+            const updatedAt = parsed.updatedAt == null ? null : parsed.updatedAt;
+            if (updatedAt !== null && typeof updatedAt !== 'string') return null;
             const draws = {};
-            Object.keys(parsed.draws).forEach(function(key) {
+            for (const key of Object.keys(parsed.draws)) {
                 const raw = parsed.draws[key];
                 const drawNumber = normalizePrizeInteger(raw && raw.drawNumber);
-                if (drawNumber == null || String(drawNumber) !== String(key)) return;
+                if (drawNumber == null || String(drawNumber) !== String(key)) return null;
                 const sourceUrl = PAIS_PRIZE_URL_PREFIX + drawNumber;
                 if (!isPlainPrizeObject(raw)
                     || raw.sourceUrl !== sourceUrl
-                    || !isPlainPrizeObject(raw.regular)) return;
+                    || !isValidPrizeDrawDate(raw.drawDate)
+                    || !isPlainPrizeObject(raw.regular)) return null;
                 const regular = {};
-                let valid = true;
-                Object.keys(raw.regular).forEach(function(tierKey) {
+                for (const tierKey of Object.keys(raw.regular)) {
                     if (!/^[0-6](?:\+strong)?$/.test(tierKey)) {
-                        valid = false;
-                        return;
+                        return null;
                     }
                     const tier = raw.regular[tierKey];
                     const winnerCount = normalizePrizeInteger(isPlainPrizeObject(tier) && tier.winnerCount);
                     const prizeIls = normalizePrizeInteger(isPlainPrizeObject(tier) && tier.prizeIls);
                     if (winnerCount == null || prizeIls == null) {
-                        valid = false;
-                        return;
+                        return null;
                     }
                     regular[tierKey] = { winnerCount: winnerCount, prizeIls: prizeIls };
-                });
-                if (!valid || Object.keys(regular).length === 0) return;
+                }
+                if (Object.keys(regular).length === 0) return null;
                 draws[String(drawNumber)] = {
                     drawNumber: drawNumber,
-                    drawDate: typeof raw.drawDate === 'string' ? raw.drawDate : '',
+                    drawDate: raw.drawDate,
                     sourceUrl: sourceUrl,
                     regular: regular
                 };
-            });
-            return { schemaVersion: 1, updatedAt: parsed.updatedAt || null, draws: draws };
+            }
+            return { schemaVersion: 1, updatedAt: updatedAt, draws: draws };
         }
 
         function ensureDefaultPrizeData() {
@@ -2577,7 +2589,8 @@
             const prizeSource = winnings.sourceUrl
                 ? '<div class="pinned-prize-source">לפי <a data-pin-prize-source href="' +
                     escapeBacktestText(winnings.sourceUrl) +
-                    '" target="_blank" rel="noopener noreferrer" aria-label="לפי טבלת מפעל הפיס">טבלת מפעל הפיס</a> · לוטו רגיל · לפני מס</div>'
+                    '" target="_blank" rel="noopener noreferrer" aria-label="לפי טבלת מפעל הפיס">טבלת מפעל הפיס</a> · לוטו רגיל · לפני מס<br>' +
+                    'החישוב הוא מידע להמחשה בלבד והיפותטי; הוא אינו אישור שהטופס נשלח בפועל או שפרס כלשהו שולם.</div>'
                 : '<div class="pinned-prize-source">נתוני זכייה לא זמינים</div>';
 
             return `

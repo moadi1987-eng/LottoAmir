@@ -1,3 +1,6 @@
+import contextlib
+import copy
+import io
 import json
 import tempfile
 import unittest
@@ -13,6 +16,7 @@ from scripts.update_lotto_prizes import (
     UpdateError,
     download_prize_page,
     load_prize_document,
+    main as prize_main,
     merge_record,
     normalize_tier_label,
     parse_prize_page,
@@ -32,6 +36,148 @@ REGULAR_3947 = (
     ("3 + חזק", "11,352", "59 ₪"),
     ("3", "65,488", "15 ₪"),
 )
+
+
+PRIZE_SCHEMA_CONTRACT_FIXTURES_JSON = r"""
+{
+  "base": {
+    "schemaVersion": 1,
+    "updatedAt": null,
+    "draws": {
+      "3947": {
+        "drawNumber": 3947,
+        "drawDate": "18/07/2026",
+        "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3947",
+        "regular": {
+          "6": {"winnerCount": 1, "prizeIls": 250000}
+        }
+      }
+    }
+  },
+  "cases": [
+    {"name": "valid numeric document", "accepted": true, "changes": []},
+    {
+      "name": "valid canonical decimal strings",
+      "accepted": true,
+      "changes": [
+        {"path": ["draws", "3947", "drawNumber"], "value": "3947"},
+        {"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": "1"},
+        {"path": ["draws", "3947", "regular", "6", "prizeIls"], "value": "250000"}
+      ]
+    },
+    {
+      "name": "invalid date shape",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "drawDate"], "value": "2026-07-18"}]
+    },
+    {
+      "name": "impossible calendar date",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "drawDate"], "value": "31/02/2026"}]
+    },
+    {
+      "name": "leading-zero winner count",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": "01"}]
+    },
+    {
+      "name": "scientific prize string",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "prizeIls"], "value": "1e3"}]
+    },
+    {
+      "name": "hex winner string",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": "0x10"}]
+    },
+    {
+      "name": "unicode winner digits",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": "1١"}]
+    },
+    {
+      "name": "boolean prize",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "prizeIls"], "value": true}]
+    },
+    {
+      "name": "fractional winner count",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": 1.5}]
+    },
+    {
+      "name": "negative-zero winner count",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": -0.0}]
+    },
+    {
+      "name": "unsafe winner count",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "winnerCount"], "value": 9007199254740992}]
+    },
+    {
+      "name": "unsafe prize total",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular", "6", "prizeIls"], "value": 9007199254740992}]
+    },
+    {
+      "name": "unsafe draw number",
+      "accepted": false,
+      "drawKey": "9007199254740992",
+      "changes": [
+        {"path": ["draws", "3947", "drawNumber"], "value": 9007199254740992},
+        {
+          "path": ["draws", "3947", "sourceUrl"],
+          "value": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=9007199254740992"
+        }
+      ]
+    },
+    {
+      "name": "leading-zero draw number",
+      "accepted": false,
+      "drawKey": "1",
+      "changes": [
+        {"path": ["draws", "3947", "drawNumber"], "value": "01"},
+        {
+          "path": ["draws", "3947", "sourceUrl"],
+          "value": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=1"
+        }
+      ]
+    },
+    {
+      "name": "boolean schema version",
+      "accepted": false,
+      "changes": [{"path": ["schemaVersion"], "value": true}]
+    },
+    {
+      "name": "numeric updated timestamp",
+      "accepted": false,
+      "changes": [{"path": ["updatedAt"], "value": 123}]
+    },
+    {
+      "name": "empty regular table",
+      "accepted": false,
+      "changes": [{"path": ["draws", "3947", "regular"], "value": {}}]
+    }
+  ]
+}
+"""
+
+
+def build_prize_schema_contract_documents():
+    fixtures = json.loads(PRIZE_SCHEMA_CONTRACT_FIXTURES_JSON)
+    documents = []
+    for case in fixtures["cases"]:
+        document = copy.deepcopy(fixtures["base"])
+        for change in case["changes"]:
+            target = document
+            for part in change["path"][:-1]:
+                target = target[part]
+            target[change["path"][-1]] = change["value"]
+        if "drawKey" in case:
+            document["draws"][case["drawKey"]] = document["draws"].pop("3947")
+        documents.append((case, document))
+    return documents
 
 
 def prize_page(draw_number=3947, draw_date="18/07/2026", regular=REGULAR_3947):
@@ -164,6 +310,32 @@ class PrizeStoreTests(unittest.TestCase):
                     invalid["draws"]["3947"]["drawDate"] = draw_date
                 with self.assertRaisesRegex(UpdateError, "draw date"):
                     write_prize_document_atomic(self.prizes, invalid)
+
+
+class PrizeSchemaContractTests(unittest.TestCase):
+    def test_verify_only_matches_shared_browser_schema_contract(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workbook = root / "NUMBERS.xlsx"
+            prizes = root / "LOTTO_PRIZES.json"
+            write_workbook(workbook, [3947])
+
+            for case, document in build_prize_schema_contract_documents():
+                with self.subTest(case=case["name"]):
+                    prizes.write_text(json.dumps(document), encoding="utf-8")
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                        io.StringIO()
+                    ):
+                        result = prize_main(
+                            [
+                                "--workbook",
+                                str(workbook),
+                                "--prizes",
+                                str(prizes),
+                                "--verify-only",
+                            ]
+                        )
+                    self.assertEqual(result == 0, case["accepted"])
 
 
 class PrizeUpdateTests(unittest.TestCase):

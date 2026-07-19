@@ -9,6 +9,30 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const outputDir = path.join(root, 'test-results');
 fs.mkdirSync(outputDir, { recursive: true });
+const prizeContractSource = fs.readFileSync(
+  path.join(root, 'tests', 'test_update_lotto_prizes.py'),
+  'utf8',
+);
+const prizeContractMatch = /PRIZE_SCHEMA_CONTRACT_FIXTURES_JSON = r"""([\s\S]*?)"""/
+  .exec(prizeContractSource);
+assert.ok(prizeContractMatch, 'Shared prize schema contract fixtures must be readable');
+const prizeSchemaContract = JSON.parse(prizeContractMatch[1]);
+
+function buildPrizeSchemaContractDocuments() {
+  return prizeSchemaContract.cases.map(testCase => {
+    const document = JSON.parse(JSON.stringify(prizeSchemaContract.base));
+    for (const change of testCase.changes) {
+      let target = document;
+      for (const part of change.path.slice(0, -1)) target = target[part];
+      target[change.path.at(-1)] = change.value;
+    }
+    if (testCase.drawKey) {
+      document.draws[testCase.drawKey] = document.draws['3947'];
+      delete document.draws['3947'];
+    }
+    return { name: testCase.name, accepted: testCase.accepted, document };
+  });
+}
 
 function contentType(filePath) {
   return ({
@@ -170,13 +194,13 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
         Number.MAX_SAFE_INTEGER + 1]
         .map(normalizePrizeInteger),
       rootArray: normalizeLottoPrizeDocument({ schemaVersion: 1, draws: [] }),
-      drawKeys: Object.keys(normalized.draws),
+      mixedDocument: normalized,
     };
   });
   assert.deepStrictEqual(normalization.accepted, [0, 1, 42, 0, 42, Number.MAX_SAFE_INTEGER]);
   assert.deepStrictEqual(normalization.rejected, Array(13).fill(null));
   assert.strictEqual(normalization.rootArray, null);
-  assert.deepStrictEqual(normalization.drawKeys, ['4002']);
+  assert.strictEqual(normalization.mixedDocument, null);
 
   const loaderBehavior = await session.page.evaluate(async () => {
     const sourceUrl = 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=4002';
@@ -185,6 +209,7 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
       draws: {
         4002: {
           drawNumber: 4002,
+          drawDate: '20/07/2026',
           sourceUrl,
           regular: { 3: { winnerCount: 20, prizeIls: 15 } },
         },
@@ -355,6 +380,43 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
 
   const baselineCard = mainGroup.locator('[data-pin-mode="baseline"]');
   const improvedCard = mainGroup.locator('[data-pin-mode="improved"]');
+  const form2Group = session.page.locator('.pinned-future-group[data-pin-source="form2"]');
+  const form2BaselineCard = form2Group.locator('[data-pin-mode="baseline"]');
+  const form2ImprovedCard = form2Group.locator('[data-pin-mode="improved"]');
+  const pinCards = [baselineCard, improvedCard, form2BaselineCard, form2ImprovedCard];
+  for (const card of pinCards) {
+    assert.strictEqual(
+      await card.locator('[aria-live]').count(),
+      1,
+      'Each PIN card must expose one shared live region',
+    );
+    assert.strictEqual(
+      await card.locator('[data-pin-open-draw-summary]').getAttribute('aria-live'),
+      'polite',
+    );
+  }
+  for (let targetIndex = 0; targetIndex < pinCards.length; targetIndex++) {
+    await session.page.evaluate(() => renderPinnedFutureComparisons());
+    const before = await Promise.all(pinCards.map(readPinnedOpenDrawCardState));
+    await pinCards[targetIndex]
+      .locator('details.future-draw[data-pin-draw-label="#4002"] summary')
+      .click();
+    const after = await Promise.all(pinCards.map(readPinnedOpenDrawCardState));
+    assert.notDeepStrictEqual(
+      after[targetIndex],
+      before[targetIndex],
+      `PIN card ${targetIndex + 1} must update its own open-draw summary`,
+    );
+    for (let neighborIndex = 0; neighborIndex < pinCards.length; neighborIndex++) {
+      if (neighborIndex === targetIndex) continue;
+      assert.deepStrictEqual(
+        after[neighborIndex],
+        before[neighborIndex],
+        `PIN card ${targetIndex + 1} must not update card ${neighborIndex + 1}`,
+      );
+    }
+  }
+  await session.page.evaluate(() => renderPinnedFutureComparisons());
   const baselineDraws = baselineCard.locator('details.future-draw');
   const newestDateOnlyDraw = baselineCard.locator('details.future-draw[data-pin-draw-label="שורה 2"]');
   const olderNumberedDraw = baselineCard.locator('details.future-draw[data-pin-draw-label="#4002"]');
@@ -423,9 +485,8 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   );
 
   const improvedBefore = await readPinnedOpenDrawCardState(improvedCard);
-  const form2BaselineCard = session.page
-    .locator('.pinned-future-group[data-pin-source="form2"] [data-pin-mode="baseline"]');
   const form2BaselineBefore = await readPinnedOpenDrawCardState(form2BaselineCard);
+  const form2ImprovedBefore = await readPinnedOpenDrawCardState(form2ImprovedCard);
   await olderNumberedDraw.locator('summary').click();
   assert.ok(await olderNumberedDraw.evaluate(node => node.open));
   assert.ok(!(await newestDateOnlyDraw.evaluate(node => node.open)));
@@ -461,9 +522,18 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=4002',
   );
   assert.strictEqual(await sourceLink.getAttribute('target'), '_blank');
-  assert.ok((await sourceLink.getAttribute('rel')).includes('noopener'));
+  const sourceRel = (await sourceLink.getAttribute('rel')).split(/\s+/);
+  assert.ok(sourceRel.includes('noopener'));
+  assert.ok(sourceRel.includes('noreferrer'));
+  const sourceText = (await olderNumberedDraw.locator('.pinned-prize-source').textContent()).trim();
+  assert.ok(sourceText.includes('לוטו רגיל'));
+  assert.ok(sourceText.includes('לפני מס'));
+  assert.ok(sourceText.includes('מידע להמחשה בלבד והיפותטי'));
+  assert.ok(sourceText.includes('אינו אישור שהטופס נשלח בפועל'));
+  assert.ok(sourceText.includes('או שפרס כלשהו שולם'));
   assert.deepStrictEqual(await readPinnedOpenDrawCardState(improvedCard), improvedBefore);
   assert.deepStrictEqual(await readPinnedOpenDrawCardState(form2BaselineCard), form2BaselineBefore);
+  assert.deepStrictEqual(await readPinnedOpenDrawCardState(form2ImprovedCard), form2ImprovedBefore);
 
   await olderNumberedDraw.locator('summary').click();
   assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 0);
@@ -526,6 +596,14 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
       && firstPrizeBox.x >= 0
       && firstPrizeBox.x + firstPrizeBox.width <= viewport.width,
     'The per-line prize column must remain visible in the active viewport',
+  );
+  const expandedWidth = await session.page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  assert.ok(
+    expandedWidth.scroll <= expandedWidth.client + 1,
+    'Expanded prize details must not overflow the page horizontally',
   );
 
   await session.page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
@@ -624,6 +702,19 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     await migratedSession.context.close();
 
     const cleanSession = await openAnalyzer(browser, baseUrl);
+    const browserSchemaResults = await cleanSession.page.evaluate(
+      contractCases => contractCases.map(testCase => ({
+        name: testCase.name,
+        expected: testCase.accepted,
+        accepted: normalizeLottoPrizeDocument(testCase.document) !== null,
+      })),
+      buildPrizeSchemaContractDocuments(),
+    );
+    assert.deepStrictEqual(
+      browserSchemaResults.map(result => ({ name: result.name, accepted: result.accepted })),
+      browserSchemaResults.map(result => ({ name: result.name, accepted: result.expected })),
+      'Browser schema acceptance must match the shared Python --verify-only contract',
+    );
     assert.ok(await cleanSession.page.locator('#pinMainBaselineBtn').isDisabled());
     assert.ok(await cleanSession.page.locator('#pinMainImprovedBtn').isDisabled());
 

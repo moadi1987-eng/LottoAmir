@@ -72,6 +72,19 @@ function Test-OnlyAllowedDataPaths {
     return $true
 }
 
+function Assert-OnlyAllowedOutgoingCommits {
+    $outgoingEntries = @(& git log --format= --name-only --no-renames origin/main..HEAD)
+    Assert-LastExitCode "outgoing commit path check"
+    $outgoingPaths = @(
+        $outgoingEntries |
+            Where-Object { $_.Length -gt 0 } |
+            Sort-Object -Unique
+    )
+    if (-not (Test-OnlyAllowedDataPaths $outgoingPaths)) {
+        throw "Outgoing commits contain paths outside the allowed data files; refusing to push."
+    }
+}
+
 function New-AutomationClone {
     Write-UpdateLog "Creating isolated automation clone."
     & git clone $RepositoryUrl $repositoryPath
@@ -206,6 +219,7 @@ try {
             if ($NoPush) {
                 Write-UpdateLog "NoPush was requested; leaving the commit in the isolated clone."
             } else {
+                Assert-OnlyAllowedOutgoingCommits
                 & git push origin main
                 Assert-LastExitCode "git push origin main"
                 Write-UpdateLog "Pushed updated results and prize data to GitHub."

@@ -411,9 +411,8 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             capture_output=True,
         )
 
-    def run_scheduler(self):
-        return subprocess.run(
-            [
+    def run_scheduler(self, no_push=True):
+        command = [
                 str(self.power_shell),
                 "-NoProfile",
                 "-NonInteractive",
@@ -427,8 +426,11 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
                 str(self.remote),
                 "-PythonExecutable",
                 sys.executable,
-                "-NoPush",
-            ],
+            ]
+        if no_push:
+            command.append("-NoPush")
+        return subprocess.run(
+            command,
             check=False,
             text=True,
             capture_output=True,
@@ -585,6 +587,61 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             recovery.stdout,
         )
         self.assertEqual(len(self.recovery_directories()), 0)
+
+    def test_pushes_clean_allowed_data_only_ahead_commit(self):
+        managed_repo = self.create_managed_repo()
+        self.run_command(["git", "config", "user.name", "Updater"], managed_repo)
+        self.run_command(
+            ["git", "config", "user.email", "updater@example.com"], managed_repo
+        )
+        (managed_repo / "NUMBERS.xlsx").write_text("pending push\n", encoding="utf-8")
+        (managed_repo / "LOTTO_PRIZES.json").write_text(
+            '{"draws":{"3945":{}},"schemaVersion":1,"updatedAt":null}\n',
+            encoding="utf-8",
+        )
+        self.run_command(
+            ["git", "add", "NUMBERS.xlsx", "LOTTO_PRIZES.json"], managed_repo
+        )
+        self.run_command(["git", "commit", "-m", "pending data"], managed_repo)
+        local_head = self.run_command(["git", "rev-parse", "HEAD"], managed_repo).stdout
+
+        pushed = self.run_scheduler(no_push=False)
+
+        self.assertEqual(pushed.returncode, 0, pushed.stdout + pushed.stderr)
+        remote_head = self.run_command(
+            ["git", "--git-dir", str(self.remote), "rev-parse", "main"]
+        ).stdout
+        self.assertEqual(remote_head, local_head)
+
+    def test_rejects_push_when_any_outgoing_commit_touched_unrelated_path(self):
+        managed_repo = self.create_managed_repo()
+        self.run_command(["git", "config", "user.name", "Updater"], managed_repo)
+        self.run_command(
+            ["git", "config", "user.email", "updater@example.com"], managed_repo
+        )
+        remote_head_before = self.run_command(
+            ["git", "--git-dir", str(self.remote), "rev-parse", "main"]
+        ).stdout
+
+        (managed_repo / "README.md").write_text("unrelated\n", encoding="utf-8")
+        self.run_command(["git", "add", "README.md"], managed_repo)
+        self.run_command(["git", "commit", "-m", "touch app documentation"], managed_repo)
+        (managed_repo / "README.md").write_text("initial\n", encoding="utf-8")
+        (managed_repo / "NUMBERS.xlsx").write_text("pending push\n", encoding="utf-8")
+        self.run_command(["git", "add", "README.md", "NUMBERS.xlsx"], managed_repo)
+        self.run_command(["git", "commit", "-m", "restore docs and update data"], managed_repo)
+
+        rejected = self.run_scheduler(no_push=False)
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn(
+            "Outgoing commits contain paths outside the allowed data files; refusing to push.",
+            rejected.stdout,
+        )
+        remote_head_after = self.run_command(
+            ["git", "--git-dir", str(self.remote), "rev-parse", "main"]
+        ).stdout
+        self.assertEqual(remote_head_after, remote_head_before)
 
     def test_recovers_allowed_partial_update_after_failed_updater(self):
         failure_marker = self.root / "failed-once.txt"

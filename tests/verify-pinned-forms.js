@@ -61,6 +61,8 @@ const requiredText = [
   'data-pin-winning-combination-count',
   'data-pin-line-prize',
   'לפי טבלת מפעל הפיס',
+  'לוטו רגיל · לפני מס',
+  'החישוב הוא מידע להמחשה בלבד והיפותטי; הוא אינו אישור שהטופס נשלח בפועל או שפרס כלשהו שולם.',
   'data-pin-stat="draw"',
   'data-pin-stat="regular"',
   'data-pin-stat="strong"',

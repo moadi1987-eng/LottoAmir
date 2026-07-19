@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import os
 import re
 import sys
@@ -33,6 +34,7 @@ DOWNLOAD_TIMEOUT_SECONDS = 30
 MAX_DOWNLOAD_ATTEMPTS = 3
 BACKFILL_BATCH_SIZE = 25
 DEFAULT_DELAY_SECONDS = 0.35
+MAX_SAFE_INTEGER = 9_007_199_254_740_991
 
 
 class UpdateError(RuntimeError):
@@ -111,23 +113,49 @@ def normalize_tier_label(value: object) -> str:
 
 
 def parse_nonnegative_integer(value: object, context: str) -> int:
+    if isinstance(value, bool):
+        raise UpdateError(f"{context}: expected a non-negative integer, got {value!r}")
     text = str(value).strip()
     if text.endswith("₪"):
         text = text[:-1].rstrip()
-    if not re.fullmatch(r"\d+|\d{1,3}(?:,\d{3})+", text):
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)|(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+)", text):
         raise UpdateError(f"{context}: expected a non-negative integer, got {value!r}")
-    return int(text.replace(",", ""))
+    parsed = int(text.replace(",", ""))
+    if parsed > MAX_SAFE_INTEGER:
+        raise UpdateError(f"{context}: integer exceeds JavaScript safe range")
+    return parsed
+
+
+def parse_schema_nonnegative_integer(value: object, context: str) -> int:
+    if isinstance(value, bool):
+        raise UpdateError(f"{context}: expected a canonical non-negative integer")
+    if isinstance(value, int):
+        parsed = value
+    elif (
+        isinstance(value, float)
+        and value.is_integer()
+        and not (value == 0 and math.copysign(1, value) < 0)
+    ):
+        parsed = int(value)
+    elif isinstance(value, str) and re.fullmatch(r"(?:0|[1-9][0-9]*)", value):
+        parsed = int(value)
+    else:
+        raise UpdateError(f"{context}: expected a canonical non-negative integer")
+    if parsed < 0 or parsed > MAX_SAFE_INTEGER:
+        raise UpdateError(f"{context}: integer is outside the JavaScript safe range")
+    return parsed
 
 
 def parse_draw_date(value: object, context: str) -> str:
-    text = str(value).strip()
-    if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", text):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[0-9]{2}/[0-9]{2}/[0-9]{4}", value
+    ):
         raise UpdateError(f"{context}: expected a DD/MM/YYYY draw date, got {value!r}")
     try:
-        datetime.strptime(text, "%d/%m/%Y")
+        datetime.strptime(value, "%d/%m/%Y")
     except ValueError as exc:
         raise UpdateError(f"{context}: invalid draw date {value!r}") from exc
-    return text
+    return value
 
 
 def parse_prize_page(
@@ -190,16 +218,30 @@ def record_as_json(record: DrawPrizeRecord) -> dict:
 
 
 def validate_prize_document(document: object) -> dict:
-    if not isinstance(document, dict) or document.get("schemaVersion") != SCHEMA_VERSION:
+    if not isinstance(document, dict):
         raise UpdateError("unsupported prize document schema")
+    schema_version = document.get("schemaVersion")
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, (int, float))
+        or schema_version != SCHEMA_VERSION
+    ):
+        raise UpdateError("unsupported prize document schema")
+    updated_at = document.get("updatedAt")
+    if updated_at is not None and not isinstance(updated_at, str):
+        raise UpdateError("prize document updatedAt must be a string or null")
     draws = document.get("draws")
     if not isinstance(draws, dict):
         raise UpdateError("prize document draws must be an object")
     for key, draw in draws.items():
-        if not str(key).isdigit() or not isinstance(draw, dict):
+        if (
+            not isinstance(key, str)
+            or not re.fullmatch(r"(?:0|[1-9][0-9]*)", key)
+            or not isinstance(draw, dict)
+        ):
             raise UpdateError(f"invalid prize draw entry {key!r}")
-        draw_number = parse_nonnegative_integer(draw.get("drawNumber"), f"draw {key}")
-        if str(draw_number) != str(key):
+        draw_number = parse_schema_nonnegative_integer(draw.get("drawNumber"), f"draw {key}")
+        if str(draw_number) != key:
             raise UpdateError(f"prize draw key {key} does not match drawNumber")
         parse_draw_date(draw.get("drawDate"), f"draw {key} draw date")
         expected_url = PRIZE_URL_TEMPLATE.format(draw_number=draw_number)
@@ -213,8 +255,8 @@ def validate_prize_document(document: object) -> dict:
                 raise UpdateError(f"draw {key}: invalid tier key {tier_key}")
             if not isinstance(tier, dict):
                 raise UpdateError(f"draw {key}: invalid tier payload")
-            parse_nonnegative_integer(tier.get("winnerCount"), "winner count")
-            parse_nonnegative_integer(tier.get("prizeIls"), "prize")
+            parse_schema_nonnegative_integer(tier.get("winnerCount"), "winner count")
+            parse_schema_nonnegative_integer(tier.get("prizeIls"), "prize")
     return document
 
 
