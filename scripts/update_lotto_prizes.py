@@ -260,14 +260,27 @@ def validate_prize_document(document: object) -> dict:
     return document
 
 
+def parse_prize_document_json(payload: str) -> object:
+    def parse_integer_token(token: str) -> int:
+        if token == "-0":
+            raise ValueError("negative zero integer token is not allowed")
+        return int(token)
+
+    try:
+        return json.loads(payload, parse_int=parse_integer_token)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise UpdateError(f"could not parse prize document: {exc}") from exc
+
+
 def load_prize_document(path: Path | str) -> dict:
     prize_path = Path(path)
     if not prize_path.exists():
         return empty_prize_document()
     try:
-        parsed = json.loads(prize_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = prize_path.read_text(encoding="utf-8")
+    except OSError as exc:
         raise UpdateError(f"could not read prize document: {exc}") from exc
+    parsed = parse_prize_document_json(payload)
     return validate_prize_document(parsed)
 
 
@@ -308,7 +321,9 @@ def write_prize_document_atomic(path: Path | str, document: dict) -> None:
             handle.flush()
             os.fsync(handle.fileno())
             temporary_path = Path(handle.name)
-        validate_prize_document(json.loads(temporary_path.read_text(encoding="utf-8")))
+        validate_prize_document(
+            parse_prize_document_json(temporary_path.read_text(encoding="utf-8"))
+        )
         os.replace(temporary_path, prize_path)
         temporary_path = None
     finally:

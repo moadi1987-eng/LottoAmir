@@ -211,6 +211,17 @@ def write_workbook(path, draw_numbers):
     workbook.close()
 
 
+def raw_prize_document(winner_count_token):
+    return (
+        '{"schemaVersion":1,"updatedAt":null,"draws":{"3947":{'
+        '"drawNumber":3947,"drawDate":"18/07/2026",'
+        '"sourceUrl":"https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3947",'
+        '"regular":{"6":{"winnerCount":'
+        + winner_count_token
+        + ',"prizeIls":250000}}}}}'
+    )
+
+
 class PrizeParserTests(unittest.TestCase):
     def test_parses_regular_3947_and_ignores_double_lotto(self):
         source = "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3947"
@@ -280,6 +291,19 @@ class PrizeStoreTests(unittest.TestCase):
         loaded = load_prize_document(self.prizes)
         self.assertEqual(loaded["draws"]["3947"]["regular"]["5"]["prizeIls"], 1252)
         self.assertFalse(any(self.root.glob("*.tmp")))
+
+    def test_loads_raw_json_with_canonical_integer_token(self):
+        self.prizes.write_text(raw_prize_document("1"), encoding="utf-8")
+
+        loaded = load_prize_document(self.prizes)
+
+        self.assertEqual(loaded["draws"]["3947"]["regular"]["6"]["winnerCount"], 1)
+
+    def test_rejects_raw_json_negative_zero_integer_token(self):
+        self.prizes.write_text(raw_prize_document("-0"), encoding="utf-8")
+
+        with self.assertRaisesRegex(UpdateError, "negative zero"):
+            load_prize_document(self.prizes)
 
     def test_existing_history_is_immutable_in_normal_merge(self):
         source = "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3947"
