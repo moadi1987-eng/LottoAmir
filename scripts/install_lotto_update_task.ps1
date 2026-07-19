@@ -83,7 +83,7 @@ Register-ScheduledTask `
     -Trigger $drawTrigger `
     -Settings $settings `
     -Principal $principal `
-    -Description "Downloads validated Pais lotto results and publishes NUMBERS.xlsx to LottoAmir." `
+    -Description "Downloads validated Pais lotto results and prize tables and publishes the approved data files to LottoAmir." `
     -Force | Out-Null
 
 Write-Host "Installed scheduled task: $taskName"

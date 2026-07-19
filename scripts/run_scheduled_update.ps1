@@ -9,6 +9,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$AllowedDataPaths = @("LOTTO_PRIZES.json", "NUMBERS.xlsx")
 $repositoryPath = Join-Path $AutomationRoot "repo"
 if (-not $PythonExecutable) {
     $PythonExecutable = Join-Path $AutomationRoot ".venv\Scripts\python.exe"
@@ -44,6 +45,16 @@ function Get-ChangedPaths {
             ForEach-Object { $_.Substring(3).Trim() } |
             Sort-Object -Unique
     )
+}
+
+function Test-OnlyAllowedDataPaths {
+    param([string[]]$Paths)
+
+    if ($Paths.Count -eq 0) { return $false }
+    foreach ($path in $Paths) {
+        if ($path -notin $AllowedDataPaths) { return $false }
+    }
+    return $true
 }
 
 function New-AutomationClone {
@@ -84,8 +95,8 @@ function Prepare-AutomationClone {
         Assert-LastExitCode "git status"
         if ($workingChanges.Count -gt 0) {
             $workingPaths = @(Get-ChangedPaths $workingChanges)
-            if ($workingPaths.Count -eq 1 -and $workingPaths[0] -eq "NUMBERS.xlsx") {
-                Archive-AutomationClone "Recovering an interrupted NUMBERS.xlsx update."
+            if (Test-OnlyAllowedDataPaths $workingPaths) {
+                Archive-AutomationClone "Recovering an interrupted validated data update."
                 continue
             }
             throw "Automation clone has unexpected local changes; refusing recovery."
@@ -111,14 +122,11 @@ function Prepare-AutomationClone {
             )
             Assert-LastExitCode "local commit path check"
             $localCommitPaths = @($localCommitPaths | Sort-Object -Unique)
-            if (
-                $localCommitPaths.Count -eq 1 -and
-                $localCommitPaths[0] -eq "NUMBERS.xlsx"
-            ) {
+            if (Test-OnlyAllowedDataPaths $localCommitPaths) {
                 Archive-AutomationClone "Recovering a validated data commit after origin/main advanced."
                 continue
             }
-            throw "Automation clone diverged with changes outside NUMBERS.xlsx."
+            throw "Automation clone diverged with changes outside the allowed data files."
         }
 
         return
@@ -137,7 +145,7 @@ try {
         exit 0
     }
 
-    Write-UpdateLog "Starting scheduled results check."
+    Write-UpdateLog "Starting scheduled results and prizes check."
 
     Prepare-AutomationClone
     if (-not (Test-Path -LiteralPath $PythonExecutable)) {
@@ -154,29 +162,27 @@ try {
         & $PythonExecutable scripts/update_lotto_results.py
         Assert-LastExitCode "official results update"
 
-        & git diff --quiet -- NUMBERS.xlsx
-        $workbookDiffExit = $LASTEXITCODE
-        if ($workbookDiffExit -notin @(0, 1)) {
-            throw "git diff failed with exit code $workbookDiffExit"
-        }
+        & $PythonExecutable scripts/update_lotto_prizes.py
+        Assert-LastExitCode "official prize update"
 
-        if ($workbookDiffExit -eq 1) {
-            $changedEntries = @(& git status --porcelain --untracked-files=all)
-            Assert-LastExitCode "git status after update"
-            $changedPaths = @(Get-ChangedPaths $changedEntries)
-            if ($changedPaths.Count -ne 1 -or $changedPaths[0] -ne "NUMBERS.xlsx") {
-                throw "Updater changed files other than NUMBERS.xlsx; refusing to commit."
+        $changedEntries = @(& git status --porcelain --untracked-files=all)
+        Assert-LastExitCode "git status after data update"
+        $changedPaths = @(Get-ChangedPaths $changedEntries)
+
+        if ($changedPaths.Count -gt 0) {
+            if (-not (Test-OnlyAllowedDataPaths $changedPaths)) {
+                throw "Updater changed files outside the allowed data files; refusing to commit."
             }
 
             & git config user.name "LottoAmir Updater"
             Assert-LastExitCode "git user-name configuration"
             & git config user.email "moadi1987-eng@users.noreply.github.com"
             Assert-LastExitCode "git user-email configuration"
-            & git add NUMBERS.xlsx
-            Assert-LastExitCode "git add NUMBERS.xlsx"
-            & git commit -m "data: update lotto results"
+            & git add -- $AllowedDataPaths
+            Assert-LastExitCode "git add allowed data"
+            & git commit -m "data: update lotto results and prizes"
             Assert-LastExitCode "git commit"
-            Write-UpdateLog "Committed a newly validated draw."
+            Write-UpdateLog "Committed newly validated results and prize data."
         }
 
         $aheadCount = & git rev-list --count origin/main..HEAD
@@ -187,16 +193,16 @@ try {
             } else {
                 & git push origin main
                 Assert-LastExitCode "git push origin main"
-                Write-UpdateLog "Pushed the updated workbook to GitHub."
+                Write-UpdateLog "Pushed updated results and prize data to GitHub."
             }
-        } elseif ($workbookDiffExit -eq 0) {
-            Write-UpdateLog "No new draw was found; the repository is already current."
+        } elseif ($changedPaths.Count -eq 0) {
+            Write-UpdateLog "No new results or prize data was found; the repository is already current."
         }
     } finally {
         Pop-Location
     }
 
-    Write-UpdateLog "Scheduled results check completed successfully."
+    Write-UpdateLog "Scheduled results and prizes check completed successfully."
     exit 0
 } catch {
     Write-UpdateLog ("ERROR: {0}" -f $_.Exception.Message)

@@ -301,9 +301,11 @@ class LocalSchedulerContractTests(unittest.TestCase):
             "git clone",
             "git pull --ff-only origin main",
             "origin/main...main",
+            '$AllowedDataPaths = @("LOTTO_PRIZES.json", "NUMBERS.xlsx")',
+            "Test-OnlyAllowedDataPaths",
             "scripts/update_lotto_results.py",
-            "git diff --quiet -- NUMBERS.xlsx",
-            "git add NUMBERS.xlsx",
+            "scripts/update_lotto_prizes.py",
+            "git add -- $AllowedDataPaths",
             "git push origin main",
         )
         for fragment in runner_fragments:
@@ -371,7 +373,13 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         (self.seed / "scripts" / "update_lotto_results.py").write_text(
             "print('fixture updater: no changes')\n", encoding="utf-8"
         )
+        (self.seed / "scripts" / "update_lotto_prizes.py").write_text(
+            "print('fixture prize updater: no changes')\n", encoding="utf-8"
+        )
         (self.seed / "NUMBERS.xlsx").write_text("3944\n", encoding="utf-8")
+        (self.seed / "LOTTO_PRIZES.json").write_text(
+            '{"draws":{},"schemaVersion":1,"updatedAt":null}\n', encoding="utf-8"
+        )
         (self.seed / "README.md").write_text("initial\n", encoding="utf-8")
         self.run_command(["git", "add", "."], self.seed)
         self.run_command(["git", "commit", "-m", "initial"], self.seed)
@@ -412,12 +420,15 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             capture_output=True,
         )
 
-    def test_recovers_interrupted_workbook_change_and_diverged_pending_commit(self):
+    def test_recovers_allowed_data_changes_and_diverged_data_commit(self):
         first_run = self.run_scheduler()
         self.assertEqual(first_run.returncode, 0, first_run.stdout + first_run.stderr)
 
         managed_repo = self.automation_root / "repo"
         (managed_repo / "NUMBERS.xlsx").write_text("interrupted\n", encoding="utf-8")
+        (managed_repo / "LOTTO_PRIZES.json").write_text(
+            "interrupted\n", encoding="utf-8"
+        )
 
         dirty_recovery = self.run_scheduler()
         self.assertEqual(
@@ -428,13 +439,22 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         self.assertEqual(
             (managed_repo / "NUMBERS.xlsx").read_text(encoding="utf-8"), "3944\n"
         )
+        self.assertIn(
+            '"schemaVersion":1',
+            (managed_repo / "LOTTO_PRIZES.json").read_text(encoding="utf-8"),
+        )
 
         self.run_command(["git", "config", "user.name", "Updater"], managed_repo)
         self.run_command(
             ["git", "config", "user.email", "updater@example.com"], managed_repo
         )
         (managed_repo / "NUMBERS.xlsx").write_text("pending push\n", encoding="utf-8")
-        self.run_command(["git", "add", "NUMBERS.xlsx"], managed_repo)
+        (managed_repo / "LOTTO_PRIZES.json").write_text(
+            "pending prizes\n", encoding="utf-8"
+        )
+        self.run_command(
+            ["git", "add", "NUMBERS.xlsx", "LOTTO_PRIZES.json"], managed_repo
+        )
         self.run_command(["git", "commit", "-m", "pending data"], managed_repo)
 
         remote_writer = self.root / "remote-writer"
