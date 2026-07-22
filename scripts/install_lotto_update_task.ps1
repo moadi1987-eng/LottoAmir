@@ -12,7 +12,9 @@ $automationRoot = Join-Path $env:LOCALAPPDATA "LottoAmirUpdater"
 $repositoryPath = Join-Path $automationRoot "repo"
 $venvPath = Join-Path $automationRoot ".venv"
 $pythonPath = Join-Path $venvPath "Scripts\python.exe"
+$installedLauncher = Join-Path $automationRoot "run_lotto_update_launcher.ps1"
 $installedRunner = Join-Path $automationRoot "run_scheduled_update.ps1"
+$sourceLauncher = Join-Path $PSScriptRoot "run_lotto_update_launcher.ps1"
 $sourceRunner = Join-Path $PSScriptRoot "run_scheduled_update.ps1"
 $requirementsPath = Join-Path $PSScriptRoot "requirements-lotto-update.txt"
 $repositoryUrl = "https://github.com/moadi1987-eng/LottoAmir.git"
@@ -24,6 +26,7 @@ if ($Uninstall) {
 }
 
 New-Item -ItemType Directory -Path $automationRoot -Force | Out-Null
+Copy-Item -LiteralPath $sourceLauncher -Destination $installedLauncher -Force
 Copy-Item -LiteralPath $sourceRunner -Destination $installedRunner -Force
 
 if (-not (Test-Path -LiteralPath (Join-Path $repositoryPath ".git"))) {
@@ -53,7 +56,7 @@ $actionArguments = @(
     "-NonInteractive",
     "-ExecutionPolicy Bypass",
     "-WindowStyle Hidden",
-    ('-File "{0}"' -f $installedRunner)
+    ('-File "{0}"' -f $installedLauncher)
 ) -join " "
 $action = New-ScheduledTaskAction `
     -Execute $powerShellPath `

@@ -332,6 +332,44 @@ class LocalSchedulerContractTests(unittest.TestCase):
         self.assertNotIn("New-TimeSpan -Hours 6", installer)
         self.assertNotIn("New-ScheduledTaskTrigger -AtLogOn", installer)
 
+        launcher_path = root / "scripts" / "run_lotto_update_launcher.ps1"
+        launcher = launcher_path.read_text(encoding="utf-8")
+        self.assertIn(
+            '$installedLauncher = Join-Path $automationRoot "run_lotto_update_launcher.ps1"',
+            installer,
+        )
+        self.assertIn(
+            "Copy-Item -LiteralPath $sourceLauncher -Destination $installedLauncher -Force",
+            installer,
+        )
+        self.assertIn("('-File \"{0}\"' -f $installedLauncher)", installer)
+        self.assertNotIn("('-File \"{0}\"' -f $installedRunner)", installer)
+        self.assertIn("run_scheduled_update.ps1", launcher)
+        self.assertIn("origin/main:scripts/run_scheduled_update.ps1", launcher)
+
+    def test_installer_deploys_both_scripts_and_schedules_only_the_launcher(self):
+        root = Path(__file__).resolve().parents[1]
+        installer = (root / "scripts" / "install_lotto_update_task.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            '$sourceLauncher = Join-Path $PSScriptRoot "run_lotto_update_launcher.ps1"',
+            installer,
+        )
+        self.assertIn(
+            "Copy-Item -LiteralPath $sourceLauncher -Destination $installedLauncher -Force",
+            installer,
+        )
+        self.assertIn(
+            "Copy-Item -LiteralPath $sourceRunner -Destination $installedRunner -Force",
+            installer,
+        )
+        self.assertIn("('-File \"{0}\"' -f $installedLauncher)", installer)
+        self.assertNotIn("('-File \"{0}\"' -f $installedRunner)", installer)
+        self.assertNotIn("SkipTaskRegistration", installer)
+        self.assertNotIn("SkipDependencyInstall", installer)
+
     def test_blocked_github_hosted_updater_workflows_are_removed(self):
         workflows = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 
