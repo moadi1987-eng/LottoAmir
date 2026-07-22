@@ -562,14 +562,17 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             ["git", "remote", "set-url", "origin", str(self.root / "other.git")],
             managed_repo,
         )
+        stale_marker = self.root / "stale-wrong-origin.txt"
         self.installed_runner.write_text(
-            "throw 'stale runner executed'\n", encoding="utf-8"
+            f"Set-Content -LiteralPath '{stale_marker}' -Value stale\n",
+            encoding="utf-8",
         )
 
         rejected = self.run_launcher()
 
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("origin URL does not match", rejected.stdout)
+        self.assertFalse(stale_marker.exists())
 
     def test_launcher_rejects_fetch_failure_without_executing_stale_copy(self):
         launched = self.run_launcher()
@@ -702,6 +705,12 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         self.assertIn(
             "Refreshed scheduled runner failed with exit code 7", rejected.stdout
         )
+        log_files = list((self.automation_root / "logs").glob("update-*.log"))
+        self.assertEqual(len(log_files), 1)
+        self.assertIn(
+            "Refreshed scheduled runner failed with exit code 7",
+            log_files[0].read_text(encoding="utf-8-sig"),
+        )
 
     def test_launcher_refresh_executes_both_fixture_updaters(self):
         self.replace_remote_runner(self.runner.read_text(encoding="utf-8"))
@@ -733,6 +742,76 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         )
         self.assertIn("fixture results updated", launched.stdout)
         self.assertIn("fixture prizes updated", launched.stdout)
+
+    def test_scheduler_skips_direct_overlapping_trigger_without_second_updater_run(self):
+        started_marker = self.root / "direct-runner-started.txt"
+        results_counter = self.root / "direct-runner-results-count.txt"
+        prizes_counter = self.root / "direct-runner-prizes-count.txt"
+        self.advance_remote(
+            "scripts/update_lotto_results.py",
+            "from pathlib import Path\n"
+            "import time\n"
+            f"Path(r'{started_marker}').write_text('started\\n', encoding='utf-8')\n"
+            f"with Path(r'{results_counter}').open('a', encoding='utf-8') as output:\n"
+            "    output.write('run\\n')\n"
+            "time.sleep(3)\n",
+        )
+        self.advance_remote(
+            "scripts/update_lotto_prizes.py",
+            "from pathlib import Path\n"
+            f"with Path(r'{prizes_counter}').open('a', encoding='utf-8') as output:\n"
+            "    output.write('run\\n')\n",
+        )
+        first = subprocess.Popen(
+            [
+                str(self.power_shell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(self.runner),
+                "-AutomationRoot",
+                str(self.automation_root),
+                "-RepositoryUrl",
+                str(self.remote),
+                "-PythonExecutable",
+                sys.executable,
+                "-NoPush",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        def stop_first_runner():
+            if first.poll() is None:
+                first.terminate()
+                try:
+                    first.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    first.kill()
+                    first.communicate(timeout=5)
+
+        self.addCleanup(stop_first_runner)
+        deadline = time.monotonic() + 10
+        while not started_marker.exists() and time.monotonic() < deadline:
+            self.assertIsNone(first.poll())
+            time.sleep(0.1)
+        self.assertTrue(started_marker.exists())
+
+        second = self.run_scheduler()
+        first_stdout, first_stderr = first.communicate(timeout=15)
+
+        self.assertEqual(first.returncode, 0, first_stdout + first_stderr)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("Another update is already running; skipping this trigger", second.stdout)
+        self.assertEqual(
+            results_counter.read_text(encoding="utf-8").splitlines(), ["run"]
+        )
+        self.assertEqual(
+            prizes_counter.read_text(encoding="utf-8").splitlines(), ["run"]
+        )
 
     def create_managed_repo(self):
         first_run = self.run_scheduler()

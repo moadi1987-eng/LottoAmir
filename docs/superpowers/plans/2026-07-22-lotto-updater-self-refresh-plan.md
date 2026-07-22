@@ -348,7 +348,7 @@ Use this exact outer error/finalization shape:
 
 Use a canonical fixture runner that increments a counter and sleeps. Start one launcher with `subprocess.Popen`, wait for its started marker, then invoke a second launcher and assert the counter remains one and the second output contains the skip message.
 
-Add a second fixture runner containing `exit 7` and assert the launcher returns 1 with `Refreshed scheduled runner failed with exit code 7` in the log/output.
+Add a second fixture runner containing `exit 7` and assert the launcher propagates exit code 7 with `Refreshed scheduled runner failed with exit code 7` in the log/output.
 
 Run all launcher-focused tests. Expected: PASS with no stale marker and no leftover `*.tmp` runner files.
 

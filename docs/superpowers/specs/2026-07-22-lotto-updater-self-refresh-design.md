@@ -93,4 +93,3 @@ and that PIN winnings for draw 3948 are no longer unavailable.
 - Changing PIN storage, scoring, combinations, or UI layout.
 - Changing the update schedule.
 - Running stale code as a fallback when GitHub is unavailable.
-
