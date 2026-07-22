@@ -533,6 +533,22 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("origin URL does not match", rejected.stdout)
 
+    def test_launcher_rejects_fetch_failure_without_executing_stale_copy(self):
+        launched = self.run_launcher()
+        self.assertEqual(launched.returncode, 0, launched.stdout + launched.stderr)
+        stale_marker = self.root / "stale-fetch.txt"
+        self.installed_runner.write_text(
+            f"Set-Content -LiteralPath '{stale_marker}' -Value stale\n",
+            encoding="utf-8",
+        )
+        self.remote.rename(self.root / "remote-unavailable.git")
+
+        rejected = self.run_launcher()
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(stale_marker.exists())
+        self.assertIn("git fetch origin main failed", rejected.stdout)
+
     def test_launcher_rejects_missing_remote_runner_without_executing_stale_copy(self):
         self.replace_remote_runner(delete=True)
         self.automation_root.mkdir(parents=True, exist_ok=True)
