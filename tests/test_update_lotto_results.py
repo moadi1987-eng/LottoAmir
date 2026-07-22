@@ -617,6 +617,29 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         self.assertFalse(stale_marker.exists())
         self.assertIn("canonical runner content is invalid", rejected.stdout)
 
+    def test_launcher_rejects_syntax_error_without_replacing_or_executing_stale_copy(self):
+        self.replace_remote_runner(
+            "[CmdletBinding()]\n"
+            "param([string]$AutomationRoot,[string]$RepositoryUrl,"
+            "[string]$PythonExecutable,[switch]$NoPush)\n"
+            "if (\n"
+        )
+        self.automation_root.mkdir(parents=True, exist_ok=True)
+        stale_marker = self.root / "stale-syntax.txt"
+        stale_runner = (
+            "[CmdletBinding()]\n"
+            "param()\n"
+            f"Set-Content -LiteralPath '{stale_marker}' -Value stale\n"
+        )
+        self.installed_runner.write_text(stale_runner, encoding="utf-8")
+
+        rejected = self.run_launcher()
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(stale_marker.exists())
+        self.assertEqual(self.installed_runner.read_text(encoding="utf-8"), stale_runner)
+        self.assertIn("canonical runner PowerShell syntax is invalid", rejected.stdout)
+
     def test_launcher_skips_overlapping_trigger(self):
         started_marker = self.root / "runner-started.txt"
         counter_path = self.root / "runner-count.txt"
@@ -675,10 +698,41 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
 
         rejected = self.run_launcher()
 
-        self.assertEqual(rejected.returncode, 1)
+        self.assertEqual(rejected.returncode, 7)
         self.assertIn(
             "Refreshed scheduled runner failed with exit code 7", rejected.stdout
         )
+
+    def test_launcher_refresh_executes_both_fixture_updaters(self):
+        self.replace_remote_runner(self.runner.read_text(encoding="utf-8"))
+        self.advance_remote(
+            "scripts/update_lotto_results.py",
+            "from pathlib import Path\n"
+            'Path("NUMBERS.xlsx").write_text("3945\\n", encoding="utf-8")\n'
+            "print('fixture results updated')\n",
+        )
+        self.advance_remote(
+            "scripts/update_lotto_prizes.py",
+            "from pathlib import Path\n"
+            'Path("LOTTO_PRIZES.json").write_text('
+            "'{\\\"draws\\\":{\\\"3945\\\":{}},\\\"schemaVersion\\\":1,"
+            "\\\"updatedAt\\\":\\\"fixture\\\"}\\n', encoding=\"utf-8\")\n"
+            "print('fixture prizes updated')\n",
+        )
+
+        launched = self.run_launcher()
+        managed_repo = self.automation_root / "repo"
+
+        self.assertEqual(launched.returncode, 0, launched.stdout + launched.stderr)
+        self.assertEqual(
+            (managed_repo / "NUMBERS.xlsx").read_text(encoding="utf-8"), "3945\n"
+        )
+        self.assertEqual(
+            (managed_repo / "LOTTO_PRIZES.json").read_text(encoding="utf-8"),
+            '{"draws":{"3945":{}},"schemaVersion":1,"updatedAt":"fixture"}\n',
+        )
+        self.assertIn("fixture results updated", launched.stdout)
+        self.assertIn("fixture prizes updated", launched.stdout)
 
     def create_managed_repo(self):
         first_run = self.run_scheduler()
@@ -689,7 +743,7 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         return list(self.automation_root.glob("repo-recovery-*"))
 
     def advance_remote(self, filename, contents):
-        remote_writer = self.root / "remote-writer"
+        remote_writer = self.root / f"remote-writer-{uuid.uuid4().hex}"
         self.run_command(["git", "clone", str(self.remote), str(remote_writer)])
         self.run_command(["git", "config", "user.name", "Remote User"], remote_writer)
         self.run_command(

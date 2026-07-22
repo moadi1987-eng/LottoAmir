@@ -79,6 +79,16 @@ try {
     ) {
         throw "The canonical runner content is invalid."
     }
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseInput(
+        $runnerContent,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+    if ($parseErrors.Count -gt 0) {
+        throw "The canonical runner PowerShell syntax is invalid."
+    }
 
     $temporaryRunner = "{0}.{1}.tmp" -f $installedRunner, [guid]::NewGuid().ToString("N")
     $temporaryBackup = "{0}.{1}.bak" -f $installedRunner, [guid]::NewGuid().ToString("N")
@@ -119,7 +129,8 @@ try {
     & $powerShellPath @runnerArguments
     $runnerExitCode = $LASTEXITCODE
     if ($runnerExitCode -ne 0) {
-        throw "Refreshed scheduled runner failed with exit code $runnerExitCode"
+        Write-LauncherLog "Refreshed scheduled runner failed with exit code $runnerExitCode"
+        exit $runnerExitCode
     }
     Write-LauncherLog "Refreshed scheduled runner completed successfully."
     exit 0
