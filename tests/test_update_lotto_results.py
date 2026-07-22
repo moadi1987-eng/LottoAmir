@@ -2,7 +2,9 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+import uuid
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
@@ -365,6 +367,12 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             / "scripts"
             / "run_scheduled_update.ps1"
         )
+        self.launcher = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "run_lotto_update_launcher.ps1"
+        )
+        self.installed_runner = self.automation_root / "run_scheduled_update.ps1"
         self.power_shell = (
             Path(os.environ["SystemRoot"])
             / "System32"
@@ -389,6 +397,18 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         )
         (self.seed / "scripts" / "update_lotto_prizes.py").write_text(
             "print('fixture prize updater: no changes')\n", encoding="utf-8"
+        )
+        self.launcher_marker = self.root / "canonical-runner.txt"
+        canonical_runner = (
+            "[CmdletBinding()]\n"
+            "param([string]$AutomationRoot,[string]$RepositoryUrl,"
+            "[string]$PythonExecutable,[switch]$NoPush)\n"
+            f"Set-Content -LiteralPath '{self.launcher_marker}' "
+            "-Value ($RepositoryUrl + '|' + $PythonExecutable + '|' + $NoPush.IsPresent)\n"
+            "exit 0\n"
+        )
+        (self.seed / "scripts" / "run_scheduled_update.ps1").write_text(
+            canonical_runner, encoding="utf-8"
         )
         (self.seed / "NUMBERS.xlsx").write_text("3944\n", encoding="utf-8")
         (self.seed / "LOTTO_PRIZES.json").write_text(
@@ -434,6 +454,176 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             check=False,
             text=True,
             capture_output=True,
+        )
+
+    def run_launcher(self, no_push=True):
+        command = [
+            str(self.power_shell),
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(self.launcher),
+            "-AutomationRoot",
+            str(self.automation_root),
+            "-RepositoryUrl",
+            str(self.remote),
+            "-PythonExecutable",
+            sys.executable,
+        ]
+        if no_push:
+            command.append("-NoPush")
+        return subprocess.run(
+            command,
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+
+    def replace_remote_runner(self, contents=None, delete=False):
+        writer = self.root / f"runner-writer-{uuid.uuid4().hex}"
+        self.run_command(["git", "clone", str(self.remote), str(writer)])
+        self.run_command(["git", "config", "user.name", "Runner Writer"], writer)
+        self.run_command(
+            ["git", "config", "user.email", "runner@example.com"], writer
+        )
+        runner = writer / "scripts" / "run_scheduled_update.ps1"
+        if delete:
+            runner.unlink()
+        else:
+            runner.write_text(contents or "", encoding="utf-8")
+        self.run_command(["git", "add", "-A"], writer)
+        self.run_command(["git", "commit", "-m", "replace runner"], writer)
+        self.run_command(["git", "push", "origin", "main"], writer)
+
+    def test_launcher_replaces_stale_runner_before_execution(self):
+        self.automation_root.mkdir(parents=True)
+        stale_marker = self.root / "stale.txt"
+        self.installed_runner.write_text(
+            f"Set-Content -LiteralPath '{stale_marker}' -Value stale\n",
+            encoding="utf-8",
+        )
+
+        launched = self.run_launcher()
+
+        self.assertEqual(launched.returncode, 0, launched.stdout + launched.stderr)
+        self.assertTrue(self.launcher_marker.exists())
+        self.assertFalse(stale_marker.exists())
+        installed = self.installed_runner.read_text(encoding="utf-8-sig")
+        self.assertIn("canonical-runner.txt", installed)
+        self.assertIn(
+            f"{self.remote}|{sys.executable}|True", self.launcher_marker.read_text()
+        )
+
+    def test_launcher_rejects_clone_with_wrong_origin(self):
+        launched = self.run_launcher()
+        self.assertEqual(launched.returncode, 0, launched.stdout + launched.stderr)
+        managed_repo = self.automation_root / "repo"
+        self.run_command(
+            ["git", "remote", "set-url", "origin", str(self.root / "other.git")],
+            managed_repo,
+        )
+        self.installed_runner.write_text(
+            "throw 'stale runner executed'\n", encoding="utf-8"
+        )
+
+        rejected = self.run_launcher()
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("origin URL does not match", rejected.stdout)
+
+    def test_launcher_rejects_missing_remote_runner_without_executing_stale_copy(self):
+        self.replace_remote_runner(delete=True)
+        self.automation_root.mkdir(parents=True, exist_ok=True)
+        stale_marker = self.root / "stale-missing.txt"
+        self.installed_runner.write_text(
+            f"Set-Content -LiteralPath '{stale_marker}' -Value stale\n",
+            encoding="utf-8",
+        )
+
+        rejected = self.run_launcher()
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(stale_marker.exists())
+        self.assertIn("could not extract the canonical runner", rejected.stdout)
+
+    def test_launcher_rejects_empty_remote_runner_without_executing_stale_copy(self):
+        self.replace_remote_runner(contents="")
+        self.automation_root.mkdir(parents=True, exist_ok=True)
+        stale_marker = self.root / "stale-empty.txt"
+        self.installed_runner.write_text(
+            f"Set-Content -LiteralPath '{stale_marker}' -Value stale\n",
+            encoding="utf-8",
+        )
+
+        rejected = self.run_launcher()
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(stale_marker.exists())
+        self.assertIn("canonical runner content is invalid", rejected.stdout)
+
+    def test_launcher_skips_overlapping_trigger(self):
+        started_marker = self.root / "runner-started.txt"
+        counter_path = self.root / "runner-count.txt"
+        self.replace_remote_runner(
+            "[CmdletBinding()]\n"
+            "param([string]$AutomationRoot,[string]$RepositoryUrl,"
+            "[string]$PythonExecutable,[switch]$NoPush)\n"
+            f"Set-Content -LiteralPath '{started_marker}' -Value started\n"
+            f"Add-Content -LiteralPath '{counter_path}' -Value run\n"
+            "Start-Sleep -Seconds 2\n"
+            "exit 0\n"
+        )
+
+        first = subprocess.Popen(
+            [
+                str(self.power_shell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(self.launcher),
+                "-AutomationRoot",
+                str(self.automation_root),
+                "-RepositoryUrl",
+                str(self.remote),
+                "-PythonExecutable",
+                sys.executable,
+                "-NoPush",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for _ in range(40):
+            if started_marker.exists():
+                break
+            time.sleep(0.1)
+        self.assertTrue(started_marker.exists())
+
+        second = self.run_launcher()
+        first_stdout, first_stderr = first.communicate(timeout=15)
+
+        self.assertEqual(first.returncode, 0, first_stdout + first_stderr)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("already running; skipping this trigger", second.stdout)
+        self.assertEqual(counter_path.read_text(encoding="utf-8").splitlines(), ["run"])
+
+    def test_launcher_reports_refreshed_runner_failure(self):
+        self.replace_remote_runner(
+            "[CmdletBinding()]\n"
+            "param([string]$AutomationRoot,[string]$RepositoryUrl,"
+            "[string]$PythonExecutable,[switch]$NoPush)\n"
+            "exit 7\n"
+        )
+
+        rejected = self.run_launcher()
+
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn(
+            "Refreshed scheduled runner failed with exit code 7", rejected.stdout
         )
 
     def create_managed_repo(self):
