@@ -66884,8 +66884,47 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3947"
+    },
+    "3948": {
+      "drawDate": "21/07/2026",
+      "drawNumber": 3948,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 98596
+        },
+        "3+strong": {
+          "prizeIls": 37,
+          "winnerCount": 17554
+        },
+        "4": {
+          "prizeIls": 52,
+          "winnerCount": 7402
+        },
+        "4+strong": {
+          "prizeIls": 153,
+          "winnerCount": 1305
+        },
+        "5": {
+          "prizeIls": 716,
+          "winnerCount": 196
+        },
+        "5+strong": {
+          "prizeIls": 4926,
+          "winnerCount": 36
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3948"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-07-19T17:30:51.598021+00:00"
+  "updatedAt": "2026-07-23T07:39:25.596500+00:00"
 }
