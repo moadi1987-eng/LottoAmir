@@ -775,6 +775,17 @@
             min-width: 1em;
             margin-inline-start: 3px;
         }
+        .pinned-number-list {
+            display: inline-flex;
+            flex-direction: row;
+            direction: rtl;
+            align-items: center;
+            white-space: nowrap;
+        }
+        .pinned-number-separator {
+            margin-inline: 2px;
+            color: var(--text-muted);
+        }
         .pinned-open-draw-stats .stat-box {
             min-width: 0;
         }
@@ -2668,11 +2679,16 @@
                     ? parsedComboNumber
                     : result.index + 1;
                 const drawSet = new Set(drawNumbers);
-                const nums = (result.numbers || []).map(function(n) {
-                    return drawSet.has(n)
-                        ? '<span style="background: rgba(16,185,129,0.35); color: #34d399; padding: 2px 6px; border-radius: 4px; font-weight: 800;">' + n + '</span>'
-                        : '<span style="color: var(--text-muted);">' + n + '</span>';
-                }).join(', ');
+                const nums = (result.numbers || []).map(function(n, index, numbers) {
+                    const hit = drawSet.has(n);
+                    const numberToken = hit
+                        ? '<span class="pinned-number-token pinned-number-hit" style="background: rgba(16,185,129,0.35); color: #34d399; padding: 2px 6px; border-radius: 4px; font-weight: 800;">' + n + '</span>'
+                        : '<span class="pinned-number-token" style="color: var(--text-muted);">' + n + '</span>';
+                    const separator = index < numbers.length - 1
+                        ? '<span class="pinned-number-separator" aria-hidden="true">,</span>'
+                        : '';
+                    return numberToken + separator;
+                }).join('');
                 const comboStrong = combo.strong == null ? '—' : combo.strong;
                 const strongCell = result.strongMatch
                     ? '<span style="background: rgba(139,92,246,0.35); color: #a78bfa; padding: 2px 6px; border-radius: 4px; font-weight: 800;">' + comboStrong + '</span>'
@@ -2690,7 +2706,9 @@
                     '<td style="font-weight:700;">' + (rank + 1) + '</td>' +
                     '<td style="font-weight:700;">#' + comboNumber + '</td>' +
                     '<td style="font-size:12px;">' + escapeBacktestText(combo.strategy || '—') + '</td>' +
-                    '<td style="font-size:13px; direction:ltr;">' + nums + '</td>' +
+                    '<td style="font-size:13px;"><span class="pinned-number-list" dir="rtl">' +
+                        nums +
+                    '</span></td>' +
                     '<td>' + strongCell + '</td>' +
                     '<td style="font-size:18px; font-weight:800; color:' + matchColor + ';">' + result.regularMatches + '/6</td>' +
                     '<td style="font-size:16px;">' + (result.strongMatch ? '✅' : '❌') + '</td>' +

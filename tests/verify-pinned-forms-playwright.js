@@ -542,6 +542,25 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     sortedRows.filter(row => row.combo <= 3).map(row => [row.combo, row.hits, row.strong, row.prize]),
     [[3, 3, 0, '₪15'], [2, 3, 0, '₪15'], [1, 3, 1, '₪59']],
   );
+  const comboOneNumberList = olderNumberedDraw
+    .locator('tr[data-pin-combo-number="1"] .pinned-number-list');
+  const numberTokens = comboOneNumberList.locator('.pinned-number-token');
+  assert.deepStrictEqual(
+    await numberTokens.evaluateAll(nodes => nodes.map(node => node.textContent.trim())),
+    ['1', '2', '3', '20', '21', '22'],
+  );
+  assert.deepStrictEqual(
+    await comboOneNumberList.locator('.pinned-number-hit')
+      .evaluateAll(nodes => nodes.map(node => node.textContent.trim())),
+    ['1', '2', '3'],
+  );
+  const numberPositions = await numberTokens.evaluateAll(nodes =>
+    nodes.map(node => node.getBoundingClientRect().left)
+  );
+  assert.ok(
+    numberPositions[0] > numberPositions.at(-1),
+    'The smallest PIN number must be visually right of the largest PIN number',
+  );
 
   await numberSort.click();
   sortedRows = await readPinnedCombinationRows(olderNumberedDraw);
