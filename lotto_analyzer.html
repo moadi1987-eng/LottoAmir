@@ -754,6 +754,27 @@
             font-weight: 800;
             margin-bottom: 10px;
         }
+        .pin-sort-button {
+            appearance: none;
+            border: 0;
+            padding: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-weight: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .pin-sort-button:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 3px;
+            border-radius: 3px;
+        }
+        .pin-sort-indicator {
+            display: inline-block;
+            min-width: 1em;
+            margin-inline-start: 3px;
+        }
         .pinned-open-draw-stats .stat-box {
             min-width: 0;
         }
@@ -2348,6 +2369,78 @@
             updatePinnedOpenDrawSummary(card, card.querySelector('details.future-draw[open]'));
         }
 
+        function readPinnedRowSortValue(row, key) {
+            const raw = key === 'combo'
+                ? row.dataset.pinComboNumber
+                : row.dataset.pinRegularMatches;
+            const value = Number(raw);
+            return Number.isFinite(value) ? value : 0;
+        }
+
+        function comparePinnedTableRows(left, right, key, direction) {
+            const factor = direction === 'asc' ? 1 : -1;
+            if (key === 'hits') {
+                const hitDifference = readPinnedRowSortValue(left, 'hits')
+                    - readPinnedRowSortValue(right, 'hits');
+                if (hitDifference !== 0) return hitDifference * factor;
+                const strongDifference = Number(left.dataset.pinStrongMatch)
+                    - Number(right.dataset.pinStrongMatch);
+                if (strongDifference !== 0) return strongDifference * factor;
+            }
+            const comboDifference = readPinnedRowSortValue(left, 'combo')
+                - readPinnedRowSortValue(right, 'combo');
+            if (comboDifference !== 0) return comboDifference * factor;
+            return Number(left.dataset.pinResultIndex) - Number(right.dataset.pinResultIndex);
+        }
+
+        function updatePinnedSortHeaders(table, key, direction) {
+            table.querySelectorAll('th[data-pin-sort-column]').forEach(function(header) {
+                const active = header.dataset.pinSortColumn === key;
+                header.setAttribute('aria-sort', active
+                    ? (direction === 'asc' ? 'ascending' : 'descending')
+                    : 'none');
+                const indicator = header.querySelector('[data-pin-sort-indicator]');
+                if (indicator) {
+                    indicator.textContent = active ? (direction === 'asc' ? '▲' : '▼') : '';
+                }
+            });
+        }
+
+        function sortPinnedDrawTable(table, key, direction) {
+            if (!table
+                || !['combo', 'hits'].includes(key)
+                || !['asc', 'desc'].includes(direction)) {
+                return;
+            }
+            const body = table.tBodies[0];
+            if (!body) return;
+            Array.from(body.rows)
+                .sort(function(left, right) {
+                    return comparePinnedTableRows(left, right, key, direction);
+                })
+                .forEach(function(row) { body.appendChild(row); });
+            table.dataset.pinSortKey = key;
+            table.dataset.pinSortDirection = direction;
+            updatePinnedSortHeaders(table, key, direction);
+        }
+
+        function handlePinnedFutureSort(event) {
+            const control = event.target && event.target.closest
+                ? event.target.closest('button[data-pin-sort-key]')
+                : null;
+            const container = document.getElementById('pinnedFutureContent');
+            if (!control || !container || !container.contains(control)) return;
+            const table = control.closest('table');
+            if (!table) return;
+            const key = control.dataset.pinSortKey;
+            const currentKey = table.dataset.pinSortKey || 'hits';
+            const currentDirection = table.dataset.pinSortDirection || 'desc';
+            const direction = currentKey === key
+                ? (currentDirection === 'desc' ? 'asc' : 'desc')
+                : 'desc';
+            sortPinnedDrawTable(table, key, direction);
+        }
+
         function listPinnedForms() {
             return ['main', 'form2'].flatMap(function(source) {
                 return ['baseline', 'improved']
@@ -2558,8 +2651,22 @@
                 return '<span class="pinned-line-prize-won">' + escapeBacktestText(formatPrizeIls(line.prizeIls)) + '</span>';
             }
 
-            const rows = score.results.map(function(result, rank) {
+            const presentationRows = score.results.map(function(result, rank) {
+                return {
+                    result: result,
+                    rank: rank,
+                    prizeLine: winnings.lines[rank]
+                };
+            });
+
+            const rows = presentationRows.map(function(entry) {
+                const result = entry.result;
+                const rank = entry.rank;
                 const combo = result.combo || {};
+                const parsedComboNumber = Number(combo.comboNum);
+                const comboNumber = Number.isFinite(parsedComboNumber)
+                    ? parsedComboNumber
+                    : result.index + 1;
                 const drawSet = new Set(drawNumbers);
                 const nums = (result.numbers || []).map(function(n) {
                     return drawSet.has(n)
@@ -2575,15 +2682,19 @@
                     : result.regularMatches >= 3 ? 'rgba(16, 185, 129, 0.12)'
                     : result.regularMatches >= 2 ? 'rgba(245, 158, 11, 0.12)'
                     : 'transparent';
-                return '<tr style="background:' + rowBg + ';">' +
+                return '<tr data-pin-combo-number="' + comboNumber +
+                    '" data-pin-regular-matches="' + result.regularMatches +
+                    '" data-pin-strong-match="' + (result.strongMatch ? 1 : 0) +
+                    '" data-pin-result-index="' + result.index +
+                    '" style="background:' + rowBg + ';">' +
                     '<td style="font-weight:700;">' + (rank + 1) + '</td>' +
-                    '<td style="font-weight:700;">#' + (combo.comboNum != null ? combo.comboNum : result.index + 1) + '</td>' +
+                    '<td style="font-weight:700;">#' + comboNumber + '</td>' +
                     '<td style="font-size:12px;">' + escapeBacktestText(combo.strategy || '—') + '</td>' +
                     '<td style="font-size:13px; direction:ltr;">' + nums + '</td>' +
                     '<td>' + strongCell + '</td>' +
                     '<td style="font-size:18px; font-weight:800; color:' + matchColor + ';">' + result.regularMatches + '/6</td>' +
                     '<td style="font-size:16px;">' + (result.strongMatch ? '✅' : '❌') + '</td>' +
-                    '<td data-pin-line-prize>' + renderPinnedLinePrize(winnings.lines[rank]) + '</td>' +
+                    '<td data-pin-line-prize>' + renderPinnedLinePrize(entry.prizeLine) + '</td>' +
                 '</tr>';
             }).join('');
             const prizeSource = winnings.sourceUrl
@@ -2604,15 +2715,23 @@
                             <span class="number-badge medium" style="font-size:13px; padding:5px 10px;">${drawStrong}</span>
                         </div>
                         <div style="overflow-x:auto;">
-                            <table class="numbers-table">
+                            <table class="numbers-table" data-pin-sort-key="hits" data-pin-sort-direction="desc">
                                 <thead>
                                     <tr>
                                         <th>דירוג</th>
-                                        <th>#</th>
+                                        <th scope="col" data-pin-sort-column="combo" aria-sort="none">
+                                            <button type="button" class="pin-sort-button" data-pin-sort-key="combo">
+                                                #<span class="pin-sort-indicator" data-pin-sort-indicator aria-hidden="true"></span>
+                                            </button>
+                                        </th>
                                         <th>אסטרטגיה</th>
                                         <th>מספרים</th>
                                         <th>חזק</th>
-                                        <th>פגיעות</th>
+                                        <th scope="col" data-pin-sort-column="hits" aria-sort="descending">
+                                            <button type="button" class="pin-sort-button" data-pin-sort-key="hits">
+                                                פגיעות<span class="pin-sort-indicator" data-pin-sort-indicator aria-hidden="true">▼</span>
+                                            </button>
+                                        </th>
                                         <th>חזק</th>
                                         <th>זכייה</th>
                                     </tr>
@@ -2642,6 +2761,8 @@
         document.getElementById('defaultDataBtn').addEventListener('click', loadDefaultNumbersFile);
         document.getElementById('pinnedFutureContent')
             .addEventListener('toggle', handlePinnedFutureToggle, true);
+        document.getElementById('pinnedFutureContent')
+            .addEventListener('click', handlePinnedFutureSort);
         document.getElementById('comparisonRowInput').addEventListener('input', scheduleComparisonLiveUpdate);
         document.getElementById('comparisonRowInput').addEventListener('change', function() {
             scheduleComparisonLiveUpdate(0);

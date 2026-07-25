@@ -121,6 +121,16 @@ async function readPinnedWinnings(card) {
   };
 }
 
+async function readPinnedCombinationRows(draw) {
+  return draw.locator('tbody tr').evaluateAll(rows => rows.map(row => ({
+    rank: row.cells[0].textContent.trim(),
+    combo: Number(row.dataset.pinComboNumber),
+    hits: Number(row.dataset.pinRegularMatches),
+    strong: Number(row.dataset.pinStrongMatch),
+    prize: row.querySelector('[data-pin-line-prize]').textContent.trim(),
+  })));
+}
+
 async function readPinnedOpenDrawCardState(card) {
   const openDraws = card.locator('details.future-draw[open]');
   const openPanelCount = await openDraws.count();
@@ -506,6 +516,60 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     value: '₪89',
     meta: '3 קומבינציות זוכות',
   });
+  const numberHeader = olderNumberedDraw.locator('th[data-pin-sort-column="combo"]');
+  const hitsHeader = olderNumberedDraw.locator('th[data-pin-sort-column="hits"]');
+  const numberSort = numberHeader.locator('button[data-pin-sort-key="combo"]');
+  const hitsSort = hitsHeader.locator('button[data-pin-sort-key="hits"]');
+  const neighborDraw = improvedCard.locator('details.future-draw[data-pin-draw-label="#4002"]');
+  const neighborBeforeSort = await readPinnedCombinationRows(neighborDraw);
+
+  assert.strictEqual(await numberHeader.getAttribute('aria-sort'), 'none');
+  assert.strictEqual(await hitsHeader.getAttribute('aria-sort'), 'descending');
+  assert.strictEqual(
+    (await hitsHeader.locator('[data-pin-sort-indicator]').textContent()).trim(),
+    '▼',
+  );
+
+  await numberSort.click();
+  let sortedRows = await readPinnedCombinationRows(olderNumberedDraw);
+  assert.deepStrictEqual(
+    sortedRows.map(row => row.combo),
+    [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+  );
+  assert.strictEqual(await numberHeader.getAttribute('aria-sort'), 'descending');
+  assert.strictEqual(await hitsHeader.getAttribute('aria-sort'), 'none');
+  assert.deepStrictEqual(
+    sortedRows.filter(row => row.combo <= 3).map(row => [row.combo, row.hits, row.strong, row.prize]),
+    [[3, 3, 0, '₪15'], [2, 3, 0, '₪15'], [1, 3, 1, '₪59']],
+  );
+
+  await numberSort.click();
+  sortedRows = await readPinnedCombinationRows(olderNumberedDraw);
+  assert.deepStrictEqual(
+    sortedRows.map(row => row.combo),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  );
+  assert.strictEqual(await numberHeader.getAttribute('aria-sort'), 'ascending');
+
+  await hitsSort.press('Enter');
+  sortedRows = await readPinnedCombinationRows(olderNumberedDraw);
+  assert.deepStrictEqual(
+    sortedRows.slice(0, 4).map(row => [row.combo, row.hits, row.strong]),
+    [[1, 3, 1], [3, 3, 0], [2, 3, 0], [4, 2, 0]],
+  );
+  assert.strictEqual(await hitsHeader.getAttribute('aria-sort'), 'descending');
+
+  await hitsSort.press('Enter');
+  sortedRows = await readPinnedCombinationRows(olderNumberedDraw);
+  assert.deepStrictEqual(
+    sortedRows.slice(-4).map(row => [row.combo, row.hits, row.strong]),
+    [[4, 2, 0], [2, 3, 0], [3, 3, 0], [1, 3, 1]],
+  );
+  assert.strictEqual(await hitsHeader.getAttribute('aria-sort'), 'ascending');
+  assert.deepStrictEqual(await readPinnedCombinationRows(neighborDraw), neighborBeforeSort);
+
+  await session.page.evaluate(() => renderPinnedFutureComparisons());
+  await olderNumberedDraw.locator('summary').click();
   assert.deepStrictEqual(
     await olderNumberedDraw.locator('[data-pin-line-prize]').evaluateAll(nodes =>
       nodes.slice(0, 4).map(node => node.textContent.trim())
