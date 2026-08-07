@@ -8,6 +8,7 @@
   const ALGORITHM_VERSION = 'lotto-backtest-v2';
   const CONSTRAINT_VERSION = 'forms-v2';
   const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v1';
+  const PORTFOLIO_CONSTRAINT_VERSION = 'four-pin-constraints-v1';
   const BINARY_METRIC_VERSION = 'draw-win-3plus-v1';
   const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v1';
   const DEFAULT_BOOTSTRAP_SAMPLES = 10000;
@@ -30,6 +31,19 @@
     'איזון פיזור', 'זוגות מאמצע הדירוג', 'שלישייה מובילה + קרים',
     'ממוצע נע', 'אנטי-אחרון', 'מספרים בשלים', 'תנודה בין חלונות',
     'חזרת מגמה', 'סינרגיה מלאה', 'ממוצע משוקלל',
+  ]);
+  const COVERAGE_FORM_IDS = Object.freeze(['coverage1', 'coverage2']);
+  const COVERAGE_TEMPLATE = Object.freeze([
+    [13, 14, 20, 24, 33, 37], [9, 14, 21, 25, 32, 37], [2, 5, 14, 19, 27, 37],
+    [3, 5, 13, 17, 28, 31], [2, 7, 9, 11, 25, 26], [8, 12, 17, 27, 31, 33],
+    [1, 9, 10, 16, 21, 36], [3, 6, 7, 26, 29, 30], [7, 11, 17, 18, 19, 34],
+    [2, 11, 15, 21, 29, 30], [4, 10, 12, 30, 31, 34], [5, 8, 15, 26, 34, 35],
+    [7, 8, 13, 16, 21, 28], [3, 14, 18, 27, 30, 32], [3, 4, 18, 20, 28, 35],
+    [5, 9, 11, 29, 33, 36], [4, 13, 16, 23, 33, 36], [1, 10, 15, 18, 20, 22],
+    [6, 9, 13, 20, 22, 32], [1, 4, 5, 11, 19, 24], [4, 15, 16, 19, 22, 28],
+    [8, 17, 20, 23, 25, 37], [6, 12, 15, 18, 31, 35], [1, 12, 22, 23, 32, 35],
+    [2, 6, 10, 12, 17, 19], [1, 2, 7, 23, 24, 29], [3, 10, 24, 26, 27, 34],
+    [6, 8, 14, 16, 25, 36],
   ]);
 
   function isValidDraw(draw) {
@@ -1833,6 +1847,275 @@
     return stable.concat(remaining).slice(0, count).map(record => record.number);
   }
 
+  function getSubsetKeys(numbers, size) {
+    const values = (numbers || []).slice().sort((first, second) => first - second);
+    if (!Number.isInteger(size) || size < 1 || size > values.length) return [];
+    const keys = [];
+    forEachNumberSelection(values, size, selection => {
+      keys.push(selection.join('-'));
+    });
+    return keys;
+  }
+
+  function getCoverageRowNumbers(row) {
+    return (Array.isArray(row) ? row : (row && row.numbers) || []).slice();
+  }
+
+  function getCoverageGroupMetrics(rows) {
+    const normalizedRows = (rows || []).map(getCoverageRowNumbers);
+    const combinationKeys = new Set();
+    const pairKeys = new Set();
+    const tripleKeys = new Set();
+    const numberExposure = Object.fromEntries(
+      Array.from({ length: 37 }, (_, index) => [index + 1, 0]),
+    );
+    let maximumOverlap = 0;
+
+    normalizedRows.forEach(numbers => {
+      combinationKeys.add(getCombinationKey(numbers));
+      getSubsetKeys(numbers, 2).forEach(key => pairKeys.add(key));
+      getSubsetKeys(numbers, 3).forEach(key => tripleKeys.add(key));
+      numbers.forEach(number => {
+        if (Object.prototype.hasOwnProperty.call(numberExposure, number)) {
+          numberExposure[number] += 1;
+        }
+      });
+    });
+    for (let first = 0; first < normalizedRows.length; first += 1) {
+      for (let second = first + 1; second < normalizedRows.length; second += 1) {
+        maximumOverlap = Math.max(
+          maximumOverlap,
+          getOverlap(normalizedRows[first], normalizedRows[second]),
+        );
+      }
+    }
+    const exposureValues = Object.values(numberExposure);
+    const exposureSpread = exposureValues.length
+      ? Math.max(...exposureValues) - Math.min(...exposureValues)
+      : 0;
+    return {
+      rowCount: normalizedRows.length,
+      uniqueCombinationCount: combinationKeys.size,
+      uniquePairCount: pairKeys.size,
+      uniqueTripleCount: tripleKeys.size,
+      maximumOverlap,
+      numberExposure,
+      exposureSpread,
+    };
+  }
+
+  function createCoverageError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function normalizeCoverageSupport(support) {
+    const records = support && Array.isArray(support.numbers) ? support.numbers : [];
+    const normalized = records.map(record => ({
+      number: Number(record && record.number),
+      stableSupport: Number(record && record.stableSupport),
+    }));
+    const valid = normalized.length === 37
+      && new Set(normalized.map(record => record.number)).size === 37
+      && normalized.every(record => (
+        Number.isInteger(record.number)
+        && record.number >= 1
+        && record.number <= 37
+        && Number.isFinite(record.stableSupport)
+      ));
+    if (!valid) {
+      throw createCoverageError(
+        'COVERAGE_INVALID_SUPPORT',
+        'Coverage generation requires support for all 37 regular numbers',
+      );
+    }
+    return normalized.sort((first, second) => (
+      second.stableSupport - first.stableSupport || first.number - second.number
+    ));
+  }
+
+  function getCoveragePortfolioKey(rows) {
+    return rows.map(getCombinationKey).sort().join('|');
+  }
+
+  function getCoverageObjective(rows, stableSupportByNumber) {
+    const metrics = getCoverageGroupMetrics(rows);
+    const exposureFiveSupport = Object.entries(metrics.numberExposure)
+      .filter(([, exposure]) => exposure === 5)
+      .reduce((sum, [number]) => sum + stableSupportByNumber[number], 0);
+    return {
+      metrics,
+      exposureFiveSupport,
+      portfolioKey: getCoveragePortfolioKey(rows),
+    };
+  }
+
+  function isCoverageObjectiveBetter(candidate, current) {
+    if (candidate.metrics.uniqueTripleCount !== current.metrics.uniqueTripleCount) {
+      return candidate.metrics.uniqueTripleCount > current.metrics.uniqueTripleCount;
+    }
+    if (candidate.metrics.uniquePairCount !== current.metrics.uniquePairCount) {
+      return candidate.metrics.uniquePairCount > current.metrics.uniquePairCount;
+    }
+    if (candidate.exposureFiveSupport !== current.exposureFiveSupport) {
+      return candidate.exposureFiveSupport > current.exposureFiveSupport;
+    }
+    return candidate.portfolioKey < current.portfolioKey;
+  }
+
+  function isValidCoveragePortfolio(rows) {
+    if (rows.length !== 28 || rows.some(numbers => (
+      numbers.length !== 6
+      || new Set(numbers).size !== 6
+      || numbers.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+    ))) return false;
+    const metrics = getCoverageGroupMetrics(rows);
+    return metrics.uniqueCombinationCount === 28
+      && metrics.uniqueTripleCount === 28 * 20
+      && metrics.maximumOverlap <= 2
+      && Object.values(metrics.numberExposure).every(exposure => exposure === 4 || exposure === 5);
+  }
+
+  function searchCoveragePortfolio(rows, stableSupportByNumber, seed, searchIterations) {
+    const random = createMulberry32(fnv1aSeed(seed));
+    let currentRows = rows.map(numbers => numbers.slice());
+    let currentObjective = getCoverageObjective(currentRows, stableSupportByNumber);
+    for (let iteration = 0; iteration < searchIterations; iteration += 1) {
+      const firstRowIndex = Math.floor(random() * currentRows.length);
+      const secondOffset = Math.floor(random() * (currentRows.length - 1));
+      const secondRowIndex = secondOffset >= firstRowIndex ? secondOffset + 1 : secondOffset;
+      const firstPosition = Math.floor(random() * 6);
+      const secondPosition = Math.floor(random() * 6);
+      const firstNumber = currentRows[firstRowIndex][firstPosition];
+      const secondNumber = currentRows[secondRowIndex][secondPosition];
+      if (firstNumber === secondNumber
+        || currentRows[firstRowIndex].includes(secondNumber)
+        || currentRows[secondRowIndex].includes(firstNumber)) continue;
+
+      const candidateRows = currentRows.map(numbers => numbers.slice());
+      candidateRows[firstRowIndex][firstPosition] = secondNumber;
+      candidateRows[secondRowIndex][secondPosition] = firstNumber;
+      candidateRows[firstRowIndex].sort((first, second) => first - second);
+      candidateRows[secondRowIndex].sort((first, second) => first - second);
+      const rowKeys = candidateRows.map(getCombinationKey);
+      if (new Set(rowKeys).size !== candidateRows.length) continue;
+      const candidateObjective = getCoverageObjective(candidateRows, stableSupportByNumber);
+      if (candidateObjective.metrics.maximumOverlap > 2) continue;
+      if (isCoverageObjectiveBetter(candidateObjective, currentObjective)) {
+        currentRows = candidateRows;
+        currentObjective = candidateObjective;
+      }
+    }
+    return currentRows;
+  }
+
+  function getCoverageExposureVariance(rows) {
+    const exposures = Object.values(getCoverageGroupMetrics(rows).numberExposure);
+    const mean = exposures.reduce((sum, exposure) => sum + exposure, 0) / exposures.length;
+    return exposures.reduce((sum, exposure) => sum + ((exposure - mean) ** 2), 0)
+      / exposures.length;
+  }
+
+  function getCoveragePartitionKey(firstForm, secondForm) {
+    return `${firstForm.map(getCombinationKey).sort().join('|')}::${secondForm
+      .map(getCombinationKey).sort().join('|')}`;
+  }
+
+  function partitionCoverageRows(rows) {
+    const sortedRows = rows.map(numbers => numbers.slice()).sort((first, second) => {
+      const firstKey = getCombinationKey(first);
+      const secondKey = getCombinationKey(second);
+      return firstKey < secondKey ? -1 : (firstKey > secondKey ? 1 : 0);
+    });
+    let firstForm = sortedRows.filter((row, index) => index % 2 === 0);
+    let secondForm = sortedRows.filter((row, index) => index % 2 === 1);
+    let currentVariance = getCoverageExposureVariance(firstForm)
+      + getCoverageExposureVariance(secondForm);
+
+    while (true) {
+      let bestSwap = null;
+      for (let firstIndex = 0; firstIndex < firstForm.length; firstIndex += 1) {
+        for (let secondIndex = 0; secondIndex < secondForm.length; secondIndex += 1) {
+          const candidateFirst = firstForm.slice();
+          const candidateSecond = secondForm.slice();
+          candidateFirst[firstIndex] = secondForm[secondIndex];
+          candidateSecond[secondIndex] = firstForm[firstIndex];
+          const variance = getCoverageExposureVariance(candidateFirst)
+            + getCoverageExposureVariance(candidateSecond);
+          if (variance >= currentVariance) continue;
+          const key = getCoveragePartitionKey(candidateFirst, candidateSecond);
+          if (!bestSwap
+            || variance < bestSwap.variance
+            || (variance === bestSwap.variance && key < bestSwap.key)) {
+            bestSwap = { firstForm: candidateFirst, secondForm: candidateSecond, variance, key };
+          }
+        }
+      }
+      if (!bestSwap) break;
+      firstForm = bestSwap.firstForm;
+      secondForm = bestSwap.secondForm;
+      currentVariance = bestSwap.variance;
+    }
+    const sortRows = form => form.slice().sort((first, second) => {
+      const firstKey = getCombinationKey(first);
+      const secondKey = getCombinationKey(second);
+      return firstKey < secondKey ? -1 : (firstKey > secondKey ? 1 : 0);
+    });
+    return [sortRows(firstForm), sortRows(secondForm)];
+  }
+
+  function buildCoveragePair(support, options = {}) {
+    const rankedSupport = normalizeCoverageSupport(support);
+    const settings = options && typeof options === 'object' ? options : {};
+    if (typeof settings.seed !== 'string') {
+      throw createCoverageError('COVERAGE_INVALID_SEED', 'Coverage generation requires a seed string');
+    }
+    const searchIterations = settings.searchIterations == null ? 1000 : settings.searchIterations;
+    if (!Number.isInteger(searchIterations) || searchIterations < 0) {
+      throw createCoverageError(
+        'COVERAGE_INVALID_SEARCH_ITERATIONS',
+        'Coverage search iterations must be a non-negative integer',
+      );
+    }
+    const positionNumbers = rankedSupport.map(record => record.number);
+    const stableSupportByNumber = Object.fromEntries(
+      rankedSupport.map(record => [record.number, record.stableSupport]),
+    );
+    const templateRows = COVERAGE_TEMPLATE.map(templateRow => templateRow
+      .map(position => positionNumbers[position - 1])
+      .sort((first, second) => first - second));
+    if (!isValidCoveragePortfolio(templateRows)) {
+      throw createCoverageError('COVERAGE_TEMPLATE_INVALID', 'Coverage template failed hard constraints');
+    }
+    const searchedRows = searchCoveragePortfolio(
+      templateRows,
+      stableSupportByNumber,
+      settings.seed,
+      searchIterations,
+    );
+    if (!isValidCoveragePortfolio(searchedRows)) {
+      throw createCoverageError('COVERAGE_SEARCH_FAILED', 'Coverage search failed hard constraints');
+    }
+    const [firstRows, secondRows] = partitionCoverageRows(searchedRows);
+    const annotate = form => form.map((numbers, index) => ({
+      comboNum: index + 1,
+      strategy: 'כיסוי 3+',
+      numbers: numbers.slice(),
+    }));
+    const forms = {
+      coverage1: annotate(firstRows),
+      coverage2: annotate(secondRows),
+    };
+    const finalRows = [...forms.coverage1, ...forms.coverage2];
+    return {
+      forms,
+      rows: finalRows,
+      metrics: getCoverageGroupMetrics(finalRows),
+      seed: settings.seed,
+    };
+  }
+
   function createEmptyFormAccumulator() {
     return {
       drawScoreTotal: 0,
@@ -2010,6 +2293,7 @@
     ALGORITHM_VERSION,
     CONSTRAINT_VERSION,
     FOUR_PIN_PORTFOLIO_VERSION,
+    PORTFOLIO_CONSTRAINT_VERSION,
     BINARY_METRIC_VERSION,
     CONFIDENCE_METHOD_VERSION,
     DEFAULT_BOOTSTRAP_SAMPLES,
@@ -2018,6 +2302,7 @@
     FORM1_OPTIONS,
     FORM2_OPTIONS,
     FORM2_STRATEGY_LABELS,
+    COVERAGE_FORM_IDS,
     isValidDraw,
     toChronological,
     buildAnalysisSnapshot,
@@ -2047,6 +2332,9 @@
     rankPortfolioIdentities,
     buildStablePortfolioSupport,
     selectDepthPool,
+    getSubsetKeys,
+    getCoverageGroupMetrics,
+    buildCoveragePair,
     selectPerformanceForm,
     selectDiversityForm,
     selectOptimizedForms,

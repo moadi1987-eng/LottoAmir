@@ -89,3 +89,61 @@ assert.throws(
   () => core.selectDepthPool(support, 5),
   error => error && error.code === 'INVALID_DEPTH_POOL_SIZE',
 );
+
+const coverage = core.buildCoveragePair(support, {
+  seed: 'coverage-fixture',
+  searchIterations: 500,
+});
+const repeatedCoverage = core.buildCoveragePair(support, {
+  seed: 'coverage-fixture',
+  searchIterations: 500,
+});
+assert.deepStrictEqual(coverage, repeatedCoverage);
+assert.strictEqual(core.PORTFOLIO_CONSTRAINT_VERSION, 'four-pin-constraints-v1');
+assert.deepStrictEqual(core.COVERAGE_FORM_IDS, ['coverage1', 'coverage2']);
+assert.strictEqual(coverage.seed, 'coverage-fixture');
+assert.strictEqual(coverage.forms.coverage1.length, 14);
+assert.strictEqual(coverage.forms.coverage2.length, 14);
+assert.ok(Object.values(coverage.forms).every(form => form.every((row, index) => (
+  row.comboNum === index + 1 && row.strategy === 'כיסוי 3+'
+))));
+
+const coverageRows = [...coverage.forms.coverage1, ...coverage.forms.coverage2];
+assert.ok(coverageRows.every(row => (
+  row.numbers.length === 6
+  && new Set(row.numbers).size === 6
+  && row.numbers.every((number, index, numbers) => (
+    Number.isInteger(number)
+    && number >= 1
+    && number <= 37
+    && (index === 0 || numbers[index - 1] < number)
+  ))
+)));
+assert.strictEqual(new Set(coverageRows.map(row => row.numbers.join('-'))).size, 28);
+const coverageMetrics = core.getCoverageGroupMetrics(coverageRows);
+assert.deepStrictEqual(coverage.metrics, coverageMetrics);
+assert.strictEqual(coverageMetrics.maximumOverlap, 2);
+assert.strictEqual(coverageMetrics.uniqueTripleCount, 28 * 20);
+assert.ok(Object.values(coverageMetrics.numberExposure).every(count => count === 4 || count === 5));
+
+assert.deepStrictEqual(
+  core.getSubsetKeys([1, 2, 3, 4, 5, 6], 3),
+  [
+    '1-2-3', '1-2-4', '1-2-5', '1-2-6', '1-3-4',
+    '1-3-5', '1-3-6', '1-4-5', '1-4-6', '1-5-6',
+    '2-3-4', '2-3-5', '2-3-6', '2-4-5', '2-4-6',
+    '2-5-6', '3-4-5', '3-4-6', '3-5-6', '4-5-6',
+  ],
+);
+assert.throws(
+  () => core.buildCoveragePair(null, { seed: 'coverage-fixture' }),
+  error => error && error.code === 'COVERAGE_INVALID_SUPPORT',
+);
+assert.throws(
+  () => core.buildCoveragePair(support, { seed: 'coverage-fixture', searchIterations: -1 }),
+  error => error && error.code === 'COVERAGE_INVALID_SEARCH_ITERATIONS',
+);
+assert.throws(
+  () => core.buildCoveragePair(support, null),
+  error => error && error.code === 'COVERAGE_INVALID_SEED',
+);
