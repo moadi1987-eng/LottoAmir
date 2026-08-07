@@ -755,6 +755,76 @@ async function verifyPortfolioResponsive(browser, baseUrl, viewport, screenshotN
   await session.context.close();
 }
 
+async function verifyIncompatiblePortfolioCleanup(browser, baseUrl) {
+  const session = await openAnalyzer(browser, baseUrl);
+  const observed = await session.page.evaluate(result => {
+    currentData = [{
+      drawNumber: 5002,
+      date: '07/08/2026',
+      numbers: [1, 2, 3, 4, 5, 6],
+      strong: 1,
+    }];
+    selectedData = currentData;
+    lastAnalysis = { loaded: true };
+    currentBacktestResult = null;
+    hydrateFourPinPortfolio(result);
+    renderFourPinPortfolio(result);
+    const banner = document.querySelector('.portfolio-validation-banner');
+    const before = {
+      cards: document.querySelectorAll('.portfolio-form-card').length,
+      rows: document.querySelectorAll('[data-portfolio-row]').length,
+      enabledActions: document.querySelectorAll('.portfolio-pin-button:not(:disabled)').length,
+      bannerRole: banner && banner.getAttribute('role'),
+      bannerLive: banner && banner.getAttribute('aria-live'),
+    };
+    let terminationCount = 0;
+    currentBacktestRunId = 'browser-incompatible-run';
+    currentBacktestWorker = { terminate() { terminationCount += 1; } };
+    setBacktestRunning(true);
+    handleBacktestWorkerMessage({ data: {
+      type: 'complete',
+      runId: 'browser-incompatible-run',
+      result: {},
+    } });
+    return {
+      before,
+      after: {
+        portfolioCleared: currentFourPinPortfolio === null,
+        cards: document.querySelectorAll('.portfolio-form-card').length,
+        rows: document.querySelectorAll('[data-portfolio-row]').length,
+        actions: document.querySelectorAll('.portfolio-pin-button').length,
+        safeEmpty: document.getElementById('fourPinPortfolioPanel').textContent
+          .includes('אין עדיין תוצאת תיק ארבעה טפסים תואמת'),
+        workerCleared: currentBacktestWorker === null,
+        runCleared: currentBacktestRunId === null,
+        runningUiCleared: document.getElementById('backtestProgress').hidden,
+        terminationCount,
+      },
+    };
+  }, fourPinBacktestResult);
+  assert.deepStrictEqual(observed, {
+    before: {
+      cards: 4,
+      rows: 56,
+      enabledActions: 4,
+      bannerRole: 'status',
+      bannerLive: 'polite',
+    },
+    after: {
+      portfolioCleared: true,
+      cards: 0,
+      rows: 0,
+      actions: 0,
+      safeEmpty: true,
+      workerCleared: true,
+      runCleared: true,
+      runningUiCleared: true,
+      terminationCount: 1,
+    },
+  });
+  await session.context.close();
+}
+
 (async function verifyPinnedForms() {
   const server = createServer();
   const launchOptions = { headless: true };
@@ -1076,6 +1146,7 @@ async function verifyPortfolioResponsive(browser, baseUrl, viewport, screenshotN
       { width: 390, height: 844 },
       'pin-slots-mobile.png',
     );
+    await verifyIncompatiblePortfolioCleanup(browser, baseUrl);
     await verifyPortfolioResponsive(
       browser,
       baseUrl,

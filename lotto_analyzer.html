@@ -1569,10 +1569,10 @@
             improved: { label: 'משופר' }
         };
         const PORTFOLIO_PIN_SLOT_MAP = Object.freeze({
-            coverage1: { source: 'main', mode: 'baseline', label: 'PIN 1 - כיסוי 3+' },
-            coverage2: { source: 'main', mode: 'improved', label: 'PIN 2 - כיסוי 3+' },
-            depth1: { source: 'form2', mode: 'baseline', label: 'PIN 3 - עומק 4+' },
-            depth2: { source: 'form2', mode: 'improved', label: 'PIN 4 - עומק 4+' }
+            coverage1: Object.freeze({ source: 'main', mode: 'baseline', label: 'PIN 1 - כיסוי 3+' }),
+            coverage2: Object.freeze({ source: 'main', mode: 'improved', label: 'PIN 2 - כיסוי 3+' }),
+            depth1: Object.freeze({ source: 'form2', mode: 'baseline', label: 'PIN 3 - עומק 4+' }),
+            depth2: Object.freeze({ source: 'form2', mode: 'improved', label: 'PIN 4 - עומק 4+' })
         });
 
         function isPlainPrizeObject(value) {
@@ -2269,10 +2269,21 @@
 
         function getPortfolioForm(role) {
             const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            if (!slot
+                || !currentData
+                || currentData.length === 0
+                || !lastAnalysis
+                || !currentFourPinPortfolio
+                || currentFourPinPortfolio.validated !== true
+                || !isCompatibleFourPinPortfolioResult(currentFourPinPortfolio)) {
+                return null;
+            }
             const forms = currentFourPinPortfolio
                 && currentFourPinPortfolio.current
                 && currentFourPinPortfolio.current.forms;
-            return slot && forms && Array.isArray(forms[role]) ? forms[role] : null;
+            return forms && Array.isArray(forms[role]) && forms[role].length === 14
+                ? forms[role]
+                : null;
         }
 
         function canPinPortfolioForm(role) {
@@ -3812,7 +3823,7 @@
                 : '<div class="info-note">המדיניות לא אושרה: ערכי השורות וכפתורי ה-PIN מוסתרים.</div>';
             panel.innerHTML = `
                 <div class="portfolio-summary">
-                    <div class="portfolio-validation-banner" data-validated="${portfolio.validated}">
+                    <div class="portfolio-validation-banner" data-validated="${portfolio.validated}" role="status" aria-live="polite" aria-atomic="true">
                         <strong>${portfolio.validated ? '✅ התיק אושר' : '⚠️ התיק לא אושר'}</strong>
                         <span>מספר הגרלות holdout: ${portfolio.sampleCount}</span>
                     </div>
@@ -3929,6 +3940,7 @@
             const effectiveRows = getEffectiveBacktestRows();
             if (!isCompatibleBacktestResult(message.result, effectiveRows)) {
                 hydrateFourPinPortfolio(null);
+                renderFourPinPortfolio(null);
                 finishBacktestFailure('תוצאות הבדיקה אינן תואמות לקובץ הטעון.');
                 return;
             }

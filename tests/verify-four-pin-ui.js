@@ -155,6 +155,21 @@ assert.deepStrictEqual(
   'Portfolio roles must map to the exact four existing PIN V2 slots',
 );
 assert.strictEqual(evaluate('Object.isFrozen(PORTFOLIO_PIN_SLOT_MAP)'), true);
+assert.strictEqual(
+  evaluate('Object.values(PORTFOLIO_PIN_SLOT_MAP).every(Object.isFrozen)'),
+  true,
+  'Every portfolio PIN slot descriptor must be immutable',
+);
+const frozenSlotMapBeforeMutation = evaluate('JSON.stringify(PORTFOLIO_PIN_SLOT_MAP)');
+evaluate(`
+  PORTFOLIO_PIN_SLOT_MAP.coverage1.source = 'form2';
+  PORTFOLIO_PIN_SLOT_MAP.depth2.label = 'mutated';
+`);
+assert.strictEqual(
+  evaluate('JSON.stringify(PORTFOLIO_PIN_SLOT_MAP)'),
+  frozenSlotMapBeforeMutation,
+  'Runtime code must not be able to mutate any portfolio PIN mapping entry',
+);
 
 const validatedResult = clone(result);
 validatedResult.portfolio.validated = true;
@@ -177,18 +192,50 @@ function setPortfolioPinEligibility(portfolioResult = validatedResult) {
 setPortfolioPinEligibility();
 for (const role of Object.keys(expectedSlotMap)) {
   context.__role = role;
+  assert.strictEqual(evaluate('getPortfolioForm(__role).length'), 14, `${role} must expose 14 authorized rows`);
   assert.strictEqual(evaluate('canPinPortfolioForm(__role)'), true, `${role} must be pinnable`);
 }
+assert.strictEqual(evaluate("getPortfolioForm('unknown')"), null);
 assert.strictEqual(evaluate("canPinPortfolioForm('unknown')"), false);
 
 const unvalidatedResult = clone(validatedResult);
 unvalidatedResult.portfolio.validated = false;
 unvalidatedResult.portfolio.reasons = ['portfolio-three-plus-regression'];
+context.__unvalidatedResult = unvalidatedResult;
 setPortfolioPinEligibility(unvalidatedResult);
 for (const role of Object.keys(expectedSlotMap)) {
   context.__role = role;
   assert.strictEqual(evaluate('canPinPortfolioForm(__role)'), false, `${role} must fail closed`);
 }
+
+function expectPortfolioAccessDenied(name, setupExpression, roles = Object.keys(expectedSlotMap)) {
+  setPortfolioPinEligibility();
+  evaluate(`
+    pinnedForms = createEmptyPinnedForms();
+    ${setupExpression}
+    __deniedPinStateBefore = JSON.stringify(pinnedForms);
+  `);
+  for (const role of roles) {
+    context.__role = role;
+    assert.strictEqual(evaluate('getPortfolioForm(__role)'), null, `${name}: getter must fail closed`);
+    assert.strictEqual(evaluate('canPinPortfolioForm(__role)'), false, `${name}: canPin must fail closed`);
+    assert.strictEqual(evaluate('pinPortfolioForm(__role)'), false, `${name}: PIN must be a no-op`);
+    assert.strictEqual(
+      evaluate('JSON.stringify(pinnedForms)'),
+      evaluate('__deniedPinStateBefore'),
+      `${name}: PIN state must remain byte-equivalent`,
+    );
+  }
+}
+
+expectPortfolioAccessDenied('no loaded draw data', 'currentData = [];');
+expectPortfolioAccessDenied('no loaded analysis', 'lastAnalysis = null;');
+expectPortfolioAccessDenied('unvalidated portfolio', 'hydrateFourPinPortfolio(__unvalidatedResult);');
+expectPortfolioAccessDenied(
+  'incompatible portfolio',
+  'currentFourPinPortfolio.current.forms.coverage1.pop();',
+);
+expectPortfolioAccessDenied('unknown role', '', ['unknown']);
 
 setPortfolioPinEligibility();
 evaluate('lastAnalysis = null');
@@ -366,6 +413,12 @@ context.__renderResult.portfolio.comparisons.portfolio3Plus.difference = 0.01234
 context.__renderResult.portfolio.diagnostics.portfolio3PlusStrong.difference = -0.004;
 evaluate('renderFourPinPortfolio(__renderResult)');
 const approvedPortfolioHtml = elements.get('fourPinPortfolioPanel').innerHTML;
+assert.ok(
+  /class="portfolio-validation-banner"[^>]*role="status"[^>]*aria-live="polite"/.test(
+    approvedPortfolioHtml,
+  ),
+  'Approved portfolio validation status must be announced politely',
+);
 assert.strictEqual((approvedPortfolioHtml.match(/class="portfolio-form-card"/g) || []).length, 4);
 assert.strictEqual((approvedPortfolioHtml.match(/data-portfolio-row=/g) || []).length, 56);
 for (const [role] of Object.entries(expectedSlotMap)) {
@@ -393,6 +446,12 @@ context.__rejectedRenderResult.portfolio.validated = false;
 context.__rejectedRenderResult.portfolio.reasons = ['portfolio-three-plus-regression'];
 evaluate('renderFourPinPortfolio(__rejectedRenderResult)');
 const rejectedPortfolioHtml = elements.get('fourPinPortfolioPanel').innerHTML;
+assert.ok(
+  /class="portfolio-validation-banner"[^>]*role="status"[^>]*aria-live="polite"/.test(
+    rejectedPortfolioHtml,
+  ),
+  'Rejected portfolio validation status must be announced politely',
+);
 assert.ok(rejectedPortfolioHtml.includes('portfolio-three-plus-regression'));
 assert.ok(rejectedPortfolioHtml.includes('לא אושר'));
 assert.ok(!rejectedPortfolioHtml.includes('class="portfolio-form-card"'));
@@ -497,14 +556,19 @@ let incompatibleCompletionThrew = null;
 try {
   evaluate(`
     currentBacktestResult = null;
+    currentData = __rows;
     selectedData = __rows;
+    lastAnalysis = { loaded: true };
+    hydrateFourPinPortfolio(__validatedResult);
+    renderFourPinPortfolio(__validatedResult);
+    __incompatiblePanelBefore = document.getElementById('fourPinPortfolioPanel').innerHTML;
     currentBacktestRunId = 'malformed-complete-run';
     currentBacktestWorker = __reviewWorker;
     setBacktestRunning(true);
     handleBacktestWorkerMessage({ data: {
       type: 'complete',
       runId: 'malformed-complete-run',
-      result: __malformedCoverageResult
+      result: {}
     } });
   `);
 } catch (error) {
@@ -512,7 +576,16 @@ try {
 }
 reviewRegressionObservations.incompatibleCompletion = {
   threw: incompatibleCompletionThrew,
+  beforeCards: (evaluate('__incompatiblePanelBefore').match(/class="portfolio-form-card"/g) || []).length,
+  beforeRows: (evaluate('__incompatiblePanelBefore').match(/data-portfolio-row=/g) || []).length,
+  beforeEnabledActions: (evaluate('__incompatiblePanelBefore').match(/class="pin-form-btn portfolio-pin-button" onclick=/g) || []).length,
+  beforeDisabledActions: (evaluate('__incompatiblePanelBefore').match(/portfolio-pin-button[^>]*disabled/g) || []).length,
   portfolioCleared: evaluate('currentFourPinPortfolio === null'),
+  panelCardsCleared: (elements.get('fourPinPortfolioPanel').innerHTML.match(/class="portfolio-form-card"/g) || []).length,
+  panelRowsCleared: (elements.get('fourPinPortfolioPanel').innerHTML.match(/data-portfolio-row=/g) || []).length,
+  panelActionsCleared: (elements.get('fourPinPortfolioPanel').innerHTML.match(/onclick="pinPortfolioForm\(/g) || []).length,
+  panelIsSafeEmpty: elements.get('fourPinPortfolioPanel').innerHTML
+    .includes('אין עדיין תוצאת תיק ארבעה טפסים תואמת'),
   workerCleared: evaluate('currentBacktestWorker === null'),
   runCleared: evaluate('currentBacktestRunId === null'),
   runningUiCleared: elements.get('backtestProgress').hidden,
@@ -534,7 +607,15 @@ assert.deepStrictEqual(reviewRegressionObservations, {
   sparsePolicyBucketAverages: false,
   incompatibleCompletion: {
     threw: null,
+    beforeCards: 4,
+    beforeRows: 56,
+    beforeEnabledActions: 4,
+    beforeDisabledActions: 0,
     portfolioCleared: true,
+    panelCardsCleared: 0,
+    panelRowsCleared: 0,
+    panelActionsCleared: 0,
+    panelIsSafeEmpty: true,
     workerCleared: true,
     runCleared: true,
     runningUiCleared: true,
