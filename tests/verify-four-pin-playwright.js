@@ -17,8 +17,53 @@ const compatibleResult = LottoStrategyCore.runWalkForwardBacktest(buildSynthetic
   depthSearchIterations: 50,
   bootstrapSamples: 100,
 });
-compatibleResult.portfolio.validated = true;
-compatibleResult.portfolio.reasons = [];
+const rejectedResult = JSON.parse(JSON.stringify(compatibleResult));
+function createCoherentComparison(paired) {
+  const total = paired.both + paired.newOnly + paired.legacyOnly + paired.neither;
+  const newWins = paired.both + paired.newOnly;
+  const legacyWins = paired.both + paired.legacyOnly;
+  const newRate = newWins / total;
+  const legacyRate = legacyWins / total;
+  return {
+    total,
+    newWins,
+    legacyWins,
+    newRate,
+    legacyRate,
+    difference: newRate - legacyRate,
+    newInterval: { low: 0, high: 1 },
+    legacyInterval: { low: 0, high: 1 },
+    differenceInterval: { low: -1, high: 1 },
+    paired: { ...paired },
+  };
+}
+const compatiblePortfolio = compatibleResult.portfolio;
+compatiblePortfolio.sampleCount = 10;
+compatiblePortfolio.selectionFailures = 0;
+compatiblePortfolio.comparisons = {
+  portfolio3Plus: createCoherentComparison({ both: 4, newOnly: 3, legacyOnly: 1, neither: 2 }),
+  coverage3Plus: createCoherentComparison({ both: 4, newOnly: 2, legacyOnly: 2, neither: 2 }),
+  depth3Plus: createCoherentComparison({ both: 5, newOnly: 1, legacyOnly: 1, neither: 3 }),
+  depth4Plus: createCoherentComparison({ both: 2, newOnly: 3, legacyOnly: 1, neither: 4 }),
+};
+compatiblePortfolio.bucketSampleCounts = [4, 3, 3];
+compatiblePortfolio.bucketDifferences = [0.5, 1 / 3, -1 / 3];
+compatiblePortfolio.diagnostics = {
+  portfolio3PlusStrong: createCoherentComparison({
+    both: 2, newOnly: 1, legacyOnly: 2, neither: 5,
+  }),
+  selectionFailureCodes: [],
+  currentFailureCode: null,
+};
+const compatibleGate = LottoStrategyCore.validateFourPinPortfolioResult({
+  selectionFailures: compatiblePortfolio.selectionFailures,
+  comparisons: compatiblePortfolio.comparisons,
+  bucketDifferences: compatiblePortfolio.bucketDifferences,
+  bucketSampleCounts: compatiblePortfolio.bucketSampleCounts,
+});
+assert.deepStrictEqual(compatibleGate, { validated: true, reasons: [] });
+compatiblePortfolio.validated = compatibleGate.validated;
+compatiblePortfolio.reasons = compatibleGate.reasons.slice();
 
 function contentType(filePath) {
   return ({
@@ -260,9 +305,7 @@ async function verifyViewport(browser, baseUrl, viewport, screenshotName) {
   assert.ok((await frame.locator('#pinnedMainStatus').textContent()).includes(customLabels.pin1));
   assert.ok((await frame.locator('#pinnedForm2Status').textContent()).includes(customLabels.pin4));
 
-  const unvalidatedResult = JSON.parse(JSON.stringify(compatibleResult));
-  unvalidatedResult.portfolio.validated = false;
-  unvalidatedResult.portfolio.reasons = ['portfolio-three-plus-regression'];
+  const unvalidatedResult = JSON.parse(JSON.stringify(rejectedResult));
   await frame.evaluate(() => {
     document.getElementById('backtestWorkspace').hidden = false;
   });

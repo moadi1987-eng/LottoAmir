@@ -53,6 +53,71 @@ assert.deepStrictEqual(
   ranked.filter(record => record.window === 100).map(record => record.rankWeight),
   [1, 0.5],
 );
+
+function aggregateCalibrationFixture(bucketPoints, bucket3PlusWins) {
+  return core.aggregateIdentityMetrics({
+    totalRegularPoints: 60,
+    totalRegularMatches: 15,
+    sampleCount: 6,
+    hitCounts: [0, 0, 3, 3, 0, 0, 0],
+    bucketPoints: bucketPoints.slice(),
+    bucketCounts: [2, 2, 2],
+    bucket3PlusWins: bucket3PlusWins.slice(),
+    bucket3PlusCounts: [2, 2, 2],
+  });
+}
+
+const binaryStableCalibration = aggregateCalibrationFixture([0, 0, 60], [1, 1, 1]);
+const pointStableCalibration = aggregateCalibrationFixture([20, 20, 20], [2, 1, 0]);
+assert.deepStrictEqual(binaryStableCalibration.bucket3PlusWins, [1, 1, 1]);
+assert.deepStrictEqual(binaryStableCalibration.bucket3PlusCounts, [2, 2, 2]);
+assert.deepStrictEqual(binaryStableCalibration.bucket3PlusRates, [0.5, 0.5, 0.5]);
+assert.strictEqual(binaryStableCalibration.binary3PlusStability, 1);
+assert.deepStrictEqual(pointStableCalibration.bucket3PlusRates, [1, 0.5, 0]);
+assert.strictEqual(pointStableCalibration.binary3PlusStability, 0);
+assert.strictEqual(binaryStableCalibration.rate3Plus, pointStableCalibration.rate3Plus);
+assert.ok(
+  binaryStableCalibration.stability < pointStableCalibration.stability,
+  'The fixture must make legacy point stability prefer the wrong identity',
+);
+const binaryTieBreakInputs = [
+  {
+    identity: 'main:2:100',
+    source: 'main',
+    strategyId: 2,
+    window: 100,
+    calibration: binaryStableCalibration,
+    holdout: { rate3Plus: 0, binary3PlusStability: 0 },
+  },
+  {
+    identity: 'main:1:100',
+    source: 'main',
+    strategyId: 1,
+    window: 100,
+    calibration: pointStableCalibration,
+    holdout: { rate3Plus: 1, binary3PlusStability: 1 },
+  },
+];
+const binaryTieBreakRanking = core.rankPortfolioIdentities(binaryTieBreakInputs, [100]);
+assert.deepStrictEqual(
+  binaryTieBreakRanking.map(record => record.identity),
+  ['main:2:100', 'main:1:100'],
+  'Equal 3+ rates must use binary bucket stability before deterministic keys',
+);
+const mutatedHoldoutInputs = JSON.parse(JSON.stringify(binaryTieBreakInputs));
+mutatedHoldoutInputs[0].holdout = { rate3Plus: 1, binary3PlusStability: 1 };
+mutatedHoldoutInputs[1].holdout = { rate3Plus: 0, binary3PlusStability: 0 };
+assert.deepStrictEqual(
+  core.rankPortfolioIdentities(mutatedHoldoutInputs, [100]).map(record => record.identity),
+  ['main:2:100', 'main:1:100'],
+  'Portfolio support ranking must stay frozen to calibration metrics only',
+);
+
+assert.strictEqual(core.ALGORITHM_VERSION, 'lotto-backtest-v4');
+assert.strictEqual(core.FOUR_PIN_PORTFOLIO_VERSION, 'four-pin-portfolio-v2');
+assert.strictEqual(core.CONSTRAINT_VERSION, 'forms-v3');
+assert.strictEqual(core.PORTFOLIO_CONSTRAINT_VERSION, 'four-pin-constraints-v1');
+assert.strictEqual(core.BINARY_METRIC_VERSION, 'draw-win-3plus-v1');
 assert.strictEqual(support.numbers.length, 37);
 assert.strictEqual(support.strong.length, 7);
 assert.ok(support.byNumber[1].stableSupport > support.byNumber[3].stableSupport);
@@ -319,8 +384,8 @@ const portfolio = core.buildFourPinPortfolio(
 );
 assert.strictEqual(
   crypto.createHash('sha256').update(JSON.stringify(portfolio)).digest('hex'),
-  '2a4ddcc11896ce70f46e05ee510b7328273e1e12253d65854ca3fc21349ae0c4',
-  'Optimizations must preserve the complete deterministic portfolio fixture byte-for-byte',
+  '664e1df5b9e5a6d3d3c56b523effc1d0ff5f0a4363750512f1aa4a2ea439f498',
+  'The v4/v2 binary-stability ranking portfolio must remain byte-for-byte deterministic',
 );
 assert.deepStrictEqual(
   portfolio,
@@ -349,8 +414,8 @@ const strongFixtureForms = Object.fromEntries(formIds.map(formId => [
   formId,
   portfolio.forms[formId].map(row => ({ ...row, numbers: row.numbers.slice() })),
 ]));
-[strongFixtureForms.depth1[3], strongFixtureForms.depth1[6]] = [
-  strongFixtureForms.depth1[6],
+[strongFixtureForms.depth1[3], strongFixtureForms.depth1[5]] = [
+  strongFixtureForms.depth1[5],
   strongFixtureForms.depth1[3],
 ];
 const strongFixtureSupport = [

@@ -3,6 +3,31 @@
 const assert = require('assert');
 const core = require('../lotto-strategy-core.js');
 
+const goldenMulberry32Words = new Map([
+  [1, 1144304738],
+  [2, 1416247],
+  [3, 958946056],
+  [4917756, 3080388141],
+  [4917757, 2385370908],
+  [4917758, 1272314900],
+  [4917759, 3767445004],
+  [4917760, 3928256918],
+  [4917761, 1012473366],
+  [4917762, 100882671],
+]);
+const goldenRandom = core.createMulberry32ForTesting(0);
+for (let call = 1; call <= 4917762; call += 1) {
+  const outputWord = goldenRandom() * 4294967296;
+  if (goldenMulberry32Words.has(call)) {
+    assert.strictEqual(
+      outputWord,
+      goldenMulberry32Words.get(call),
+      `Mulberry32 seed-0 word must conform at call ${call}`,
+    );
+  }
+}
+assert.strictEqual(core.CONFIDENCE_METHOD_VERSION, 'wilson-paired-bootstrap-v2');
+
 const draw = { numbers: [1, 2, 3, 4, 5, 6], strong: 7 };
 const forms = {
   coverage1: [
@@ -53,6 +78,15 @@ assert.deepStrictEqual(comparison.paired, {
 assert.strictEqual(comparison.newRate, 0.5);
 assert.strictEqual(comparison.legacyRate, 0.5);
 assert.strictEqual(comparison.difference, 0);
+assert.deepStrictEqual(comparison.differenceInterval, { low: -0.75, high: 0.75 });
+for (const interval of [
+  comparison.newInterval,
+  comparison.legacyInterval,
+  comparison.differenceInterval,
+]) {
+  assert.ok(Number.isFinite(interval.low) && Number.isFinite(interval.high));
+  assert.ok(interval.low <= interval.high);
+}
 assert.deepStrictEqual(
   comparison,
   core.comparePairedBinaryOutcomes(
@@ -60,6 +94,22 @@ assert.deepStrictEqual(
     [true, false, true, false],
     { bootstrapSamples: 1000, seed: 'binary-fixture' },
   ),
+);
+
+assert.deepStrictEqual(
+  core.comparePairedBinaryOutcomes([], [], { bootstrapSamples: 10, seed: 'empty' }),
+  {
+    total: 0,
+    newWins: 0,
+    legacyWins: 0,
+    newRate: 0,
+    legacyRate: 0,
+    difference: 0,
+    newInterval: { low: 0, high: 0 },
+    legacyInterval: { low: 0, high: 0 },
+    differenceInterval: { low: 0, high: 0 },
+    paired: { both: 0, newOnly: 0, legacyOnly: 0, neither: 0 },
+  },
 );
 
 assert.throws(

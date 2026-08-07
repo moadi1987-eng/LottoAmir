@@ -5,12 +5,12 @@
 }(typeof self !== 'undefined' ? self : globalThis, function createLottoStrategyCore() {
   'use strict';
 
-  const ALGORITHM_VERSION = 'lotto-backtest-v3';
+  const ALGORITHM_VERSION = 'lotto-backtest-v4';
   const CONSTRAINT_VERSION = 'forms-v3';
-  const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v1';
+  const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v2';
   const PORTFOLIO_CONSTRAINT_VERSION = 'four-pin-constraints-v1';
   const BINARY_METRIC_VERSION = 'draw-win-3plus-v1';
-  const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v1';
+  const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v2';
   const DEFAULT_BOOTSTRAP_SAMPLES = 10000;
   const BACKTEST_WINDOWS = Object.freeze([100, 200, 500]);
   const REGULAR_POINTS = Object.freeze([0, 1, 3, 10, 35, 120, 400]);
@@ -1586,7 +1586,7 @@
   function createMulberry32(seed) {
     let state = seed >>> 0;
     return function next() {
-      state += 0x6D2B79F5;
+      state = (state + 0x6D2B79F5) >>> 0;
       let value = state;
       value = Math.imul(value ^ (value >>> 15), value | 1);
       value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
@@ -1929,6 +1929,8 @@
       hitCounts: Array(7).fill(0),
       bucketPoints: Array(3).fill(0),
       bucketCounts: Array(3).fill(0),
+      bucket3PlusWins: Array(3).fill(0),
+      bucket3PlusCounts: Array(3).fill(0),
     };
   }
 
@@ -1940,6 +1942,8 @@
     if (bucketIndex >= 0 && bucketIndex < 3) {
       accumulator.bucketPoints[bucketIndex] += lineScore.regularPoints;
       accumulator.bucketCounts[bucketIndex] += 1;
+      accumulator.bucket3PlusCounts[bucketIndex] += 1;
+      if (lineScore.regularMatches >= 3) accumulator.bucket3PlusWins[bucketIndex] += 1;
     }
   }
 
@@ -1955,6 +1959,27 @@
     const stability = averageBucketScore === 0
       ? 0
       : Math.max(0, Math.min(1, minimumBucket / averageBucketScore));
+    const bucket3PlusWins = Array.isArray(accumulator.bucket3PlusWins)
+      ? accumulator.bucket3PlusWins.slice(0, 3)
+      : [0, 0, 0];
+    const bucket3PlusCounts = Array.isArray(accumulator.bucket3PlusCounts)
+      ? accumulator.bucket3PlusCounts.slice(0, 3)
+      : accumulator.bucketCounts.slice(0, 3);
+    while (bucket3PlusWins.length < 3) bucket3PlusWins.push(0);
+    while (bucket3PlusCounts.length < 3) bucket3PlusCounts.push(0);
+    const bucket3PlusRates = bucket3PlusWins.map((wins, index) => (
+      bucket3PlusCounts[index] ? wins / bucket3PlusCounts[index] : 0
+    ));
+    const averageBucket3PlusRate = bucket3PlusRates.reduce(
+      (sum, rate) => sum + rate,
+      0,
+    ) / bucket3PlusRates.length;
+    const binary3PlusStability = averageBucket3PlusRate === 0
+      ? 0
+      : Math.max(
+        0,
+        Math.min(1, Math.min(...bucket3PlusRates) / averageBucket3PlusRate),
+      );
     const rateAtLeast = threshold => {
       if (!sampleCount) return 0;
       return accumulator.hitCounts.slice(threshold).reduce((sum, count) => sum + count, 0) / sampleCount;
@@ -1981,6 +2006,10 @@
       bucketAverages,
       averageBucketScore,
       stability,
+      bucket3PlusWins,
+      bucket3PlusCounts,
+      bucket3PlusRates,
+      binary3PlusStability,
       score: averagePoints * 0.80 + averagePoints * stability * 0.20,
     };
   }
@@ -2075,7 +2104,7 @@
 
   function comparePortfolioIdentities(first, second) {
     return second.calibration.rate3Plus - first.calibration.rate3Plus
-      || second.calibration.stability - first.calibration.stability
+      || second.calibration.binary3PlusStability - first.calibration.binary3PlusStability
       || first.strategyId - second.strategyId
       || first.window - second.window
       || first.identity.localeCompare(second.identity);
@@ -3378,6 +3407,7 @@
     addBinaryRateObservation,
     finalizeBinaryRateAccumulator,
     wilsonInterval,
+    createMulberry32ForTesting: createMulberry32,
     comparePairedBinaryOutcomes,
     buildPortfolioAtTarget,
     validateFourPinPortfolioResult,

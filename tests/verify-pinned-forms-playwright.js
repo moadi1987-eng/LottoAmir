@@ -24,8 +24,52 @@ const fourPinBacktestResult = LottoStrategyCore.runWalkForwardBacktest(buildSynt
   depthSearchIterations: 50,
   bootstrapSamples: 100,
 });
-fourPinBacktestResult.portfolio.validated = true;
-fourPinBacktestResult.portfolio.reasons = [];
+function createCoherentComparison(paired) {
+  const total = paired.both + paired.newOnly + paired.legacyOnly + paired.neither;
+  const newWins = paired.both + paired.newOnly;
+  const legacyWins = paired.both + paired.legacyOnly;
+  const newRate = newWins / total;
+  const legacyRate = legacyWins / total;
+  return {
+    total,
+    newWins,
+    legacyWins,
+    newRate,
+    legacyRate,
+    difference: newRate - legacyRate,
+    newInterval: { low: 0, high: 1 },
+    legacyInterval: { low: 0, high: 1 },
+    differenceInterval: { low: -1, high: 1 },
+    paired: { ...paired },
+  };
+}
+const portfolio = fourPinBacktestResult.portfolio;
+portfolio.sampleCount = 10;
+portfolio.selectionFailures = 0;
+portfolio.comparisons = {
+  portfolio3Plus: createCoherentComparison({ both: 4, newOnly: 3, legacyOnly: 1, neither: 2 }),
+  coverage3Plus: createCoherentComparison({ both: 4, newOnly: 2, legacyOnly: 2, neither: 2 }),
+  depth3Plus: createCoherentComparison({ both: 5, newOnly: 1, legacyOnly: 1, neither: 3 }),
+  depth4Plus: createCoherentComparison({ both: 2, newOnly: 3, legacyOnly: 1, neither: 4 }),
+};
+portfolio.bucketSampleCounts = [4, 3, 3];
+portfolio.bucketDifferences = [0.5, 1 / 3, -1 / 3];
+portfolio.diagnostics = {
+  portfolio3PlusStrong: createCoherentComparison({
+    both: 2, newOnly: 1, legacyOnly: 2, neither: 5,
+  }),
+  selectionFailureCodes: [],
+  currentFailureCode: null,
+};
+const portfolioGate = LottoStrategyCore.validateFourPinPortfolioResult({
+  selectionFailures: portfolio.selectionFailures,
+  comparisons: portfolio.comparisons,
+  bucketDifferences: portfolio.bucketDifferences,
+  bucketSampleCounts: portfolio.bucketSampleCounts,
+});
+assert.deepStrictEqual(portfolioGate, { validated: true, reasons: [] });
+portfolio.validated = portfolioGate.validated;
+portfolio.reasons = portfolioGate.reasons.slice();
 
 function buildPrizeSchemaContractDocuments() {
   return prizeSchemaContract.cases.map(testCase => {

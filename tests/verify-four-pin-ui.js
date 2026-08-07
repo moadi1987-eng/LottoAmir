@@ -124,7 +124,17 @@ context.__result = result;
 assert.strictEqual(evaluate('isCompatibleBacktestResult(__result, __rows)'), true);
 assert.strictEqual(evaluate('saveBacktestCache(__result)'), true);
 const key = evaluate('getBacktestCacheKey(__rows)');
-assert.ok(key.startsWith('lottoBacktestCacheV2:'), 'Four-PIN cache must use a new prefix');
+assert.ok(key.startsWith('lottoBacktestCacheV3:'), 'Four-PIN cache must use the V3 prefix');
+assert.strictEqual(evaluate('loadCompatibleBacktestCache(__rows).fingerprint'), result.fingerprint);
+const previousCacheKey = key.replace('lottoBacktestCacheV3:', 'lottoBacktestCacheV2:');
+values.set(previousCacheKey, JSON.stringify(result));
+values.delete(key);
+assert.strictEqual(
+  evaluate('loadCompatibleBacktestCache(__rows)'),
+  null,
+  'The V3 loader must ignore a structurally valid result stored only under the old V2 prefix',
+);
+values.set(key, JSON.stringify(result));
 assert.strictEqual(evaluate('loadCompatibleBacktestCache(__rows).fingerprint'), result.fingerprint);
 assert.strictEqual(evaluate('currentFourPinPortfolio !== __result.portfolio'), true);
 assert.deepStrictEqual(
@@ -171,14 +181,72 @@ assert.strictEqual(
   'Runtime code must not be able to mutate any portfolio PIN mapping entry',
 );
 
-const validatedResult = clone(result);
-validatedResult.portfolio.validated = true;
-validatedResult.portfolio.reasons = [];
-context.__validatedResult = validatedResult;
+const forgedApprovalResult = clone(result);
+forgedApprovalResult.portfolio.validated = true;
+forgedApprovalResult.portfolio.reasons = [];
+context.__forgedApprovalResult = forgedApprovalResult;
 context.__latestDraws = [
   { drawNumber: 5002, date: '07/08/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
   { drawNumber: 5001, date: '04/08/2026', numbers: [7, 8, 9, 10, 11, 12], strong: 2 },
 ];
+
+function createCoherentComparison(paired) {
+  const total = paired.both + paired.newOnly + paired.legacyOnly + paired.neither;
+  const newWins = paired.both + paired.newOnly;
+  const legacyWins = paired.both + paired.legacyOnly;
+  const newRate = newWins / total;
+  const legacyRate = legacyWins / total;
+  return {
+    total,
+    newWins,
+    legacyWins,
+    newRate,
+    legacyRate,
+    difference: newRate - legacyRate,
+    newInterval: { low: 0, high: 1 },
+    legacyInterval: { low: 0, high: 1 },
+    differenceInterval: { low: -1, high: 1 },
+    paired: { ...paired },
+  };
+}
+
+const coherentPortfolio = clone(result.portfolio);
+coherentPortfolio.sampleCount = 10;
+coherentPortfolio.selectionFailures = 0;
+coherentPortfolio.comparisons = {
+  portfolio3Plus: createCoherentComparison({ both: 4, newOnly: 3, legacyOnly: 1, neither: 2 }),
+  coverage3Plus: createCoherentComparison({ both: 4, newOnly: 2, legacyOnly: 2, neither: 2 }),
+  depth3Plus: createCoherentComparison({ both: 5, newOnly: 1, legacyOnly: 1, neither: 3 }),
+  depth4Plus: createCoherentComparison({ both: 2, newOnly: 3, legacyOnly: 1, neither: 4 }),
+};
+coherentPortfolio.bucketSampleCounts = [4, 3, 3];
+coherentPortfolio.bucketDifferences = [0.5, 1 / 3, -1 / 3];
+coherentPortfolio.diagnostics = {
+  portfolio3PlusStrong: createCoherentComparison({
+    both: 2,
+    newOnly: 1,
+    legacyOnly: 2,
+    neither: 5,
+  }),
+  selectionFailureCodes: [],
+  currentFailureCode: null,
+};
+const coherentGate = LottoStrategyCore.validateFourPinPortfolioResult({
+  selectionFailures: coherentPortfolio.selectionFailures,
+  comparisons: coherentPortfolio.comparisons,
+  bucketDifferences: coherentPortfolio.bucketDifferences,
+  bucketSampleCounts: coherentPortfolio.bucketSampleCounts,
+});
+assert.deepStrictEqual(
+  coherentGate,
+  { validated: true, reasons: [] },
+  'The independent paired/bucket fixture must pass the exact core gate before UI approval',
+);
+coherentPortfolio.validated = coherentGate.validated;
+coherentPortfolio.reasons = coherentGate.reasons.slice();
+const validatedResult = clone(result);
+validatedResult.portfolio = coherentPortfolio;
+context.__validatedResult = validatedResult;
 
 function setPortfolioPinEligibility(portfolioResult = validatedResult) {
   context.__portfolioResult = portfolioResult;
@@ -188,6 +256,23 @@ function setPortfolioPinEligibility(portfolioResult = validatedResult) {
     lastAnalysis = { loaded: true };
   `);
 }
+
+assert.strictEqual(
+  result.portfolio.validated,
+  false,
+  'The real 502-draw fixture must remain rejected before the forged-approval regression',
+);
+assert.strictEqual(
+  evaluate('isCompatibleFourPinPortfolioResult(__forgedApprovalResult.portfolio)'),
+  false,
+  'Flipping only validated/reasons must not make rejected evidence compatible',
+);
+setPortfolioPinEligibility(forgedApprovalResult);
+assert.strictEqual(
+  evaluate("canPinPortfolioForm('coverage1')"),
+  false,
+  'Flipping only validated/reasons must not authorize PIN writes',
+);
 
 setPortfolioPinEligibility();
 for (const role of Object.keys(expectedSlotMap)) {
@@ -409,8 +494,6 @@ assert.ok(hostileFutureHtml.includes('&lt;svg id=&quot;hostile-pin-full-label&qu
 assert.ok(!hostileFutureHtml.includes('<svg id="hostile-pin-full-label"'));
 
 context.__renderResult = clone(validatedResult);
-context.__renderResult.portfolio.comparisons.portfolio3Plus.difference = 0.01234;
-context.__renderResult.portfolio.diagnostics.portfolio3PlusStrong.difference = -0.004;
 evaluate('renderFourPinPortfolio(__renderResult)');
 const approvedPortfolioHtml = elements.get('fourPinPortfolioPanel').innerHTML;
 assert.ok(
@@ -425,8 +508,8 @@ for (const [role] of Object.entries(expectedSlotMap)) {
   assert.ok(approvedPortfolioHtml.includes(`data-portfolio-role="${role}"`));
   assert.ok(approvedPortfolioHtml.includes(`onclick="pinPortfolioForm('${role}')"`));
 }
-assert.ok(approvedPortfolioHtml.includes('+1.2'), 'Percentage-point differences need an explicit sign');
-assert.ok(approvedPortfolioHtml.includes('-0.4'), 'Negative percentage-point differences need one decimal');
+assert.ok(approvedPortfolioHtml.includes('+20.0'), 'Percentage-point differences need an explicit sign');
+assert.ok(approvedPortfolioHtml.includes('-10.0'), 'Negative percentage-point differences need one decimal');
 assert.ok(approvedPortfolioHtml.includes('95%'));
 assert.ok(approvedPortfolioHtml.includes('both'));
 assert.ok(approvedPortfolioHtml.includes('new-only'));
@@ -441,9 +524,7 @@ for (const forbiddenMetric of ['ממוצע ציון', 'ממוצע שורה מי�
 assert.ok(evaluate('formatPercentagePointDifference(0.01234)').startsWith('+1.2'));
 assert.ok(evaluate('formatPercentagePointDifference(-0.004)').startsWith('-0.4'));
 
-context.__rejectedRenderResult = clone(validatedResult);
-context.__rejectedRenderResult.portfolio.validated = false;
-context.__rejectedRenderResult.portfolio.reasons = ['portfolio-three-plus-regression'];
+context.__rejectedRenderResult = clone(result);
 evaluate('renderFourPinPortfolio(__rejectedRenderResult)');
 const rejectedPortfolioHtml = elements.get('fourPinPortfolioPanel').innerHTML;
 assert.ok(
@@ -638,6 +719,26 @@ function expectRejected(name, mutate) {
   assert.strictEqual(evaluate('currentFourPinPortfolio'), null, `${name} must clear hydration`);
 }
 
+expectRejected('rejects the previous algorithm version', candidate => {
+  candidate.version = 'lotto-backtest-v3';
+});
+
+expectRejected('rejects the previous four-PIN portfolio version', candidate => {
+  candidate.portfolio.version = 'four-pin-portfolio-v1';
+});
+
+expectRejected('rejects the previous confidence method version', candidate => {
+  candidate.portfolio.confidenceVersion = 'wilson-paired-bootstrap-v1';
+});
+
+expectRejected('rejects identity metrics without binary 3+ stability', candidate => {
+  delete candidate.rankings[0].calibration.binary3PlusStability;
+});
+
+expectRejected('rejects malformed identity 3+ bucket rates', candidate => {
+  candidate.rankings[0].calibration.bucket3PlusRates[0] = 2;
+});
+
 for (const field of ['version', 'constraintVersion', 'metricVersion', 'confidenceVersion']) {
   expectRejected(`rejects corrupt ${field}`, candidate => {
     candidate.portfolio[field] += '-corrupt';
@@ -697,6 +798,22 @@ expectRejected('rejects malformed paired counts', candidate => {
   candidate.portfolio.comparisons.coverage3Plus.paired.neither += 1;
 });
 
+expectRejected('rejects a paired rate inconsistent with integer wins', candidate => {
+  candidate.portfolio.comparisons.portfolio3Plus.newRate += 1e-9;
+});
+
+expectRejected('rejects a paired difference inconsistent with the two rates', candidate => {
+  candidate.portfolio.comparisons.portfolio3Plus.difference += 1e-9;
+});
+
+expectRejected('rejects an illegal binary-rate interval', candidate => {
+  candidate.portfolio.comparisons.coverage3Plus.newInterval = { low: 0.75, high: 0.25 };
+});
+
+expectRejected('rejects an illegal paired-difference interval', candidate => {
+  candidate.portfolio.comparisons.depth4Plus.differenceInterval.low = -1.01;
+});
+
 expectRejected('rejects a non-finite strong diagnostic', candidate => {
   candidate.portfolio.diagnostics.portfolio3PlusStrong.newRate = null;
 });
@@ -713,12 +830,32 @@ expectRejected('rejects malformed bucket sample counts', candidate => {
   candidate.portfolio.bucketSampleCounts = [0, 0.5, result.split.holdoutCount];
 });
 
+expectRejected('rejects bucket arithmetic inconsistent with the complete comparison', candidate => {
+  candidate.portfolio.bucketDifferences[0] += 0.25;
+});
+
 expectRejected('rejects non-boolean validation state', candidate => {
   candidate.portfolio.validated = 'false';
 });
 
 expectRejected('rejects non-string validation reasons', candidate => {
   candidate.portfolio.reasons = ['valid', 7];
+});
+
+expectRejected('rejects validation reasons in a different order than the core gate', candidate => {
+  candidate.portfolio.reasons.reverse();
+});
+
+expectRejected('rejects selectionFailures tampered independently of gate evidence', candidate => {
+  candidate.portfolio.selectionFailures += 1;
+});
+
+expectRejected('rejects a validated boolean that disagrees with the core gate', candidate => {
+  candidate.portfolio.validated = !candidate.portfolio.validated;
+});
+
+expectRejected('rejects a current recommendation paired with a failure code', candidate => {
+  candidate.portfolio.diagnostics.currentFailureCode = 'FORGED_CURRENT_FAILURE';
 });
 
 expectRejected('rejects validated output without a current recommendation', candidate => {
@@ -729,8 +866,26 @@ expectRejected('rejects validated output without a current recommendation', cand
 const unvalidatedWithoutCurrent = clone(result);
 unvalidatedWithoutCurrent.portfolio.validated = false;
 unvalidatedWithoutCurrent.portfolio.current = null;
+unvalidatedWithoutCurrent.portfolio.diagnostics.currentFailureCode = 'EXPECTED_CURRENT_FAILURE';
+unvalidatedWithoutCurrent.portfolio.reasons.push('current-generation-failure');
 setCandidate(unvalidatedWithoutCurrent);
 assert.strictEqual(evaluate('isCompatibleBacktestResult(__candidate, __rows)'), true);
+
+expectRejected('rejects null current without a failure code', candidate => {
+  candidate.portfolio.current = null;
+  candidate.portfolio.reasons.push('current-generation-failure');
+});
+
+expectRejected('rejects null current without the ordered failure reason', candidate => {
+  candidate.portfolio.current = null;
+  candidate.portfolio.diagnostics.currentFailureCode = 'EXPECTED_CURRENT_FAILURE';
+});
+
+expectRejected('rejects current-generation-failure outside the final reason position', candidate => {
+  candidate.portfolio.current = null;
+  candidate.portfolio.diagnostics.currentFailureCode = 'EXPECTED_CURRENT_FAILURE';
+  candidate.portfolio.reasons.unshift('current-generation-failure');
+});
 
 const inputBeforeHydration = JSON.stringify(result);
 context.__legacyState = {
