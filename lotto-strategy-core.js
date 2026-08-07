@@ -33,6 +33,7 @@
     'חזרת מגמה', 'סינרגיה מלאה', 'ממוצע משוקלל',
   ]);
   const COVERAGE_FORM_IDS = Object.freeze(['coverage1', 'coverage2']);
+  const FOUR_PIN_FORM_IDS = Object.freeze(['coverage1', 'coverage2', 'depth1', 'depth2']);
   const COVERAGE_TEMPLATE = Object.freeze([
     [13, 14, 20, 24, 33, 37], [9, 14, 21, 25, 32, 37], [2, 5, 14, 19, 27, 37],
     [3, 5, 13, 17, 28, 31], [2, 7, 9, 11, 25, 26], [8, 12, 17, 27, 31, 33],
@@ -1039,6 +1040,31 @@
     return { main, form2, snapshot };
   }
 
+  function cloneCombinationRows(rows) {
+    return rows.map(combo => ({ ...combo, numbers: combo.numbers.slice() }));
+  }
+
+  function buildLegacy56Portfolio(earlierRows) {
+    const expanding = generateBaselineForms(earlierRows);
+    const latest500 = generateBaselineForms(toNewestFirst(earlierRows).slice(0, 500));
+    const normalizeForm = rows => {
+      if (!Array.isArray(rows)
+        || rows.length < 14
+        || rows.slice(0, 14).some(row => !row || !Array.isArray(row.numbers))) {
+        const error = new Error('Legacy portfolio requires four complete 14-row forms');
+        error.code = 'LEGACY_PORTFOLIO_INVALID';
+        throw error;
+      }
+      return cloneCombinationRows(rows.slice(0, 14));
+    };
+    return {
+      coverage1: normalizeForm(expanding.main),
+      coverage2: normalizeForm(expanding.form2),
+      depth1: normalizeForm(latest500.main),
+      depth2: normalizeForm(latest500.form2),
+    };
+  }
+
   function createSelectionError(code) {
     const error = new Error(code);
     error.code = code;
@@ -1847,6 +1873,41 @@
     return stable.concat(remaining).slice(0, count).map(record => record.number);
   }
 
+  function enumerateNumberCombinations(values, choose) {
+    if (!Array.isArray(values)) {
+      const error = new Error('Combination values must be unique regular numbers');
+      error.code = 'INVALID_COMBINATION_VALUES';
+      throw error;
+    }
+    if (values.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+      || new Set(values).size !== values.length) {
+      const error = new Error('Combination values must be unique regular numbers');
+      error.code = 'INVALID_COMBINATION_VALUES';
+      throw error;
+    }
+    if (!Number.isInteger(choose) || choose < 1 || choose > values.length) {
+      const error = new Error('Combination size must be within the supplied values');
+      error.code = 'INVALID_COMBINATION_SIZE';
+      throw error;
+    }
+    const sorted = values.slice().sort((first, second) => first - second);
+    const combinations = [];
+    function visit(startIndex, selected) {
+      if (selected.length === choose) {
+        combinations.push(selected.slice());
+        return;
+      }
+      const remaining = choose - selected.length;
+      for (let index = startIndex; index <= sorted.length - remaining; index += 1) {
+        selected.push(sorted[index]);
+        visit(index + 1, selected);
+        selected.pop();
+      }
+    }
+    visit(0, []);
+    return combinations;
+  }
+
   function getSubsetKeys(numbers, size) {
     const values = (numbers || []).slice().sort((first, second) => first - second);
     if (!Number.isInteger(size) || size < 1 || size > values.length) return [];
@@ -1855,6 +1916,537 @@
       keys.push(selection.join('-'));
     });
     return keys;
+  }
+
+  function getDepthRowNumbers(row) {
+    return (Array.isArray(row) ? row : (row && row.numbers) || []).slice();
+  }
+
+  function getDepthGroupMetrics(rows, pool) {
+    const normalizedPool = Array.isArray(pool)
+      ? pool.slice().sort((first, second) => first - second)
+      : [];
+    const normalizedRows = (rows || []).map(getDepthRowNumbers);
+    const rowKeys = new Set();
+    const fourSubsetKeys = new Set();
+    const fiveSubsetKeys = new Set();
+    const numberExposure = Object.fromEntries(normalizedPool.map(number => [number, 0]));
+    let maximumOverlap = 0;
+
+    normalizedRows.forEach(numbers => {
+      rowKeys.add(getCombinationKey(numbers));
+      getSubsetKeys(numbers, 4).forEach(key => fourSubsetKeys.add(key));
+      getSubsetKeys(numbers, 5).forEach(key => fiveSubsetKeys.add(key));
+      numbers.forEach(number => {
+        if (Object.prototype.hasOwnProperty.call(numberExposure, number)) {
+          numberExposure[number] += 1;
+        }
+      });
+    });
+    for (let first = 0; first < normalizedRows.length; first += 1) {
+      for (let second = first + 1; second < normalizedRows.length; second += 1) {
+        maximumOverlap = Math.max(
+          maximumOverlap,
+          getOverlap(normalizedRows[first], normalizedRows[second]),
+        );
+      }
+    }
+    return {
+      rowCount: normalizedRows.length,
+      uniqueRowCount: rowKeys.size,
+      uniqueFourSubsetCount: fourSubsetKeys.size,
+      uniqueFiveSubsetCount: fiveSubsetKeys.size,
+      numberExposure,
+      maximumOverlap,
+      poolCoverage: Object.values(numberExposure).filter(exposure => exposure > 0).length,
+    };
+  }
+
+  function createDepthError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function normalizeDepthInputs(pool, support) {
+    if (!Array.isArray(pool)
+      || pool.length !== 14
+      || pool.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+      || new Set(pool).size !== pool.length) {
+      throw createDepthError('DEPTH_INVALID_POOL', 'Depth generation requires 14 unique regular numbers');
+    }
+    const normalizedPool = pool.slice().sort((first, second) => first - second);
+    const supportRecords = support && Array.isArray(support.numbers) ? support.numbers : [];
+    const stableSupportByNumber = Object.fromEntries(supportRecords.map(record => [
+      Number(record && record.number),
+      Number(record && record.stableSupport),
+    ]));
+    if (normalizedPool.some(number => !Number.isFinite(stableSupportByNumber[number]))) {
+      throw createDepthError(
+        'DEPTH_INVALID_SUPPORT',
+        'Depth generation requires stable support for every pool number',
+      );
+    }
+    return { normalizedPool, stableSupportByNumber };
+  }
+
+  function getDepthExposureVariance(exposure, pool) {
+    const values = pool.map(number => exposure[number] || 0);
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+  }
+
+  function buildDepthCandidates(pool, stableSupportByNumber, forbiddenRows) {
+    return enumerateNumberCombinations(pool, 6).map(numbers => ({
+      numbers,
+      key: getCombinationKey(numbers),
+      fourSubsetKeys: getSubsetKeys(numbers, 4),
+      fiveSubsetKeys: getSubsetKeys(numbers, 5),
+      stableSupportSum: numbers.reduce(
+        (sum, number) => sum + stableSupportByNumber[number],
+        0,
+      ),
+      forbiddenMaximumOverlap: forbiddenRows.reduce(
+        (maximum, row) => Math.max(maximum, getOverlap(numbers, row)),
+        0,
+      ),
+    }));
+  }
+
+  function getDepthAdditionScore(record, selected, fourSubsetKeys, fiveSubsetKeys, exposure, pool) {
+    const nextExposure = { ...exposure };
+    record.numbers.forEach(number => { nextExposure[number] = (nextExposure[number] || 0) + 1; });
+    return {
+      newFourSubsetCount: record.fourSubsetKeys.filter(key => !fourSubsetKeys.has(key)).length,
+      newFiveSubsetCount: record.fiveSubsetKeys.filter(key => !fiveSubsetKeys.has(key)).length,
+      stableSupportSum: record.stableSupportSum,
+      maximumOverlap: selected.reduce(
+        (maximum, previous) => Math.max(maximum, getOverlap(record.numbers, previous.numbers)),
+        0,
+      ),
+      exposureVariance: getDepthExposureVariance(nextExposure, pool),
+      key: record.key,
+    };
+  }
+
+  function compareDepthAdditionScores(first, second) {
+    return second.newFourSubsetCount - first.newFourSubsetCount
+      || second.newFiveSubsetCount - first.newFiveSubsetCount
+      || compareDescending(first.stableSupportSum, second.stableSupportSum)
+      || first.maximumOverlap - second.maximumOverlap
+      || first.exposureVariance - second.exposureVariance
+      || first.key.localeCompare(second.key);
+  }
+
+  function selectGreedyDepthRows(candidates, forbiddenKeys, pool) {
+    const selected = [];
+    const selectedKeys = new Set();
+    const fourSubsetKeys = new Set();
+    const fiveSubsetKeys = new Set();
+    const exposure = Object.fromEntries(pool.map(number => [number, 0]));
+
+    while (selected.length < 28) {
+      let best = null;
+      let bestScore = null;
+      candidates.forEach(record => {
+        if (forbiddenKeys.has(record.key) || selectedKeys.has(record.key)) return;
+        const score = getDepthAdditionScore(
+          record,
+          selected,
+          fourSubsetKeys,
+          fiveSubsetKeys,
+          exposure,
+          pool,
+        );
+        if (!best || compareDepthAdditionScores(score, bestScore) < 0) {
+          best = record;
+          bestScore = score;
+        }
+      });
+      if (!best) {
+        throw createDepthError('DEPTH_SELECTION_FAILED', 'Depth selection could not produce 28 rows');
+      }
+      selected.push(best);
+      selectedKeys.add(best.key);
+      best.fourSubsetKeys.forEach(key => fourSubsetKeys.add(key));
+      best.fiveSubsetKeys.forEach(key => fiveSubsetKeys.add(key));
+      best.numbers.forEach(number => { exposure[number] += 1; });
+    }
+    return selected;
+  }
+
+  function getDepthPortfolioObjective(records, pool) {
+    const fourSubsetKeys = new Set();
+    const fiveSubsetKeys = new Set();
+    const exposure = Object.fromEntries(pool.map(number => [number, 0]));
+    let stableSupportSum = 0;
+    let maximumOverlap = 0;
+    records.forEach((record, index) => {
+      record.fourSubsetKeys.forEach(key => fourSubsetKeys.add(key));
+      record.fiveSubsetKeys.forEach(key => fiveSubsetKeys.add(key));
+      record.numbers.forEach(number => { exposure[number] += 1; });
+      stableSupportSum += record.stableSupportSum;
+      for (let previous = 0; previous < index; previous += 1) {
+        maximumOverlap = Math.max(
+          maximumOverlap,
+          getOverlap(record.numbers, records[previous].numbers),
+        );
+      }
+    });
+    return {
+      uniqueFourSubsetCount: fourSubsetKeys.size,
+      uniqueFiveSubsetCount: fiveSubsetKeys.size,
+      stableSupportSum,
+      maximumOverlap,
+      exposureVariance: getDepthExposureVariance(exposure, pool),
+      key: records.map(record => record.key).sort().join('|'),
+    };
+  }
+
+  function isDepthObjectiveBetter(candidate, current) {
+    if (candidate.uniqueFourSubsetCount !== current.uniqueFourSubsetCount) {
+      return candidate.uniqueFourSubsetCount > current.uniqueFourSubsetCount;
+    }
+    if (candidate.uniqueFiveSubsetCount !== current.uniqueFiveSubsetCount) {
+      return candidate.uniqueFiveSubsetCount > current.uniqueFiveSubsetCount;
+    }
+    if (candidate.stableSupportSum !== current.stableSupportSum) {
+      return candidate.stableSupportSum > current.stableSupportSum;
+    }
+    if (candidate.maximumOverlap !== current.maximumOverlap) {
+      return candidate.maximumOverlap < current.maximumOverlap;
+    }
+    if (candidate.exposureVariance !== current.exposureVariance) {
+      return candidate.exposureVariance < current.exposureVariance;
+    }
+    return candidate.key < current.key;
+  }
+
+  function searchDepthRows(selected, candidates, pool, seed, searchIterations) {
+    const random = createMulberry32(fnv1aSeed(seed));
+    let current = selected.slice();
+    let currentObjective = getDepthPortfolioObjective(current, pool);
+    for (let iteration = 0; iteration < searchIterations; iteration += 1) {
+      const selectedIndex = Math.floor(random() * current.length);
+      const replacement = candidates[Math.floor(random() * candidates.length)];
+      if (current.some(record => record.key === replacement.key)) continue;
+      const candidate = current.slice();
+      candidate[selectedIndex] = replacement;
+      const candidateObjective = getDepthPortfolioObjective(candidate, pool);
+      if (isDepthObjectiveBetter(candidateObjective, currentObjective)) {
+        current = candidate;
+        currentObjective = candidateObjective;
+      }
+    }
+    return current;
+  }
+
+  function getDepthPartitionScore(record, fourSubsetKeys, exposure, pool) {
+    const nextExposure = { ...exposure };
+    record.numbers.forEach(number => { nextExposure[number] = (nextExposure[number] || 0) + 1; });
+    return {
+      newFourSubsetCount: record.fourSubsetKeys.filter(key => !fourSubsetKeys.has(key)).length,
+      exposureVariance: getDepthExposureVariance(nextExposure, pool),
+      key: record.key,
+    };
+  }
+
+  function compareDepthPartitionScores(first, second) {
+    return second.newFourSubsetCount - first.newFourSubsetCount
+      || first.exposureVariance - second.exposureVariance
+      || first.key.localeCompare(second.key);
+  }
+
+  function partitionDepthRows(records, pool) {
+    const remaining = records.slice().sort((first, second) => first.key.localeCompare(second.key));
+    const forms = [[], []];
+    const fourSubsetKeys = [new Set(), new Set()];
+    const exposures = [
+      Object.fromEntries(pool.map(number => [number, 0])),
+      Object.fromEntries(pool.map(number => [number, 0])),
+    ];
+    for (let assignment = 0; assignment < records.length; assignment += 1) {
+      const formIndex = assignment % 2;
+      let bestIndex = 0;
+      let bestScore = getDepthPartitionScore(
+        remaining[0],
+        fourSubsetKeys[formIndex],
+        exposures[formIndex],
+        pool,
+      );
+      for (let index = 1; index < remaining.length; index += 1) {
+        const score = getDepthPartitionScore(
+          remaining[index],
+          fourSubsetKeys[formIndex],
+          exposures[formIndex],
+          pool,
+        );
+        if (compareDepthPartitionScores(score, bestScore) < 0) {
+          bestIndex = index;
+          bestScore = score;
+        }
+      }
+      const [selected] = remaining.splice(bestIndex, 1);
+      forms[formIndex].push(selected);
+      selected.fourSubsetKeys.forEach(key => fourSubsetKeys[formIndex].add(key));
+      selected.numbers.forEach(number => { exposures[formIndex][number] += 1; });
+    }
+    if (forms.some(form => form.length !== 14)) {
+      throw createDepthError('DEPTH_PARTITION_FAILED', 'Depth rows could not be split into two forms');
+    }
+    return forms;
+  }
+
+  function buildDepthPair(pool, support, forbiddenKeys, options = {}) {
+    const { normalizedPool, stableSupportByNumber } = normalizeDepthInputs(pool, support);
+    const settings = options && typeof options === 'object' ? options : {};
+    if (typeof settings.seed !== 'string') {
+      throw createDepthError('DEPTH_INVALID_SEED', 'Depth generation requires a seed string');
+    }
+    const searchIterations = settings.searchIterations == null ? 1000 : settings.searchIterations;
+    if (!Number.isInteger(searchIterations) || searchIterations < 0) {
+      throw createDepthError(
+        'DEPTH_INVALID_SEARCH_ITERATIONS',
+        'Depth search iterations must be a non-negative integer',
+      );
+    }
+    const normalizedForbiddenKeys = new Set(Array.from(forbiddenKeys || [], String));
+    const forbiddenRows = Array.from(normalizedForbiddenKeys).map(key => key.split('-').map(Number))
+      .filter(numbers => numbers.length === 6 && numbers.every(Number.isInteger));
+    const candidates = buildDepthCandidates(
+      normalizedPool,
+      stableSupportByNumber,
+      forbiddenRows,
+    ).filter(record => !normalizedForbiddenKeys.has(record.key));
+    const greedy = selectGreedyDepthRows(candidates, normalizedForbiddenKeys, normalizedPool);
+    const selected = searchDepthRows(
+      greedy,
+      candidates,
+      normalizedPool,
+      settings.seed,
+      searchIterations,
+    );
+    const [firstForm, secondForm] = partitionDepthRows(selected, normalizedPool);
+    const annotate = form => form.map((record, index) => ({
+      comboNum: index + 1,
+      strategy: 'עומק 4+',
+      numbers: record.numbers.slice(),
+    }));
+    const forms = {
+      depth1: annotate(firstForm),
+      depth2: annotate(secondForm),
+    };
+    const rows = [...forms.depth1, ...forms.depth2];
+    return {
+      forms,
+      rows,
+      metrics: getDepthGroupMetrics(rows, normalizedPool),
+      seed: settings.seed,
+    };
+  }
+
+  function getStrongCollisionPairs(forms) {
+    const rows = FOUR_PIN_FORM_IDS.flatMap(formId => forms[formId].map((row, rowIndex) => ({
+      formId,
+      rowIndex,
+      row,
+    })));
+    let highestOverlap = 0;
+    const overlaps = [];
+    for (let first = 0; first < rows.length; first += 1) {
+      for (let second = first + 1; second < rows.length; second += 1) {
+        const overlap = getOverlap(rows[first].row.numbers, rows[second].row.numbers);
+        highestOverlap = Math.max(highestOverlap, overlap);
+        overlaps.push({ first: rows[first], second: rows[second], overlap });
+      }
+    }
+    return overlaps.filter(pair => pair.overlap === highestOverlap);
+  }
+
+  function countStrongCollisions(pairs) {
+    return pairs.filter(pair => pair.first.row.strong === pair.second.row.strong).length;
+  }
+
+  function assignPortfolioStrongNumbers(forms, strongSupport) {
+    const validForms = forms && FOUR_PIN_FORM_IDS.every(formId => (
+      Array.isArray(forms[formId]) && forms[formId].length === 14
+    ));
+    if (!validForms || Object.keys(forms).some(formId => !FOUR_PIN_FORM_IDS.includes(formId))) {
+      const error = new Error('Strong assignment requires four complete portfolio forms');
+      error.code = 'STRONG_ASSIGNMENT_INVALID_FORMS';
+      throw error;
+    }
+    const supportRecords = Array.isArray(strongSupport)
+      ? strongSupport
+      : (strongSupport && strongSupport.strong) || [];
+    const normalizedSupport = supportRecords.map(record => ({
+      number: Number(record && record.number),
+      stableSupport: Number(record && record.stableSupport),
+    }));
+    if (normalizedSupport.length !== 7
+      || new Set(normalizedSupport.map(record => record.number)).size !== 7
+      || normalizedSupport.some(record => (
+        !Number.isInteger(record.number)
+        || record.number < 1
+        || record.number > 7
+        || !Number.isFinite(record.stableSupport)
+      ))) {
+      const error = new Error('Strong assignment requires stable support for numbers 1 through 7');
+      error.code = 'STRONG_ASSIGNMENT_INVALID_SUPPORT';
+      throw error;
+    }
+    const order = normalizedSupport.slice().sort((first, second) => (
+      second.stableSupport - first.stableSupport || first.number - second.number
+    )).map(record => record.number);
+    const assigned = Object.fromEntries(FOUR_PIN_FORM_IDS.map(formId => [
+      formId,
+      forms[formId].map((row, index) => ({
+        ...row,
+        numbers: row.numbers.slice(),
+        strong: order[index % order.length],
+      })),
+    ]));
+
+    const collisionPairs = getStrongCollisionPairs(assigned);
+    let collisionCount = countStrongCollisions(collisionPairs);
+    while (collisionCount > 0) {
+      let bestSwap = null;
+      FOUR_PIN_FORM_IDS.forEach(formId => {
+        const form = assigned[formId];
+        for (let first = 0; first < form.length; first += 1) {
+          for (let second = first + 1; second < form.length; second += 1) {
+            if (form[first].strong === form[second].strong) continue;
+            const firstStrong = form[first].strong;
+            form[first].strong = form[second].strong;
+            form[second].strong = firstStrong;
+            const candidateCount = countStrongCollisions(collisionPairs);
+            form[second].strong = form[first].strong;
+            form[first].strong = firstStrong;
+            if (candidateCount < collisionCount
+              && (!bestSwap || candidateCount < bestSwap.collisionCount)) {
+              bestSwap = { formId, first, second, collisionCount: candidateCount };
+            }
+          }
+        }
+      });
+      if (!bestSwap) break;
+      const firstRow = assigned[bestSwap.formId][bestSwap.first];
+      const secondRow = assigned[bestSwap.formId][bestSwap.second];
+      const firstStrong = firstRow.strong;
+      firstRow.strong = secondRow.strong;
+      secondRow.strong = firstStrong;
+      collisionCount = bestSwap.collisionCount;
+    }
+    return assigned;
+  }
+
+  function createFourPinStageError(stage, cause) {
+    const error = new Error(`Four-PIN portfolio ${stage.toLowerCase()} stage failed`);
+    error.code = `FOUR_PIN_${stage}_FAILED`;
+    error.stage = stage.toLowerCase();
+    if (cause && cause.code) error.causeCode = cause.code;
+    return error;
+  }
+
+  function runFourPinStage(stage, operation) {
+    try {
+      return operation();
+    } catch (error) {
+      throw createFourPinStageError(stage, error);
+    }
+  }
+
+  function isStructurallyValidFourPinPortfolio(forms, depthPool) {
+    if (!forms || Object.keys(forms).join('|') !== FOUR_PIN_FORM_IDS.join('|')) return false;
+    const allRows = [];
+    for (const formId of FOUR_PIN_FORM_IDS) {
+      const form = forms[formId];
+      if (!Array.isArray(form) || form.length !== 14) return false;
+      const strongCounts = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [index + 1, 0]));
+      for (let index = 0; index < form.length; index += 1) {
+        const row = form[index];
+        if (!row
+          || row.comboNum !== index + 1
+          || !Array.isArray(row.numbers)
+          || row.numbers.length !== 6
+          || new Set(row.numbers).size !== 6
+          || row.numbers.some((number, numberIndex) => (
+            !Number.isInteger(number)
+            || number < 1
+            || number > 37
+            || (numberIndex > 0 && row.numbers[numberIndex - 1] >= number)
+          ))
+          || !Number.isInteger(row.strong)
+          || row.strong < 1
+          || row.strong > 7) return false;
+        strongCounts[row.strong] += 1;
+        allRows.push(row);
+      }
+      if (Object.values(strongCounts).some(count => count !== 2)) return false;
+    }
+    if (new Set(allRows.map(row => getCombinationKey(row.numbers))).size !== 56) return false;
+    const poolNumbers = new Set(depthPool);
+    const coverageKeys = new Set([
+      ...forms.coverage1,
+      ...forms.coverage2,
+    ].map(row => getCombinationKey(row.numbers)));
+    return [...forms.depth1, ...forms.depth2].every(row => (
+      row.numbers.every(number => poolNumbers.has(number))
+      && !coverageKeys.has(getCombinationKey(row.numbers))
+    ));
+  }
+
+  function buildFourPinPortfolio(earlierRows, candidatePool, rankings, options = {}) {
+    const settings = options && typeof options === 'object' ? options : {};
+    if (typeof settings.seed !== 'string') {
+      throw createFourPinStageError('SEED');
+    }
+    const fingerprintSeed = settings.seed;
+    const support = runFourPinStage('SUPPORT', () => buildStablePortfolioSupport(
+      candidatePool,
+      rankings,
+      earlierRows,
+      settings.windows || BACKTEST_WINDOWS,
+    ));
+    const coverage = runFourPinStage('COVERAGE', () => buildCoveragePair(support, {
+      seed: `${fingerprintSeed}:coverage`,
+      searchIterations: settings.coverageSearchIterations,
+    }));
+    const depthPool = runFourPinStage('DEPTH_POOL', () => selectDepthPool(support, 14));
+    const coverageKeys = new Set(coverage.rows.map(row => getCombinationKey(row.numbers)));
+    const depth = runFourPinStage('DEPTH', () => buildDepthPair(
+      depthPool,
+      support,
+      coverageKeys,
+      {
+        seed: `${fingerprintSeed}:depth`,
+        searchIterations: settings.depthSearchIterations,
+      },
+    ));
+    const unassignedForms = {
+      coverage1: coverage.forms.coverage1,
+      coverage2: coverage.forms.coverage2,
+      depth1: depth.forms.depth1,
+      depth2: depth.forms.depth2,
+    };
+    const forms = runFourPinStage('STRONG_ASSIGNMENT', () => (
+      assignPortfolioStrongNumbers(unassignedForms, support.strong)
+    ));
+    runFourPinStage('STRUCTURAL_VALIDATION', () => {
+      if (!isStructurallyValidFourPinPortfolio(forms, depthPool)) {
+        const error = new Error('Four-PIN portfolio failed structural validation');
+        error.code = 'FOUR_PIN_PORTFOLIO_INVALID';
+        throw error;
+      }
+    });
+    return {
+      forms,
+      depthPool,
+      support,
+      coverageMetrics: coverage.metrics,
+      depthMetrics: depth.metrics,
+      fingerprintSeed,
+    };
   }
 
   function getCoverageRowNumbers(row) {
@@ -2310,6 +2902,8 @@
     generateForm2RawCandidates,
     generateRawCandidates,
     generateBaselineForms,
+    cloneCombinationRows,
+    buildLegacy56Portfolio,
     diversifyForm2Combinations,
     buildBalancedStrongRotation,
     getFormDiversityMetrics,
@@ -2332,7 +2926,12 @@
     rankPortfolioIdentities,
     buildStablePortfolioSupport,
     selectDepthPool,
+    enumerateNumberCombinations,
     getSubsetKeys,
+    getDepthGroupMetrics,
+    buildDepthPair,
+    assignPortfolioStrongNumbers,
+    buildFourPinPortfolio,
     getCoverageGroupMetrics,
     buildCoveragePair,
     selectPerformanceForm,

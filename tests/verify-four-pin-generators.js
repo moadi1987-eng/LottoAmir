@@ -157,3 +157,68 @@ assert.throws(
   () => core.buildCoveragePair(support, null),
   error => error && error.code === 'COVERAGE_INVALID_SEED',
 );
+
+const depthPool = core.selectDepthPool(support, 14);
+const universe = core.enumerateNumberCombinations(depthPool, 6);
+assert.strictEqual(universe.length, 3003);
+assert.strictEqual(new Set(universe.map(numbers => numbers.join('-'))).size, 3003);
+assert.deepStrictEqual(
+  core.enumerateNumberCombinations([3, 1, 2], 2),
+  [[1, 2], [1, 3], [2, 3]],
+);
+assert.throws(
+  () => core.enumerateNumberCombinations([1, 1, 2], 2),
+  error => error && error.code === 'INVALID_COMBINATION_VALUES',
+);
+assert.throws(
+  () => core.enumerateNumberCombinations([1, '2', 3], 2),
+  error => error && error.code === 'INVALID_COMBINATION_VALUES',
+);
+assert.throws(
+  () => core.enumerateNumberCombinations([1, 2, 3], 0),
+  error => error && error.code === 'INVALID_COMBINATION_SIZE',
+);
+
+const coverageKeys = new Set(coverage.rows.map(row => row.numbers.join('-')));
+const depth = core.buildDepthPair(depthPool, support, coverageKeys, {
+  seed: 'depth-fixture',
+  searchIterations: 500,
+});
+assert.strictEqual(depth.forms.depth1.length, 14);
+assert.strictEqual(depth.forms.depth2.length, 14);
+const depthRows = [...depth.forms.depth1, ...depth.forms.depth2];
+assert.strictEqual(new Set(depthRows.map(row => row.numbers.join('-'))).size, 28);
+assert.ok(depthRows.every(row => row.numbers.every(number => depthPool.includes(number))));
+assert.ok(depthRows.every(row => !coverageKeys.has(row.numbers.join('-'))));
+
+const portfolioRows = buildSyntheticDraws(540);
+const portfolioPlan = core.createBacktestPlan(portfolioRows);
+const portfolioTarget = 539;
+const portfolio = core.buildFourPinPortfolio(
+  portfolioPlan.chronological.slice(0, portfolioTarget).reverse(),
+  core.buildWindowCandidatePool(
+    portfolioPlan.chronological,
+    portfolioTarget,
+  ),
+  core.evaluateStrategyWindows(portfolioRows).rankings,
+  { seed: 'portfolio-fixture', coverageSearchIterations: 200, depthSearchIterations: 200 },
+);
+assert.deepStrictEqual(Object.keys(portfolio.forms), [
+  'coverage1', 'coverage2', 'depth1', 'depth2',
+]);
+assert.strictEqual(Object.values(portfolio.forms).flat().length, 56);
+assert.strictEqual(new Set(
+  Object.values(portfolio.forms).flat().map(row => row.numbers.join('-')),
+).size, 56);
+for (const form of Object.values(portfolio.forms)) {
+  const counts = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [i + 1, 0]));
+  form.forEach(row => { counts[row.strong] += 1; });
+  assert.deepStrictEqual(counts, { 1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2 });
+}
+
+const legacy = core.buildLegacy56Portfolio(portfolioRows);
+assert.deepStrictEqual(Object.keys(legacy), [
+  'coverage1', 'coverage2', 'depth1', 'depth2',
+]);
+assert.strictEqual(Object.values(legacy).flat().length, 56);
+assert.deepStrictEqual(legacy, core.buildLegacy56Portfolio(portfolioRows));
