@@ -9,9 +9,15 @@ const { buildSyntheticDraws } = require('./fixtures/backtest-fixture');
 const html = fs.readFileSync('lotto_analyzer.html', 'utf8');
 const required = [
   'let currentFourPinPortfolio = null',
+  'const PORTFOLIO_PIN_SLOT_MAP = Object.freeze({',
   'function isValidPortfolioForm(form, role, forbiddenKeys)',
   'function isCompatibleFourPinPortfolioResult(portfolio)',
   'function hydrateFourPinPortfolio(result)',
+  'function getPortfolioForm(role)',
+  'function canPinPortfolioForm(role)',
+  'function pinPortfolioForm(role)',
+  'function renderFourPinPortfolio(result)',
+  'function formatPercentagePointDifference(value)',
   'id="fourPinPortfolioPanel"',
   'data-portfolio-role="coverage1"',
   'data-portfolio-role="coverage2"',
@@ -60,6 +66,8 @@ const document = {
   addEventListener() {},
 };
 const values = new Map();
+let confirmResponse = true;
+const confirmMessages = [];
 const storage = {
   getItem(key) { return values.has(key) ? values.get(key) : null; },
   setItem(key, value) { values.set(key, String(value)); },
@@ -74,7 +82,10 @@ const context = vm.createContext({
   setTimeout,
   clearTimeout,
   alert() {},
-  confirm() { return true; },
+  confirm(message) {
+    confirmMessages.push(String(message));
+    return confirmResponse;
+  },
   prompt() { return ''; },
   fetch: async () => { throw new Error('fetch disabled in test'); },
   navigator: { clipboard: { writeText: async () => {} } },
@@ -120,6 +131,273 @@ assert.deepStrictEqual(
   JSON.parse(evaluate('JSON.stringify(currentFourPinPortfolio)')),
   result.portfolio,
 );
+
+const expectedSlotMap = {
+  coverage1: { source: 'main', mode: 'baseline' },
+  coverage2: { source: 'main', mode: 'improved' },
+  depth1: { source: 'form2', mode: 'baseline' },
+  depth2: { source: 'form2', mode: 'improved' },
+};
+const PORTFOLIO_LABELS = {
+  coverage1: 'PIN 1 - כיסוי 3+',
+  coverage2: 'PIN 2 - כיסוי 3+',
+  depth1: 'PIN 3 - עומק 4+',
+  depth2: 'PIN 4 - עומק 4+',
+};
+assert.deepStrictEqual(
+  JSON.parse(evaluate(`JSON.stringify(Object.fromEntries(
+    Object.entries(PORTFOLIO_PIN_SLOT_MAP).map(([role, slot]) => [
+      role,
+      { source: slot.source, mode: slot.mode }
+    ])
+  ))`)),
+  expectedSlotMap,
+  'Portfolio roles must map to the exact four existing PIN V2 slots',
+);
+assert.strictEqual(evaluate('Object.isFrozen(PORTFOLIO_PIN_SLOT_MAP)'), true);
+
+const validatedResult = clone(result);
+validatedResult.portfolio.validated = true;
+validatedResult.portfolio.reasons = [];
+context.__validatedResult = validatedResult;
+context.__latestDraws = [
+  { drawNumber: 5002, date: '07/08/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
+  { drawNumber: 5001, date: '04/08/2026', numbers: [7, 8, 9, 10, 11, 12], strong: 2 },
+];
+
+function setPortfolioPinEligibility(portfolioResult = validatedResult) {
+  context.__portfolioResult = portfolioResult;
+  evaluate(`
+    hydrateFourPinPortfolio(__portfolioResult);
+    currentData = __latestDraws;
+    lastAnalysis = { loaded: true };
+  `);
+}
+
+setPortfolioPinEligibility();
+for (const role of Object.keys(expectedSlotMap)) {
+  context.__role = role;
+  assert.strictEqual(evaluate('canPinPortfolioForm(__role)'), true, `${role} must be pinnable`);
+}
+assert.strictEqual(evaluate("canPinPortfolioForm('unknown')"), false);
+
+const unvalidatedResult = clone(validatedResult);
+unvalidatedResult.portfolio.validated = false;
+unvalidatedResult.portfolio.reasons = ['portfolio-three-plus-regression'];
+setPortfolioPinEligibility(unvalidatedResult);
+for (const role of Object.keys(expectedSlotMap)) {
+  context.__role = role;
+  assert.strictEqual(evaluate('canPinPortfolioForm(__role)'), false, `${role} must fail closed`);
+}
+
+setPortfolioPinEligibility();
+evaluate('lastAnalysis = null');
+assert.strictEqual(evaluate("canPinPortfolioForm('coverage1')"), false);
+evaluate('lastAnalysis = { loaded: true }; currentData = []');
+assert.strictEqual(evaluate("canPinPortfolioForm('coverage1')"), false);
+setPortfolioPinEligibility();
+evaluate('currentFourPinPortfolio.current.forms.coverage1.pop()');
+assert.strictEqual(evaluate("canPinPortfolioForm('coverage1')"), false);
+
+function makeStoredPin(source, mode, seed, label) {
+  return {
+    source,
+    mode,
+    label,
+    fullLabel: `${label} full`,
+    pinnedAt: '2026-08-01T12:00:00.000Z',
+    anchorDrawNumber: 4999,
+    anchorDrawDate: '01/08/2026',
+    combinations: validatedResult.portfolio.current.forms.coverage1.map((row, index) => ({
+      ...clone(row),
+      comboNum: index + 1,
+      strategy: `${label} ${seed}-${index + 1}`,
+    })),
+  };
+}
+
+const seededPins = {
+  version: 2,
+  main: {
+    baseline: makeStoredPin('main', 'baseline', 1, 'seed main baseline'),
+    improved: makeStoredPin('main', 'improved', 2, 'seed main improved'),
+  },
+  form2: {
+    baseline: makeStoredPin('form2', 'baseline', 3, 'seed form2 baseline'),
+    improved: makeStoredPin('form2', 'improved', 4, 'seed form2 improved'),
+  },
+};
+context.__seededPins = seededPins;
+evaluate(`
+  __originalSavePinnedForms = savePinnedForms;
+  __originalRenderPinnedFormStatus = renderPinnedFormStatus;
+  __originalRenderPinnedFutureComparisons = renderPinnedFutureComparisons;
+  __portfolioSaveCount = 0;
+  __portfolioStatusRenderCount = 0;
+  __portfolioFutureRenderCount = 0;
+  savePinnedForms = function(nextState, options) {
+    __portfolioSaveCount++;
+    return __originalSavePinnedForms(nextState, options);
+  };
+  renderPinnedFormStatus = function() { __portfolioStatusRenderCount++; };
+  renderPinnedFutureComparisons = function() { __portfolioFutureRenderCount++; };
+`);
+
+for (const [role, slot] of Object.entries(expectedSlotMap)) {
+  setPortfolioPinEligibility();
+  context.__role = role;
+  context.__source = slot.source;
+  context.__mode = slot.mode;
+  evaluate(`
+    pinnedForms = normalizePinnedFormsDocument(__seededPins);
+    pinnedForms[__source][__mode] = null;
+    __portfolioNeighborsBefore = JSON.stringify(pinnedForms);
+    __portfolioSourceBefore = JSON.stringify(getPortfolioForm(__role));
+    __portfolioSaveCount = 0;
+    __portfolioStatusRenderCount = 0;
+    __portfolioFutureRenderCount = 0;
+  `);
+  const before = JSON.parse(evaluate('__portfolioNeighborsBefore'));
+  assert.strictEqual(evaluate('pinPortfolioForm(__role)'), true, `${role} PIN must succeed`);
+  const after = JSON.parse(evaluate('JSON.stringify(pinnedForms)'));
+  const pinned = after[slot.source][slot.mode];
+  assert.strictEqual(pinned.label, PORTFOLIO_LABELS[role]);
+  assert.strictEqual(pinned.fullLabel, PORTFOLIO_LABELS[role]);
+  assert.strictEqual(pinned.combinations.length, 14);
+  assert.deepStrictEqual(
+    pinned.combinations,
+    JSON.parse(evaluate('JSON.stringify(getPortfolioForm(__role))')),
+    `${role} must copy its exact 14 rows`,
+  );
+  assert.strictEqual(pinned.anchorDrawNumber, 5002);
+  assert.strictEqual(pinned.anchorDrawDate, '07/08/2026');
+  for (const [neighborRole, neighborSlot] of Object.entries(expectedSlotMap)) {
+    if (neighborRole === role) continue;
+    assert.strictEqual(
+      JSON.stringify(after[neighborSlot.source][neighborSlot.mode]),
+      JSON.stringify(before[neighborSlot.source][neighborSlot.mode]),
+      `${role} must leave ${neighborRole} byte-equivalent`,
+    );
+  }
+  assert.deepStrictEqual(
+    JSON.parse(values.get('lottoPinnedFormsV2')),
+    after,
+    `${role} must persist through PIN V2 storage`,
+  );
+  assert.deepStrictEqual(
+    {
+      save: evaluate('__portfolioSaveCount'),
+      status: evaluate('__portfolioStatusRenderCount'),
+      future: evaluate('__portfolioFutureRenderCount'),
+    },
+    { save: 1, status: 1, future: 1 },
+  );
+  evaluate(`
+    __portfolioPinnedFirstNumber = pinnedForms[__source][__mode].combinations[0].numbers[0];
+    currentFourPinPortfolio.current.forms[__role][0].numbers[0] = 37;
+  `);
+  assert.strictEqual(
+    evaluate('pinnedForms[__source][__mode].combinations[0].numbers[0]'),
+    evaluate('__portfolioPinnedFirstNumber'),
+    `${role} PIN rows must be cloned`,
+  );
+}
+
+setPortfolioPinEligibility();
+evaluate('pinnedForms = normalizePinnedFormsDocument(__seededPins)');
+const beforeCancelledOverwrite = evaluate('JSON.stringify(pinnedForms)');
+confirmResponse = false;
+confirmMessages.length = 0;
+assert.strictEqual(evaluate("pinPortfolioForm('coverage1')"), false);
+assert.strictEqual(evaluate('JSON.stringify(pinnedForms)'), beforeCancelledOverwrite);
+assert.strictEqual(confirmMessages.length, 1, 'Occupied portfolio slots must confirm overwrite');
+
+confirmResponse = true;
+assert.strictEqual(evaluate("pinPortfolioForm('coverage1')"), true);
+assert.notStrictEqual(evaluate('JSON.stringify(pinnedForms)'), beforeCancelledOverwrite);
+
+evaluate(`
+  savePinnedForms = __originalSavePinnedForms;
+  renderPinnedFormStatus = __originalRenderPinnedFormStatus;
+  renderPinnedFutureComparisons = __originalRenderPinnedFutureComparisons;
+`);
+
+context.__customPin = makeStoredPin('main', 'baseline', 8, '<img id="hostile-pin-label" src=x>');
+context.__customPin.fullLabel = '<svg id="hostile-pin-full-label" onload=alert(1)>';
+const normalizedCustomPin = JSON.parse(evaluate(
+  "JSON.stringify(normalizePinnedSlot(__customPin, 'main', 'baseline'))",
+));
+assert.strictEqual(normalizedCustomPin.label, context.__customPin.label);
+assert.strictEqual(normalizedCustomPin.fullLabel, context.__customPin.fullLabel);
+
+context.__legacyV2Pin = makeStoredPin('main', 'baseline', 9, 'ignored');
+delete context.__legacyV2Pin.label;
+delete context.__legacyV2Pin.fullLabel;
+assert.deepStrictEqual(
+  JSON.parse(evaluate("JSON.stringify(normalizePinnedSlot(__legacyV2Pin, 'main', 'baseline'))"))
+    .label,
+  'טופס ראשון - בסיס',
+);
+context.__legacyV1 = {
+  version: 1,
+  main: clone(context.__legacyV2Pin),
+  form2: null,
+};
+assert.strictEqual(
+  JSON.parse(evaluate('JSON.stringify(migratePinnedFormsV1(__legacyV1))')).main.baseline.fullLabel,
+  'טופס ראשון – 14 קומבינציות מומלצות - בסיס',
+);
+
+evaluate(`
+  pinnedForms = createEmptyPinnedForms();
+  pinnedForms.main.baseline = normalizePinnedSlot(__customPin, 'main', 'baseline');
+  renderPinnedFormStatus();
+`);
+const hostileStatusHtml = elements.get('pinnedMainStatus').innerHTML;
+assert.ok(hostileStatusHtml.includes('&lt;img id=&quot;hostile-pin-label&quot; src=x&gt;'));
+assert.ok(!hostileStatusHtml.includes('<img id="hostile-pin-label"'));
+evaluate('currentData = null');
+const hostileFutureHtml = evaluate('renderPinnedFutureSource(pinnedForms.main.baseline)');
+assert.ok(hostileFutureHtml.includes('&lt;svg id=&quot;hostile-pin-full-label&quot;'));
+assert.ok(!hostileFutureHtml.includes('<svg id="hostile-pin-full-label"'));
+
+context.__renderResult = clone(validatedResult);
+context.__renderResult.portfolio.comparisons.portfolio3Plus.difference = 0.01234;
+context.__renderResult.portfolio.diagnostics.portfolio3PlusStrong.difference = -0.004;
+evaluate('renderFourPinPortfolio(__renderResult)');
+const approvedPortfolioHtml = elements.get('fourPinPortfolioPanel').innerHTML;
+assert.strictEqual((approvedPortfolioHtml.match(/class="portfolio-form-card"/g) || []).length, 4);
+assert.strictEqual((approvedPortfolioHtml.match(/data-portfolio-row=/g) || []).length, 56);
+for (const [role] of Object.entries(expectedSlotMap)) {
+  assert.ok(approvedPortfolioHtml.includes(`data-portfolio-role="${role}"`));
+  assert.ok(approvedPortfolioHtml.includes(`onclick="pinPortfolioForm('${role}')"`));
+}
+assert.ok(approvedPortfolioHtml.includes('+1.2'), 'Percentage-point differences need an explicit sign');
+assert.ok(approvedPortfolioHtml.includes('-0.4'), 'Negative percentage-point differences need one decimal');
+assert.ok(approvedPortfolioHtml.includes('95%'));
+assert.ok(approvedPortfolioHtml.includes('both'));
+assert.ok(approvedPortfolioHtml.includes('new-only'));
+assert.ok(approvedPortfolioHtml.includes('legacy-only'));
+assert.ok(approvedPortfolioHtml.includes('neither'));
+assert.ok(approvedPortfolioHtml.includes('אבחון בלבד'));
+assert.ok(approvedPortfolioHtml.includes('מחוץ לתנאי האישור'));
+assert.ok(approvedPortfolioHtml.includes('הניתוח ההיסטורי אינו מבטיח תוצאות עתידיות'));
+for (const forbiddenMetric of ['ממוצע ציון', 'ממוצע שורה מיטבית', 'averageBestMatches']) {
+  assert.ok(!approvedPortfolioHtml.includes(forbiddenMetric), `Portfolio UI must omit ${forbiddenMetric}`);
+}
+assert.ok(evaluate('formatPercentagePointDifference(0.01234)').startsWith('+1.2'));
+assert.ok(evaluate('formatPercentagePointDifference(-0.004)').startsWith('-0.4'));
+
+context.__rejectedRenderResult = clone(validatedResult);
+context.__rejectedRenderResult.portfolio.validated = false;
+context.__rejectedRenderResult.portfolio.reasons = ['portfolio-three-plus-regression'];
+evaluate('renderFourPinPortfolio(__rejectedRenderResult)');
+const rejectedPortfolioHtml = elements.get('fourPinPortfolioPanel').innerHTML;
+assert.ok(rejectedPortfolioHtml.includes('portfolio-three-plus-regression'));
+assert.ok(rejectedPortfolioHtml.includes('לא אושר'));
+assert.ok(!rejectedPortfolioHtml.includes('class="portfolio-form-card"'));
+assert.ok(!rejectedPortfolioHtml.includes('data-portfolio-row='));
+assert.ok(!rejectedPortfolioHtml.includes('onclick="pinPortfolioForm('));
 
 context.__coverageRows = [
   ...result.portfolio.current.forms.coverage1,
@@ -429,6 +707,10 @@ const datasetChange = evaluate('processAnalysisRows([])');
 
 Promise.resolve(datasetChange).then(() => {
   assert.strictEqual(evaluate('currentFourPinPortfolio'), null);
+  assert.ok(
+    elements.get('fourPinPortfolioPanel').innerHTML.includes('אין עדיין תוצאת תיק ארבעה טפסים תואמת'),
+    'Changing datasets must clear stale portfolio recommendations from the panel',
+  );
 
   evaluate(`
     currentBacktestRunId = 'progress-run';

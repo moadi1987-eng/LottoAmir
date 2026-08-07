@@ -932,6 +932,95 @@
         .backtest-comparison-band ol { margin: 12px 0 0; padding-inline-start: 24px; color: var(--text); }
         .backtest-comparison-band li { padding: 3px 0; overflow-wrap: anywhere; }
         .backtest-disclaimer { margin: 16px 0 0; color: var(--warning); font-size: 12px; }
+        .portfolio-summary {
+            min-width: 0;
+            padding: 2px 0 16px;
+        }
+        .portfolio-validation-banner {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-elevated);
+        }
+        .portfolio-validation-banner[data-validated="true"] { border-color: var(--success-border); }
+        .portfolio-validation-banner[data-validated="false"] { border-color: rgba(245, 158, 11, .55); }
+        .portfolio-metric-grid,
+        .portfolio-gate-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .portfolio-metric-card,
+        .portfolio-gate {
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-elevated);
+        }
+        .portfolio-metric-card h3,
+        .portfolio-form-card h3 { margin: 0 0 8px; color: var(--text); font-size: 15px; }
+        .portfolio-confidence,
+        .portfolio-paired,
+        .portfolio-reasons,
+        .portfolio-gate-evidence { color: var(--text-muted); font-size: 12px; line-height: 1.65; }
+        .portfolio-diagnostic {
+            border-style: dashed;
+            border-color: rgba(139, 92, 246, .65);
+        }
+        .portfolio-gate[data-passed="true"] { border-color: var(--success-border); }
+        .portfolio-gate[data-passed="false"] { border-color: rgba(239, 68, 68, .55); }
+        .portfolio-reasons { margin: 0 0 14px; padding-inline-start: 22px; }
+        .portfolio-reasons code { color: var(--warning); overflow-wrap: anywhere; }
+        .portfolio-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+        .portfolio-form-card {
+            min-width: 0;
+            padding: 14px;
+            border: 1px solid var(--success-border);
+            border-radius: 10px;
+            background: var(--bg-elevated);
+            overflow: hidden;
+        }
+        .portfolio-form-rows {
+            max-width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-bottom: 12px;
+        }
+        .portfolio-form-row {
+            display: flex;
+            width: max-content;
+            min-width: 100%;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 2px;
+            border-bottom: 1px solid var(--border-subtle);
+            white-space: nowrap;
+        }
+        .portfolio-form-row:last-child { border-bottom: 0; }
+        .portfolio-form-index { min-width: 28px; color: var(--text-muted); font-weight: 700; }
+        .portfolio-form-number-list { display: inline-flex; direction: rtl; gap: 4px; }
+        .portfolio-form-row .combo-number { flex: 0 0 auto; }
+        .portfolio-form-row .combo-strong { display: inline-flex; margin: 0 4px 0 0; padding: 3px 6px; }
+        .portfolio-form-row .combo-strong-number { flex: 0 0 auto; }
+        .portfolio-pin-button { width: 100%; min-height: 42px; }
+
+        @media (max-width: 760px) {
+            .portfolio-form-grid { grid-template-columns: 1fr; }
+            .portfolio-metric-grid,
+            .portfolio-gate-grid { grid-template-columns: 1fr; }
+        }
 
         /* ===== MOBILE RESPONSIVE ===== */
         @media (max-width: 768px) {
@@ -1434,7 +1523,6 @@
                     <section data-portfolio-role="depth1"><h3>עומק 1</h3></section>
                     <section data-portfolio-role="depth2"><h3>עומק 2</h3></section>
                 </div>
-                <p class="backtest-disclaimer">הניתוח ההיסטורי אינו מבטיח תוצאות עתידיות או זכייה.</p>
             </section>
         </div>
     </div>
@@ -1480,6 +1568,12 @@
             baseline: { label: 'בסיס' },
             improved: { label: 'משופר' }
         };
+        const PORTFOLIO_PIN_SLOT_MAP = Object.freeze({
+            coverage1: { source: 'main', mode: 'baseline', label: 'PIN 1 - כיסוי 3+' },
+            coverage2: { source: 'main', mode: 'improved', label: 'PIN 2 - כיסוי 3+' },
+            depth1: { source: 'form2', mode: 'baseline', label: 'PIN 3 - עומק 4+' },
+            depth2: { source: 'form2', mode: 'improved', label: 'PIN 4 - עומק 4+' }
+        });
 
         function isPlainPrizeObject(value) {
             return value !== null
@@ -1633,11 +1727,15 @@
                 .filter(function(combo) { return combo.numbers.length === 6; })
                 .slice(0, 14);
             if (combinations.length === 0) return null;
+            const defaultLabel = sourceMeta.label + ' - ' + modeMeta.label;
+            const defaultFullLabel = sourceMeta.fullLabel + ' - ' + modeMeta.label;
             return {
                 source: source,
                 mode: mode,
-                label: sourceMeta.label + ' - ' + modeMeta.label,
-                fullLabel: sourceMeta.fullLabel + ' - ' + modeMeta.label,
+                label: typeof pin.label === 'string' && pin.label.trim() ? pin.label : defaultLabel,
+                fullLabel: typeof pin.fullLabel === 'string' && pin.fullLabel.trim()
+                    ? pin.fullLabel
+                    : defaultFullLabel,
                 pinnedAt: pin.pinnedAt || new Date().toISOString(),
                 anchorDrawNumber: pin.anchorDrawNumber != null ? pin.anchorDrawNumber : null,
                 anchorDrawDate: pin.anchorDrawDate != null ? pin.anchorDrawDate : null,
@@ -2167,6 +2265,67 @@
                 ? currentBacktestResult.policies[source]
                 : null;
             return Boolean(policy && policy.validated === true && optimizedForms[source]);
+        }
+
+        function getPortfolioForm(role) {
+            const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            const forms = currentFourPinPortfolio
+                && currentFourPinPortfolio.current
+                && currentFourPinPortfolio.current.forms;
+            return slot && forms && Array.isArray(forms[role]) ? forms[role] : null;
+        }
+
+        function canPinPortfolioForm(role) {
+            if (!PORTFOLIO_PIN_SLOT_MAP[role]
+                || !currentData
+                || currentData.length === 0
+                || !lastAnalysis
+                || !currentFourPinPortfolio
+                || currentFourPinPortfolio.validated !== true
+                || !isCompatibleFourPinPortfolioResult(currentFourPinPortfolio)) {
+                return false;
+            }
+            const rows = getPortfolioForm(role);
+            return Array.isArray(rows) && rows.length === 14;
+        }
+
+        function pinPortfolioForm(role) {
+            const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            if (!slot) return false;
+            if (!currentData || currentData.length === 0 || !lastAnalysis) {
+                alert('הרץ ניתוח קודם כדי לקבע את הקומבינציות.');
+                return false;
+            }
+            if (!canPinPortfolioForm(role)) {
+                alert('יש להריץ Backtest מאומת ותואם לפני קיבוע הטופס הזה.');
+                return false;
+            }
+            const combinations = getPortfolioForm(role);
+            if (!combinations || combinations.length !== 14) {
+                alert('נדרשות בדיוק 14 קומבינציות לקיבוע הטופס הזה.');
+                return false;
+            }
+            const existingPin = getPinnedForm(slot.source, slot.mode);
+            if (existingPin && !confirm('כבר קיים PIN עבור ' + slot.label + '. להחליף אותו?')) {
+                return false;
+            }
+            const anchor = getLatestDrawAnchor();
+            const nextState = normalizePinnedFormsDocument(pinnedForms);
+            nextState[slot.source][slot.mode] = {
+                source: slot.source,
+                mode: slot.mode,
+                label: slot.label,
+                fullLabel: slot.label,
+                pinnedAt: new Date().toISOString(),
+                anchorDrawNumber: anchor.anchorDrawNumber,
+                anchorDrawDate: anchor.anchorDrawDate,
+                combinations: cloneFormRows(combinations).map(normalizePinnedCombination)
+            };
+            if (!savePinnedForms(nextState)) return false;
+            renderPinnedFormStatus();
+            renderPinnedFutureComparisons();
+            alert(slot.label + ' קובע ונשמר.');
+            return true;
         }
 
         function pinForm(source, mode) {
@@ -3067,6 +3226,7 @@
             currentData = data;
             currentBacktestResult = null;
             currentFourPinPortfolio = null;
+            renderFourPinPortfolio(null);
             baselineForms = { main: [], form2: [] };
             optimizedForms = { main: null, form2: null };
             activeFormModes = { main: 'baseline', form2: 'baseline' };
@@ -3491,6 +3651,192 @@
             return `${(Number(value || 0) * 100).toFixed(1)}%`;
         }
 
+        function formatPercentagePointDifference(value) {
+            let percentagePoints = Number(value || 0) * 100;
+            if (!Number.isFinite(percentagePoints) || Object.is(percentagePoints, -0)) {
+                percentagePoints = 0;
+            }
+            const sign = percentagePoints >= 0 ? '+' : '';
+            return sign + percentagePoints.toFixed(1) + ' נק׳ אחוז';
+        }
+
+        const PORTFOLIO_FORM_RENDER_META = {
+            coverage1: { buttonLabel: 'PIN 1', action: "pinPortfolioForm('coverage1')" },
+            coverage2: { buttonLabel: 'PIN 2', action: "pinPortfolioForm('coverage2')" },
+            depth1: { buttonLabel: 'PIN 3', action: "pinPortfolioForm('depth1')" },
+            depth2: { buttonLabel: 'PIN 4', action: "pinPortfolioForm('depth2')" }
+        };
+
+        function renderPortfolioComparisonCard(label, comparison, options = {}) {
+            const cardClass = options.diagnostic
+                ? 'portfolio-metric-card portfolio-diagnostic'
+                : 'portfolio-metric-card';
+            const diagnosticNote = options.diagnostic
+                ? '<div class="portfolio-gate-evidence"><strong>אבחון בלבד:</strong> מדד חזק זה נשמר מחוץ לתנאי האישור.</div>'
+                : '';
+            return `
+                <section class="${cardClass}">
+                    <h3>${escapeBacktestText(label)}</h3>
+                    <div class="backtest-metric-line">
+                        שיעור ישן ${formatBacktestPercent(comparison.legacyRate)} |
+                        שיעור חדש ${formatBacktestPercent(comparison.newRate)} |
+                        הפרש ${formatPercentagePointDifference(comparison.difference)}
+                    </div>
+                    <div class="portfolio-confidence">
+                        95% ישן [${formatBacktestPercent(comparison.legacyInterval.low)}–${formatBacktestPercent(comparison.legacyInterval.high)}] |
+                        חדש [${formatBacktestPercent(comparison.newInterval.low)}–${formatBacktestPercent(comparison.newInterval.high)}] |
+                        הפרש [${formatPercentagePointDifference(comparison.differenceInterval.low)}–${formatPercentagePointDifference(comparison.differenceInterval.high)}]
+                    </div>
+                    <div class="portfolio-paired">
+                        paired: both ${comparison.paired.both} |
+                        new-only ${comparison.paired.newOnly} |
+                        legacy-only ${comparison.paired.legacyOnly} |
+                        neither ${comparison.paired.neither}
+                    </div>
+                    ${diagnosticNote}
+                </section>
+            `;
+        }
+
+        function renderPortfolioValidationGates(portfolio) {
+            const comparisons = portfolio.comparisons;
+            const nonNegativeBuckets = portfolio.bucketDifferences.filter(function(value) {
+                return value >= 0;
+            }).length;
+            const gates = [
+                {
+                    label: 'יצירת תיק ללא כשלים',
+                    passed: portfolio.selectionFailures === 0,
+                    evidence: 'כשלים: ' + portfolio.selectionFailures
+                },
+                {
+                    label: '56 שורות: שיפור 3+',
+                    passed: comparisons.portfolio3Plus.difference > 0,
+                    evidence: formatPercentagePointDifference(comparisons.portfolio3Plus.difference)
+                },
+                {
+                    label: 'זוג כיסוי: ללא נסיגה ב-3+',
+                    passed: comparisons.coverage3Plus.difference >= 0,
+                    evidence: formatPercentagePointDifference(comparisons.coverage3Plus.difference)
+                },
+                {
+                    label: 'זוג עומק: שיפור 4+',
+                    passed: comparisons.depth4Plus.difference > 0,
+                    evidence: formatPercentagePointDifference(comparisons.depth4Plus.difference)
+                },
+                {
+                    label: 'זוג עומק: שמירת סף 3+',
+                    passed: comparisons.depth3Plus.difference >= -0.01,
+                    evidence: formatPercentagePointDifference(comparisons.depth3Plus.difference) + ' (סף ‎-1.0)'
+                },
+                {
+                    label: 'דגימה בכל שלושת הדליים',
+                    passed: portfolio.bucketSampleCounts.every(function(count) { return count >= 1; }),
+                    evidence: portfolio.bucketSampleCounts.join(' / ')
+                },
+                {
+                    label: 'יציבות בלפחות שני דליים',
+                    passed: nonNegativeBuckets >= 2,
+                    evidence: portfolio.bucketDifferences.map(formatPercentagePointDifference).join(' / ')
+                },
+                {
+                    label: 'יצירת ארבעת הטפסים הנוכחיים',
+                    passed: portfolio.current !== null
+                        && !(portfolio.diagnostics && portfolio.diagnostics.currentFailureCode),
+                    evidence: portfolio.diagnostics && portfolio.diagnostics.currentFailureCode
+                        ? portfolio.diagnostics.currentFailureCode
+                        : 'תקין'
+                }
+            ];
+            return '<div class="portfolio-gate-grid">' + gates.map(function(gate) {
+                return '<div class="portfolio-gate" data-passed="' + gate.passed + '">' +
+                    '<strong>' + (gate.passed ? '✅ ' : '❌ ') + escapeBacktestText(gate.label) + '</strong>' +
+                    '<div class="portfolio-gate-evidence">' + escapeBacktestText(gate.evidence) + '</div>' +
+                    '</div>';
+            }).join('') + '</div>';
+        }
+
+        function renderPortfolioFormCard(role, rows) {
+            const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            const meta = PORTFOLIO_FORM_RENDER_META[role];
+            const renderedRows = rows.map(function(row, index) {
+                const numbers = row.numbers.map(function(number) {
+                    return '<span class="combo-number">' + escapeBacktestText(number) + '</span>';
+                }).join('');
+                return `
+                    <div class="portfolio-form-row" data-portfolio-row="${index + 1}">
+                        <span class="portfolio-form-index">#${index + 1}</span>
+                        <span class="portfolio-form-number-list" dir="rtl">${numbers}</span>
+                        <span class="combo-strong">
+                            <span>חזק</span>
+                            <span class="combo-strong-number">${escapeBacktestText(row.strong)}</span>
+                        </span>
+                        <span class="combo-title">${escapeBacktestText(row.strategy || '')}</span>
+                    </div>
+                `;
+            }).join('');
+            const disabled = canPinPortfolioForm(role)
+                ? ''
+                : ' disabled aria-disabled="true"';
+            return `
+                <article class="portfolio-form-card" data-portfolio-role="${role}">
+                    <h3>${escapeBacktestText(slot.label)}</h3>
+                    <div class="portfolio-form-rows">${renderedRows}</div>
+                    <button type="button" class="pin-form-btn portfolio-pin-button" onclick="${meta.action}"${disabled}>📌 קבע כ-${meta.buttonLabel}</button>
+                </article>
+            `;
+        }
+
+        function renderFourPinPortfolio(result) {
+            const panel = document.getElementById('fourPinPortfolioPanel');
+            if (!panel) return;
+            const portfolio = result && result.portfolio
+                ? result.portfolio
+                : (result && result.current ? result : null);
+            if (!portfolio || !isCompatibleFourPinPortfolioResult(portfolio)) {
+                panel.innerHTML = '<div class="info-note">אין עדיין תוצאת תיק ארבעה טפסים תואמת.</div>';
+                return;
+            }
+            const comparisons = portfolio.comparisons;
+            const reasonItems = portfolio.reasons.length
+                ? portfolio.reasons.map(function(reason) {
+                    return '<li><code>' + escapeBacktestText(reason) + '</code></li>';
+                }).join('')
+                : '<li>אין סיבות דחייה.</li>';
+            const formGrid = portfolio.validated && portfolio.current
+                ? '<div class="portfolio-form-grid">' +
+                    ['coverage1', 'coverage2', 'depth1', 'depth2'].map(function(role) {
+                        return renderPortfolioFormCard(role, portfolio.current.forms[role]);
+                    }).join('') +
+                    '</div>'
+                : '<div class="info-note">המדיניות לא אושרה: ערכי השורות וכפתורי ה-PIN מוסתרים.</div>';
+            panel.innerHTML = `
+                <div class="portfolio-summary">
+                    <div class="portfolio-validation-banner" data-validated="${portfolio.validated}">
+                        <strong>${portfolio.validated ? '✅ התיק אושר' : '⚠️ התיק לא אושר'}</strong>
+                        <span>מספר הגרלות holdout: ${portfolio.sampleCount}</span>
+                    </div>
+                    <div class="portfolio-metric-grid">
+                        ${renderPortfolioComparisonCard('56 שורות 3+', comparisons.portfolio3Plus)}
+                        ${renderPortfolioComparisonCard('זוג כיסוי 3+', comparisons.coverage3Plus)}
+                        ${renderPortfolioComparisonCard('זוג עומק 3+', comparisons.depth3Plus)}
+                        ${renderPortfolioComparisonCard('זוג עומק 4+', comparisons.depth4Plus)}
+                        ${renderPortfolioComparisonCard(
+                            'תיק 3+ עם התאמת מספר חזק',
+                            portfolio.diagnostics.portfolio3PlusStrong,
+                            { diagnostic: true }
+                        )}
+                    </div>
+                    <h3>תנאי אישור</h3>
+                    ${renderPortfolioValidationGates(portfolio)}
+                    <h3>סיבות דחייה</h3>
+                    <ul class="portfolio-reasons">${reasonItems}</ul>
+                    ${formGrid}
+                    <p class="backtest-disclaimer">הניתוח ההיסטורי אינו מבטיח תוצאות עתידיות או זכייה.</p>
+                </div>
+            `;
+        }
+
         function renderBacktestResult(result) {
             const policyCards = ['main', 'form2'].map(function(source) {
                 const policy = result.policies[source];
@@ -3544,6 +3890,8 @@
                     }).join('') + '</ol>' +
                 '</section>';
             }).join('');
+
+            renderFourPinPortfolio(result);
 
             renderBacktestStatus('הבדיקה הסתיימה עבור ' + result.split.eligibleCount + ' הגרלות.');
             showBacktestPanel('backtestSummaryPanel');

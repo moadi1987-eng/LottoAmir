@@ -5,6 +5,8 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { chromium } = require('playwright');
+const LottoStrategyCore = require('../lotto-strategy-core.js');
+const { buildSyntheticDraws } = require('./fixtures/backtest-fixture');
 
 const root = path.resolve(__dirname, '..');
 const outputDir = path.join(root, 'test-results');
@@ -17,6 +19,13 @@ const prizeContractMatch = /PRIZE_SCHEMA_CONTRACT_FIXTURES_JSON = r"""([\s\S]*?)
   .exec(prizeContractSource);
 assert.ok(prizeContractMatch, 'Shared prize schema contract fixtures must be readable');
 const prizeSchemaContract = JSON.parse(prizeContractMatch[1]);
+const fourPinBacktestResult = LottoStrategyCore.runWalkForwardBacktest(buildSyntheticDraws(502), {
+  coverageSearchIterations: 50,
+  depthSearchIterations: 50,
+  bootstrapSamples: 100,
+});
+fourPinBacktestResult.portfolio.validated = true;
+fourPinBacktestResult.portfolio.reasons = [];
 
 function buildPrizeSchemaContractDocuments() {
   return prizeSchemaContract.cases.map(testCase => {
@@ -693,6 +702,59 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   await session.context.close();
 }
 
+async function verifyPortfolioResponsive(browser, baseUrl, viewport, screenshotName) {
+  const session = await openAnalyzer(browser, baseUrl);
+  await session.page.setViewportSize(viewport);
+  await session.page.evaluate(result => {
+    currentData = [{
+      drawNumber: 5002,
+      date: '07/08/2026',
+      numbers: [1, 2, 3, 4, 5, 6],
+      strong: 1,
+    }];
+    lastAnalysis = { loaded: true };
+    hydrateFourPinPortfolio(result);
+    renderFourPinPortfolio(result);
+    document.getElementById('backtestWorkspace').hidden = false;
+    document.getElementById('fourPinPortfolioPanel').hidden = false;
+  }, fourPinBacktestResult);
+
+  const cards = session.page.locator('.portfolio-form-card');
+  assert.strictEqual(await cards.count(), 4);
+  const boxes = await cards.evaluateAll(nodes => nodes.map(node => {
+    const rect = node.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width };
+  }));
+  if (viewport.width > 760) {
+    assert.ok(Math.abs(boxes[0].top - boxes[1].top) < 2, 'Portfolio desktop row must use two columns');
+    assert.ok(boxes[0].left !== boxes[1].left, 'Portfolio desktop cards need separate columns');
+    assert.ok(boxes[2].top > boxes[0].top, 'Portfolio desktop cards need a second row');
+  } else {
+    assert.ok(boxes[1].top > boxes[0].top, 'Portfolio cards must stack below 760px');
+    assert.ok(boxes[2].top > boxes[1].top, 'All portfolio cards must stack below 760px');
+  }
+
+  const scrollers = session.page.locator('.portfolio-form-rows');
+  assert.strictEqual(await scrollers.count(), 4);
+  for (let index = 0; index < 4; index++) {
+    assert.strictEqual(
+      await scrollers.nth(index).evaluate(node => getComputedStyle(node).overflowX),
+      'auto',
+      'Each portfolio card must own its horizontal scroller',
+    );
+  }
+  assert.ok(await session.page.locator('.portfolio-form-row').first().evaluate(node => (
+    getComputedStyle(node).whiteSpace === 'nowrap'
+  )), 'Portfolio number tokens must remain on one line');
+  const width = await session.page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  assert.ok(width.scroll <= width.client + 1, 'Portfolio panel must not overflow the page horizontally');
+  await session.page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
+  await session.context.close();
+}
+
 (async function verifyPinnedForms() {
   const server = createServer();
   const launchOptions = { headless: true };
@@ -749,6 +811,8 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     assert.strictEqual(normalizedMalformedState.main.improved, null);
 
     const hostilePin = makePin('main', 'baseline', 11);
+    hostilePin.label = '<img id="pin-label-markup" src=x>';
+    hostilePin.fullLabel = '<svg id="pin-full-label-markup" onload=alert(1)>';
     hostilePin.pinnedAt = '<img id="pin-date-markup" src=x>';
     hostilePin.anchorDrawDate = '<img id="pin-anchor-markup" src=x>';
     hostilePin.combinations[0].comboNum = '<img id="pin-combo-markup" src=x>';
@@ -776,12 +840,17 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
       'pin-anchor-markup',
       'pin-combo-markup',
       'pin-strategy-markup',
+      'pin-label-markup',
+      'pin-full-label-markup',
     ]) {
       assert.strictEqual(await migratedSession.page.locator(`#${id}`).count(), 0);
     }
     assert.ok((await migratedSession.page
       .locator('[data-pin-source="main"][data-pin-mode="baseline"]')
       .textContent()).includes('<img id="pin-date-markup" src=x>'));
+    assert.ok((await migratedSession.page
+      .locator('[data-pin-source="main"][data-pin-mode="baseline"]')
+      .textContent()).includes('<img id="pin-label-markup" src=x>'));
     await migratedSession.context.close();
 
     const cleanSession = await openAnalyzer(browser, baseUrl);
@@ -800,6 +869,67 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     );
     assert.ok(await cleanSession.page.locator('#pinMainBaselineBtn').isDisabled());
     assert.ok(await cleanSession.page.locator('#pinMainImprovedBtn').isDisabled());
+
+    const preexistingPortfolioPins = {
+      version: 2,
+      main: {
+        baseline: makePin('main', 'baseline', 1),
+        improved: makePin('main', 'improved', 8),
+      },
+      form2: {
+        baseline: makePin('form2', 'baseline', 15),
+        improved: makePin('form2', 'improved', 22),
+      },
+    };
+    const portfolioPinScenario = await cleanSession.page.evaluate(({ pins, result }) => {
+      pinnedForms = normalizePinnedFormsDocument(pins);
+      savePinnedForms(pinnedForms);
+      currentData = [
+        { drawNumber: 5002, date: '07/08/2026', numbers: [1, 2, 3, 4, 5, 6], strong: 1 },
+        { drawNumber: 5001, date: '04/08/2026', numbers: [7, 8, 9, 10, 11, 12], strong: 2 },
+      ];
+      lastAnalysis = { loaded: true };
+      hydrateFourPinPortfolio(result);
+      const sourceBefore = JSON.stringify(currentFourPinPortfolio.current.forms.coverage1);
+      const neighborsBefore = JSON.stringify({
+        mainImproved: pinnedForms.main.improved,
+        form2Baseline: pinnedForms.form2.baseline,
+        form2Improved: pinnedForms.form2.improved,
+      });
+      const pinned = pinPortfolioForm('coverage1');
+      currentFourPinPortfolio.current.forms.coverage1[0].numbers[0] = 37;
+      return {
+        pinned,
+        sourceBefore,
+        savedFirstNumber: pinnedForms.main.baseline.combinations[0].numbers[0],
+        neighborsBefore,
+      };
+    }, { pins: preexistingPortfolioPins, result: fourPinBacktestResult });
+    assert.strictEqual(portfolioPinScenario.pinned, true);
+    await cleanSession.page.reload({ waitUntil: 'domcontentloaded' });
+    const reloadedPortfolioPin = await cleanSession.page.evaluate(() => ({
+      state: pinnedForms,
+      statusText: document.getElementById('pinnedMainStatus').textContent,
+      neighbors: JSON.stringify({
+        mainImproved: pinnedForms.main.improved,
+        form2Baseline: pinnedForms.form2.baseline,
+        form2Improved: pinnedForms.form2.improved,
+      }),
+    }));
+    assert.strictEqual(reloadedPortfolioPin.state.main.baseline.label, 'PIN 1 - כיסוי 3+');
+    assert.strictEqual(reloadedPortfolioPin.state.main.baseline.fullLabel, 'PIN 1 - כיסוי 3+');
+    assert.strictEqual(reloadedPortfolioPin.state.main.baseline.combinations.length, 14);
+    assert.deepStrictEqual(
+      reloadedPortfolioPin.state.main.baseline.combinations,
+      JSON.parse(portfolioPinScenario.sourceBefore),
+    );
+    assert.strictEqual(
+      reloadedPortfolioPin.state.main.baseline.combinations[0].numbers[0],
+      portfolioPinScenario.savedFirstNumber,
+      'Reloaded portfolio PIN must be isolated from its source rows',
+    );
+    assert.strictEqual(reloadedPortfolioPin.neighbors, portfolioPinScenario.neighborsBefore);
+    assert.ok(reloadedPortfolioPin.statusText.includes('PIN 1 - כיסוי 3+'));
 
     const fixtures = {
       baseline: {
@@ -945,6 +1075,18 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
       baseUrl,
       { width: 390, height: 844 },
       'pin-slots-mobile.png',
+    );
+    await verifyPortfolioResponsive(
+      browser,
+      baseUrl,
+      { width: 1440, height: 900 },
+      'four-pin-portfolio-desktop.png',
+    );
+    await verifyPortfolioResponsive(
+      browser,
+      baseUrl,
+      { width: 390, height: 844 },
+      'four-pin-portfolio-mobile.png',
     );
 
     console.log('Pinned forms Playwright verification passed');
