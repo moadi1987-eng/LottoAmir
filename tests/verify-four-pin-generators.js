@@ -184,6 +184,13 @@ const depth = core.buildDepthPair(depthPool, support, coverageKeys, {
   seed: 'depth-fixture',
   searchIterations: 500,
 });
+assert.deepStrictEqual(
+  depth,
+  core.buildDepthPair(depthPool, support, coverageKeys, {
+    seed: 'depth-fixture',
+    searchIterations: 500,
+  }),
+);
 assert.strictEqual(depth.forms.depth1.length, 14);
 assert.strictEqual(depth.forms.depth2.length, 14);
 const depthRows = [...depth.forms.depth1, ...depth.forms.depth2];
@@ -191,17 +198,76 @@ assert.strictEqual(new Set(depthRows.map(row => row.numbers.join('-'))).size, 28
 assert.ok(depthRows.every(row => row.numbers.every(number => depthPool.includes(number))));
 assert.ok(depthRows.every(row => !coverageKeys.has(row.numbers.join('-'))));
 
+const tiedDepthPool = Array.from({ length: 14 }, (_, index) => index + 1);
+const tiedDepthSupport = {
+  numbers: Array.from({ length: 37 }, (_, index) => ({
+    number: index + 1,
+    stableSupport: 1,
+  })),
+};
+const tiedDepth = core.buildDepthPair(tiedDepthPool, tiedDepthSupport, new Set(), {
+  seed: 'tied-depth-fixture',
+  searchIterations: 0,
+});
+assert.deepStrictEqual({
+  depth1: tiedDepth.forms.depth1.map(row => row.numbers.join('-')),
+  depth2: tiedDepth.forms.depth2.map(row => row.numbers.join('-')),
+  metrics: tiedDepth.metrics,
+}, {
+  depth1: [
+    '1-10-11-12-13-14', '2-3-4-5-6-7', '5-6-8-9-10-11', '1-2-3-8-9-12',
+    '3-5-7-11-13-14', '1-4-6-7-12-13', '1-2-4-5-9-14', '3-6-7-8-10-12',
+    '2-3-9-10-13-14', '4-5-6-11-12-14', '1-2-7-8-11-13', '3-4-7-9-10-11',
+    '2-6-8-12-13-14', '1-5-7-9-10-12',
+  ],
+  depth2: [
+    '1-2-3-5-10-11', '4-7-8-9-13-14', '3-6-9-11-12-13', '1-4-6-8-10-14',
+    '2-5-7-9-11-12', '1-3-5-6-8-13', '1-3-4-7-12-14', '2-4-6-10-11-13',
+    '2-5-7-8-10-14', '2-4-8-9-10-12', '1-6-7-9-11-14', '3-4-5-10-12-13',
+    '1-4-5-9-11-13', '2-3-4-8-11-14',
+  ],
+  metrics: {
+    rowCount: 28,
+    uniqueRowCount: 28,
+    uniqueFourSubsetCount: 416,
+    uniqueFiveSubsetCount: 168,
+    numberExposure: {
+      1: 12, 2: 12, 3: 12, 4: 13, 5: 12, 6: 11, 7: 12,
+      8: 11, 9: 12, 10: 12, 11: 13, 12: 12, 13: 12, 14: 12,
+    },
+    maximumOverlap: 4,
+    poolCoverage: 14,
+  },
+});
+
 const portfolioRows = buildSyntheticDraws(540);
 const portfolioPlan = core.createBacktestPlan(portfolioRows);
 const portfolioTarget = 539;
+const portfolioEarlierRows = portfolioPlan.chronological.slice(0, portfolioTarget).reverse();
+const portfolioCandidatePool = core.buildWindowCandidatePool(
+  portfolioPlan.chronological,
+  portfolioTarget,
+);
+const portfolioRankings = core.evaluateStrategyWindows(portfolioRows).rankings;
+const portfolioOptions = {
+  seed: 'portfolio-fixture',
+  coverageSearchIterations: 200,
+  depthSearchIterations: 200,
+};
 const portfolio = core.buildFourPinPortfolio(
-  portfolioPlan.chronological.slice(0, portfolioTarget).reverse(),
-  core.buildWindowCandidatePool(
-    portfolioPlan.chronological,
-    portfolioTarget,
+  portfolioEarlierRows,
+  portfolioCandidatePool,
+  portfolioRankings,
+  portfolioOptions,
+);
+assert.deepStrictEqual(
+  portfolio,
+  core.buildFourPinPortfolio(
+    portfolioEarlierRows,
+    portfolioCandidatePool,
+    portfolioRankings,
+    portfolioOptions,
   ),
-  core.evaluateStrategyWindows(portfolioRows).rankings,
-  { seed: 'portfolio-fixture', coverageSearchIterations: 200, depthSearchIterations: 200 },
 );
 assert.deepStrictEqual(Object.keys(portfolio.forms), [
   'coverage1', 'coverage2', 'depth1', 'depth2',
@@ -216,9 +282,164 @@ for (const form of Object.values(portfolio.forms)) {
   assert.deepStrictEqual(counts, { 1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2 });
 }
 
+const formIds = ['coverage1', 'coverage2', 'depth1', 'depth2'];
+const strongFixtureForms = Object.fromEntries(formIds.map(formId => [
+  formId,
+  portfolio.forms[formId].map(row => ({ ...row, numbers: row.numbers.slice() })),
+]));
+[strongFixtureForms.depth1[3], strongFixtureForms.depth1[6]] = [
+  strongFixtureForms.depth1[6],
+  strongFixtureForms.depth1[3],
+];
+const strongFixtureSupport = [
+  { number: 4, stableSupport: 0.9 },
+  { number: 2, stableSupport: 0.9 },
+  { number: 7, stableSupport: 0.8 },
+  { number: 1, stableSupport: 0.7 },
+  { number: 6, stableSupport: 0.6 },
+  { number: 3, stableSupport: 0.5 },
+  { number: 5, stableSupport: 0.4 },
+];
+const expectedStrongOrder = [2, 4, 7, 1, 6, 3, 5];
+const regularRowsBeforeStrongAssignment = Object.fromEntries(formIds.map(formId => [
+  formId,
+  strongFixtureForms[formId].map(row => row.numbers.slice()),
+]));
+const baseStrongFixture = Object.fromEntries(formIds.map(formId => [
+  formId,
+  strongFixtureForms[formId].map((row, index) => ({
+    ...row,
+    numbers: row.numbers.slice(),
+    strong: expectedStrongOrder[index % 7],
+  })),
+]));
+function getHighestOverlapStrongCollisions(forms) {
+  const rows = formIds.flatMap(formId => forms[formId]);
+  let highestOverlap = 0;
+  let equalStrongCount = 0;
+  for (let first = 0; first < rows.length; first += 1) {
+    for (let second = first + 1; second < rows.length; second += 1) {
+      const secondNumbers = new Set(rows[second].numbers);
+      const overlap = rows[first].numbers.filter(number => secondNumbers.has(number)).length;
+      if (overlap > highestOverlap) {
+        highestOverlap = overlap;
+        equalStrongCount = rows[first].strong === rows[second].strong ? 1 : 0;
+      } else if (overlap === highestOverlap && rows[first].strong === rows[second].strong) {
+        equalStrongCount += 1;
+      }
+    }
+  }
+  return { highestOverlap, equalStrongCount };
+}
+const collisionsBeforeStrongAssignment = getHighestOverlapStrongCollisions(baseStrongFixture);
+const assignedStrongFixture = core.assignPortfolioStrongNumbers(
+  strongFixtureForms,
+  strongFixtureSupport,
+);
+const collisionsAfterStrongAssignment = getHighestOverlapStrongCollisions(assignedStrongFixture);
+assert.deepStrictEqual(collisionsBeforeStrongAssignment, {
+  highestOverlap: 4,
+  equalStrongCount: 1,
+});
+assert.deepStrictEqual(collisionsAfterStrongAssignment, {
+  highestOverlap: 4,
+  equalStrongCount: 0,
+});
+assert.ok(
+  collisionsAfterStrongAssignment.equalStrongCount
+    < collisionsBeforeStrongAssignment.equalStrongCount,
+);
+assert.deepStrictEqual(
+  assignedStrongFixture.coverage1.map(row => row.strong),
+  [...expectedStrongOrder, ...expectedStrongOrder],
+);
+assert.deepStrictEqual(
+  Object.fromEntries(formIds.map(formId => [
+    formId,
+    assignedStrongFixture[formId].map(row => row.numbers),
+  ])),
+  regularRowsBeforeStrongAssignment,
+);
+assert.deepStrictEqual(
+  Object.fromEntries(formIds.map(formId => [
+    formId,
+    strongFixtureForms[formId].map(row => row.numbers),
+  ])),
+  regularRowsBeforeStrongAssignment,
+);
+for (const form of Object.values(assignedStrongFixture)) {
+  const counts = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [index + 1, 0]));
+  form.forEach(row => { counts[row.strong] += 1; });
+  assert.deepStrictEqual(counts, { 1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2 });
+}
+
+assert.throws(
+  () => core.buildFourPinPortfolio(
+    portfolioEarlierRows,
+    portfolioCandidatePool,
+    portfolioRankings,
+    {},
+  ),
+  error => error
+    && error.code === 'FOUR_PIN_SEED_FAILED'
+    && error.stage === 'seed'
+    && error.causeCode === undefined,
+);
+assert.throws(
+  () => core.buildFourPinPortfolio(
+    portfolioEarlierRows,
+    portfolioCandidatePool,
+    portfolioRankings,
+    { seed: 'stage-fixture', coverageSearchIterations: -1, depthSearchIterations: 0 },
+  ),
+  error => error
+    && error.code === 'FOUR_PIN_COVERAGE_FAILED'
+    && error.stage === 'coverage'
+    && error.causeCode === 'COVERAGE_INVALID_SEARCH_ITERATIONS',
+);
+assert.throws(
+  () => core.buildFourPinPortfolio(
+    portfolioEarlierRows,
+    portfolioCandidatePool,
+    portfolioRankings,
+    { seed: 'stage-fixture', coverageSearchIterations: 0, depthSearchIterations: -1 },
+  ),
+  error => error
+    && error.code === 'FOUR_PIN_DEPTH_FAILED'
+    && error.stage === 'depth'
+    && error.causeCode === 'DEPTH_INVALID_SEARCH_ITERATIONS',
+);
+
 const legacy = core.buildLegacy56Portfolio(portfolioRows);
 assert.deepStrictEqual(Object.keys(legacy), [
   'coverage1', 'coverage2', 'depth1', 'depth2',
 ]);
-assert.strictEqual(Object.values(legacy).flat().length, 56);
+const legacyRows = Object.values(legacy).flat();
+const legacyRowKeys = legacyRows.map(row => row.numbers.join('-'));
+const legacyKeyCounts = legacyRowKeys.reduce((counts, key) => {
+  counts[key] = (counts[key] || 0) + 1;
+  return counts;
+}, {});
+assert.strictEqual(legacyRows.length, 56);
+assert.strictEqual(new Set(legacyRowKeys).size, 39);
+assert.strictEqual(legacyRows.length - new Set(legacyRowKeys).size, 17);
+assert.deepStrictEqual(
+  Object.entries(legacyKeyCounts)
+    .filter(([, count]) => count > 1)
+    .sort(([first], [second]) => first.localeCompare(second)),
+  [
+    ['1-2-3-4-5-6', 2],
+    ['1-2-3-5-10-37', 2],
+    ['1-2-5-10-15-37', 2],
+    ['1-3-23-30-33-35', 2],
+    ['1-3-5-6-8-10', 3],
+    ['1-6-8-11-13-16', 2],
+    ['2-7-12-17-22-27', 2],
+    ['2-7-9-12-14-17', 3],
+    ['3-5-10-15-20-25', 3],
+    ['3-5-10-15-20-37', 3],
+    ['3-5-10-30-35-37', 3],
+    ['5-10-26-27-28-37', 2],
+  ],
+);
 assert.deepStrictEqual(legacy, core.buildLegacy56Portfolio(portfolioRows));
