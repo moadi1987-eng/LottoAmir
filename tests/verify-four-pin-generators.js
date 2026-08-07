@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const core = require('../lotto-strategy-core.js');
 const { buildSyntheticDraws } = require('./fixtures/backtest-fixture');
 
@@ -110,6 +111,23 @@ assert.ok(Object.values(coverage.forms).every(form => form.every((row, index) =>
 ))));
 
 const coverageRows = [...coverage.forms.coverage1, ...coverage.forms.coverage2];
+assert.deepStrictEqual({
+  coverage1: coverage.forms.coverage1.map(row => row.numbers.join('-')),
+  coverage2: coverage.forms.coverage2.map(row => row.numbers.join('-')),
+}, {
+  coverage1: [
+    '1-10-11-20-25-29', '1-3-6-14-15-28', '1-4-5-10-19-33', '15-26-29-30-32-37',
+    '2-14-21-22-23-32', '2-3-8-12-25-26', '3-16-21-23-31-35', '4-13-17-21-25-33',
+    '4-5-7-8-23-28', '5-9-22-27-29-35', '6-16-18-20-34-37', '6-7-12-17-27-30',
+    '8-9-11-12-31-34', '9-10-15-24-32-36',
+  ],
+  coverage2: [
+    '1-7-13-18-31-32', '1-7-14-21-26-36', '12-13-15-19-20-23', '19-24-26-27-28-34',
+    '2-20-28-31-33-35', '2-4-15-18-34-36', '2-8-16-24-30-33', '3-10-17-18-19-29',
+    '3-5-11-12-24-37', '4-9-14-16-20-27', '5-6-21-25-30-31', '6-9-11-13-17-26',
+    '7-11-16-22-25-36', '8-10-13-22-35-37',
+  ],
+});
 assert.ok(coverageRows.every(row => (
   row.numbers.length === 6
   && new Set(row.numbers).size === 6
@@ -298,6 +316,11 @@ const portfolio = core.buildFourPinPortfolio(
   portfolioCandidatePool,
   portfolioRankings,
   portfolioOptions,
+);
+assert.strictEqual(
+  crypto.createHash('sha256').update(JSON.stringify(portfolio)).digest('hex'),
+  '2a4ddcc11896ce70f46e05ee510b7328273e1e12253d65854ca3fc21349ae0c4',
+  'Optimizations must preserve the complete deterministic portfolio fixture byte-for-byte',
 );
 assert.deepStrictEqual(
   portfolio,

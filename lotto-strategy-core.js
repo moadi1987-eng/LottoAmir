@@ -607,8 +607,8 @@
   }
 
   function getOverlap(firstNumbers, secondNumbers) {
-    const second = new Set(secondNumbers || []);
-    return (firstNumbers || []).filter(number => second.has(number)).length;
+    const second = secondNumbers || [];
+    return (firstNumbers || []).filter(number => second.includes(number)).length;
   }
 
   function forEachNumberSelection(values, count, visitSelection) {
@@ -1024,9 +1024,9 @@
     ];
   }
 
-  function generateBaselineForms(newestFirstRows) {
+  function generateBaselineForms(newestFirstRows, suppliedSnapshot) {
     const rows = toNewestFirst(newestFirstRows);
-    const snapshot = buildAnalysisSnapshot(rows);
+    const snapshot = suppliedSnapshot || buildAnalysisSnapshot(rows);
     const main = generateMainCandidates(snapshot, rows);
     const form2Raw = generateForm2RawCandidates(snapshot, rows);
     const priority = buildForm2CandidatePriority(snapshot.numbers, snapshot.hot, snapshot.medium, snapshot.cold);
@@ -1044,9 +1044,7 @@
     return rows.map(combo => ({ ...combo, numbers: combo.numbers.slice() }));
   }
 
-  function buildLegacy56Portfolio(earlierRows) {
-    const expanding = generateBaselineForms(earlierRows);
-    const latest500 = generateBaselineForms(toNewestFirst(earlierRows).slice(0, 500));
+  function buildLegacy56PortfolioFromBaselines(expanding, latest500) {
     const normalizeForm = rows => {
       if (!Array.isArray(rows)
         || rows.length < 14
@@ -1063,6 +1061,12 @@
       depth1: normalizeForm(latest500.main),
       depth2: normalizeForm(latest500.form2),
     };
+  }
+
+  function buildLegacy56Portfolio(earlierRows) {
+    const expanding = generateBaselineForms(earlierRows);
+    const latest500 = generateBaselineForms(toNewestFirst(earlierRows).slice(0, 500));
+    return buildLegacy56PortfolioFromBaselines(expanding, latest500);
   }
 
   function createSelectionError(code) {
@@ -1144,13 +1148,14 @@
     }).sort(compareCandidateRecords);
   }
 
-  function buildRankedNumberPriority(records, training500) {
+  function buildRankedNumberPriority(records, training500, suppliedSnapshot) {
     const weightedScores = Object.fromEntries(Array.from({ length: 37 }, (_, index) => [index + 1, 0]));
     records.forEach((record, index) => {
       const weight = records.length - index;
       record.numbers.forEach(number => { weightedScores[number] += weight; });
     });
-    const snapshot = buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500));
+    const snapshot = suppliedSnapshot
+      || buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500));
     const frequencyRank = new Map(snapshot.numbers.map((item, index) => [item.number, index]));
     return Array.from({ length: 37 }, (_, index) => index + 1).sort((first, second) => (
       weightedScores[second] - weightedScores[first]
@@ -1189,10 +1194,18 @@
       && metrics.maximumOverlap <= settings.maximumOverlap;
   }
 
-  function finalizeSelectedForm(combos, training500, settings, code, forbiddenKeys) {
+  function finalizeSelectedForm(
+    combos,
+    training500,
+    settings,
+    code,
+    forbiddenKeys,
+    suppliedSnapshot,
+  ) {
     if (!formSatisfiesConstraints(combos, settings, forbiddenKeys)) throw createSelectionError(code);
     const rotation = buildBalancedStrongRotation(
-      buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500)).strong,
+      (suppliedSnapshot
+        || buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500))).strong,
     );
     return combos.map((combo, index) => ({
       comboNum: index + 1,
@@ -1223,7 +1236,13 @@
     return selected;
   }
 
-  function selectPerformanceForm(candidates, rankings, training500, options = FORM1_OPTIONS) {
+  function selectPerformanceForm(
+    candidates,
+    rankings,
+    training500,
+    options = FORM1_OPTIONS,
+    suppliedSnapshot,
+  ) {
     const settings = {
       ...FORM1_OPTIONS,
       ...(options || {}),
@@ -1241,7 +1260,14 @@
         throw createSelectionError('FORM1_SELECTION_FAILED');
       }
     }
-    return finalizeSelectedForm(selected, training500, settings, 'FORM1_SELECTION_FAILED', []);
+    return finalizeSelectedForm(
+      selected,
+      training500,
+      settings,
+      'FORM1_SELECTION_FAILED',
+      [],
+      suppliedSnapshot,
+    );
   }
 
   function getMedianIdentityScore(rankings, records) {
@@ -1317,7 +1343,14 @@
     return selected;
   }
 
-  function selectDiversityForm(candidates, rankings, training500, form1Rows, options = FORM2_OPTIONS) {
+  function selectDiversityForm(
+    candidates,
+    rankings,
+    training500,
+    form1Rows,
+    options = FORM2_OPTIONS,
+    suppliedSnapshot,
+  ) {
     const settings = { ...FORM2_OPTIONS, ...(options || {}), enforceMinimumRetained: true };
     const records = buildRankedCandidateRecords(candidates, rankings);
     if (records.length < 14) throw createSelectionError('FORM2_SELECTION_FAILED');
@@ -1330,7 +1363,7 @@
       try {
         selected = diversifyForm2Combinations(
           base,
-          buildRankedNumberPriority(records, training500),
+          buildRankedNumberPriority(records, training500, suppliedSnapshot),
           { ...settings, forbiddenKeys },
         );
       } catch (error) {
@@ -1343,13 +1376,20 @@
       settings,
       'FORM2_SELECTION_FAILED',
       forbiddenKeys,
+      suppliedSnapshot,
     );
   }
 
-  function selectOptimizedForms(candidates, rankings, training500) {
+  function selectOptimizedForms(candidates, rankings, training500, suppliedSnapshot) {
     const result = { main: null, form2: null, errors: { main: null, form2: null } };
     try {
-      result.main = selectPerformanceForm(candidates, rankings, training500, FORM1_OPTIONS);
+      result.main = selectPerformanceForm(
+        candidates,
+        rankings,
+        training500,
+        FORM1_OPTIONS,
+        suppliedSnapshot,
+      );
     } catch (error) {
       result.errors.main = error && error.code ? error.code : 'FORM1_SELECTION_FAILED';
     }
@@ -1360,6 +1400,7 @@
         training500,
         result.main || [],
         FORM2_OPTIONS,
+        suppliedSnapshot,
       );
     } catch (error) {
       result.errors.form2 = error && error.code ? error.code : 'FORM2_SELECTION_FAILED';
@@ -1679,6 +1720,9 @@
       onProgress,
       isCancelled,
     }).rankings;
+    const targetContexts = Array.isArray(settings.portfolioTargetContexts)
+      ? settings.portfolioTargetContexts
+      : null;
     const newPortfolio3 = [];
     const legacyPortfolio3 = [];
     const newCoverage3 = [];
@@ -1701,18 +1745,37 @@
         error.code = 'CANCELLED';
         throw error;
       }
-      const earlierNewestFirst = plan.chronological.slice(0, targetIndex).reverse();
-      const legacyForms = buildLegacy56Portfolio(earlierNewestFirst);
+      const suppliedContext = targetContexts && targetContexts[index];
+      const targetContext = suppliedContext && suppliedContext.targetIndex === targetIndex
+        ? suppliedContext
+        : null;
+      const earlierNewestFirst = targetContext
+        ? targetContext.earlierNewestFirst
+        : plan.chronological.slice(0, targetIndex).reverse();
+      const legacyForms = targetContext
+        ? targetContext.legacyForms
+        : buildLegacy56Portfolio(earlierNewestFirst);
       const draw = plan.chronological[targetIndex];
       let newForms = null;
       let failureCode = null;
       try {
-        newForms = buildPortfolioAtTarget(
-          plan.chronological,
-          targetIndex,
-          rankings,
-          { ...settings, windows: plan.windows },
-        ).forms;
+        newForms = targetContext
+          ? buildFourPinPortfolio(
+            earlierNewestFirst,
+            targetContext.candidatePool,
+            rankings,
+            {
+              ...settings,
+              windows: plan.windows,
+              seed: `${fingerprintRows(earlierNewestFirst)}:${FOUR_PIN_PORTFOLIO_VERSION}`,
+            },
+          ).forms
+          : buildPortfolioAtTarget(
+            plan.chronological,
+            targetIndex,
+            rankings,
+            { ...settings, windows: plan.windows },
+          ).forms;
       } catch (error) {
         selectionFailures += 1;
         failureCode = error && error.code ? error.code : 'FOUR_PIN_SELECTION_FAILED';
@@ -1814,10 +1877,14 @@
       throw error;
     }
     try {
-      const currentNewestFirst = toNewestFirst(rows);
-      const currentCandidatePool = plan.windows.flatMap(windowSize => (
-        generateRawCandidates(currentNewestFirst, windowSize)
-      ));
+      const currentNewestFirst = settings.portfolioCurrentContext
+        ? settings.portfolioCurrentContext.newestFirst
+        : toNewestFirst(rows);
+      const currentCandidatePool = settings.portfolioCurrentContext
+        ? settings.portfolioCurrentContext.candidatePool
+        : plan.windows.flatMap(windowSize => (
+          generateRawCandidates(currentNewestFirst, windowSize)
+        ));
       current = buildFourPinPortfolio(
         currentNewestFirst,
         currentCandidatePool,
@@ -2234,71 +2301,155 @@
     return values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
   }
 
-  function buildDepthCandidates(pool, stableSupportByNumber, forbiddenRows) {
-    return enumerateNumberCombinations(pool, 6).map(numbers => ({
-      numbers,
-      key: getCombinationKey(numbers),
-      fourSubsetKeys: getSubsetKeys(numbers, 4),
-      fiveSubsetKeys: getSubsetKeys(numbers, 5),
-      stableSupportSum: numbers.reduce(
-        (sum, number) => sum + stableSupportByNumber[number],
-        0,
-      ),
-      forbiddenMaximumOverlap: forbiddenRows.reduce(
-        (maximum, row) => Math.max(maximum, getOverlap(numbers, row)),
-        0,
-      ),
-    }));
+  function getDepthSubsetMasks(numberMasks, size) {
+    const subsetMasks = [];
+    forEachNumberSelection(numberMasks, size, selection => {
+      subsetMasks.push(selection.reduce((mask, value) => mask | value, 0));
+    });
+    return subsetMasks;
   }
 
-  function getDepthAdditionScore(record, selected, fourSubsetKeys, fiveSubsetKeys, exposure, pool) {
-    const nextExposure = { ...exposure };
-    record.numbers.forEach(number => { nextExposure[number] = (nextExposure[number] || 0) + 1; });
-    return {
-      newFourSubsetCount: record.fourSubsetKeys.filter(key => !fourSubsetKeys.has(key)).length,
-      newFiveSubsetCount: record.fiveSubsetKeys.filter(key => !fiveSubsetKeys.has(key)).length,
-      stableSupportSum: record.stableSupportSum,
-      maximumOverlap: selected.reduce(
-        (maximum, previous) => Math.max(maximum, getOverlap(record.numbers, previous.numbers)),
-        0,
-      ),
-      exposureVariance: getDepthExposureVariance(nextExposure, pool),
-      key: record.key,
-    };
+  function countDepthMaskBits(mask) {
+    let value = mask;
+    value -= (value >>> 1) & 0x55555555;
+    value = (value & 0x33333333) + ((value >>> 2) & 0x33333333);
+    return (((value + (value >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
   }
 
-  function compareDepthAdditionScores(first, second) {
-    return second.newFourSubsetCount - first.newFourSubsetCount
-      || second.newFiveSubsetCount - first.newFiveSubsetCount
-      || compareDescending(first.stableSupportSum, second.stableSupportSum)
-      || first.maximumOverlap - second.maximumOverlap
-      || first.exposureVariance - second.exposureVariance
-      || first.key.localeCompare(second.key);
+  let canonicalDepthCandidateMetadata = null;
+
+  function getCanonicalDepthCandidateMetadata() {
+    if (canonicalDepthCandidateMetadata) return canonicalDepthCandidateMetadata;
+    canonicalDepthCandidateMetadata = enumerateNumberCombinations(
+      Array.from({ length: 14 }, (_, index) => index + 1),
+      6,
+    ).map(positions => {
+      const positionIndexes = positions.map(position => position - 1);
+      const numberMasks = positionIndexes.map(index => 1 << index);
+      return {
+        positionIndexes,
+        poolMask: numberMasks.reduce((mask, value) => mask | value, 0),
+        fourSubsetMasks: getDepthSubsetMasks(numberMasks, 4),
+        fiveSubsetMasks: getDepthSubsetMasks(numberMasks, 5),
+      };
+    });
+    return canonicalDepthCandidateMetadata;
+  }
+
+  function buildDepthCandidates(pool, stableSupportByNumber) {
+    return getCanonicalDepthCandidateMetadata().map(metadata => {
+      const numbers = metadata.positionIndexes.map(index => pool[index]);
+      return {
+        numbers,
+        key: getCombinationKey(numbers),
+        positionIndexes: metadata.positionIndexes,
+        poolMask: metadata.poolMask,
+        fourSubsetMasks: metadata.fourSubsetMasks,
+        fiveSubsetMasks: metadata.fiveSubsetMasks,
+        stableSupportSum: numbers.reduce(
+          (sum, number) => sum + stableSupportByNumber[number],
+          0,
+        ),
+      };
+    });
+  }
+
+  function getDepthVarianceAfterAddition(record, exposure, pool) {
+    let total = 0;
+    for (let index = 0; index < pool.length; index += 1) {
+      total += (exposure[pool[index]] || 0)
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+    }
+    const mean = total / pool.length;
+    let squaredDifferenceTotal = 0;
+    for (let index = 0; index < pool.length; index += 1) {
+      const value = (exposure[pool[index]] || 0)
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+      squaredDifferenceTotal += (value - mean) ** 2;
+    }
+    return squaredDifferenceTotal / pool.length;
+  }
+
+  function countNewDepthSubsets(subsetMasks, selectedSubsetMasks) {
+    let count = 0;
+    for (let index = 0; index < subsetMasks.length; index += 1) {
+      if (!selectedSubsetMasks.has(subsetMasks[index])) count += 1;
+    }
+    return count;
+  }
+
+  function countNewDepthSubsetFlags(subsetMasks, selectedSubsetFlags) {
+    let count = 0;
+    for (let index = 0; index < subsetMasks.length; index += 1) {
+      if (selectedSubsetFlags[subsetMasks[index]] === 0) count += 1;
+    }
+    return count;
+  }
+
+  function getDepthPositionVarianceAfterAddition(record, exposureByPosition) {
+    let total = 0;
+    for (let index = 0; index < exposureByPosition.length; index += 1) {
+      total += exposureByPosition[index]
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+    }
+    const mean = total / exposureByPosition.length;
+    let squaredDifferenceTotal = 0;
+    for (let index = 0; index < exposureByPosition.length; index += 1) {
+      const value = exposureByPosition[index]
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+      squaredDifferenceTotal += (value - mean) ** 2;
+    }
+    return squaredDifferenceTotal / exposureByPosition.length;
   }
 
   function selectGreedyDepthRows(candidates, forbiddenKeys, pool) {
     const selected = [];
     const selectedKeys = new Set();
-    const fourSubsetKeys = new Set();
-    const fiveSubsetKeys = new Set();
-    const exposure = Object.fromEntries(pool.map(number => [number, 0]));
+    const fourSubsetFlags = new Uint8Array(1 << pool.length);
+    const fiveSubsetFlags = new Uint8Array(1 << pool.length);
+    const exposureByPosition = Array(pool.length).fill(0);
 
     while (selected.length < 28) {
       let best = null;
-      let bestScore = null;
+      let bestNewFourSubsetCount = 0;
+      let bestNewFiveSubsetCount = 0;
+      let bestMaximumOverlap = 0;
+      let bestExposureVariance = 0;
       candidates.forEach(record => {
         if (forbiddenKeys.has(record.key) || selectedKeys.has(record.key)) return;
-        const score = getDepthAdditionScore(
-          record,
-          selected,
-          fourSubsetKeys,
-          fiveSubsetKeys,
-          exposure,
-          pool,
+        const newFourSubsetCount = countNewDepthSubsetFlags(
+          record.fourSubsetMasks,
+          fourSubsetFlags,
         );
-        if (!best || compareDepthAdditionScores(score, bestScore) < 0) {
+        const newFiveSubsetCount = countNewDepthSubsetFlags(
+          record.fiveSubsetMasks,
+          fiveSubsetFlags,
+        );
+        let maximumOverlap = 0;
+        for (let index = 0; index < selected.length; index += 1) {
+          maximumOverlap = Math.max(
+            maximumOverlap,
+            countDepthMaskBits(record.poolMask & selected[index].poolMask),
+          );
+        }
+        const exposureVariance = getDepthPositionVarianceAfterAddition(
+          record,
+          exposureByPosition,
+        );
+        const comparison = best && (
+          bestNewFourSubsetCount - newFourSubsetCount
+          || bestNewFiveSubsetCount - newFiveSubsetCount
+          || compareDescending(record.stableSupportSum, best.stableSupportSum)
+          || maximumOverlap - bestMaximumOverlap
+          || exposureVariance - bestExposureVariance
+          || record.key.localeCompare(best.key)
+        );
+        if (!best || comparison < 0) {
           best = record;
-          bestScore = score;
+          bestNewFourSubsetCount = newFourSubsetCount;
+          bestNewFiveSubsetCount = newFiveSubsetCount;
+          bestMaximumOverlap = maximumOverlap;
+          bestExposureVariance = exposureVariance;
         }
       });
       if (!best) {
@@ -2306,34 +2457,34 @@
       }
       selected.push(best);
       selectedKeys.add(best.key);
-      best.fourSubsetKeys.forEach(key => fourSubsetKeys.add(key));
-      best.fiveSubsetKeys.forEach(key => fiveSubsetKeys.add(key));
-      best.numbers.forEach(number => { exposure[number] += 1; });
+      best.fourSubsetMasks.forEach(mask => { fourSubsetFlags[mask] = 1; });
+      best.fiveSubsetMasks.forEach(mask => { fiveSubsetFlags[mask] = 1; });
+      best.positionIndexes.forEach(index => { exposureByPosition[index] += 1; });
     }
     return selected;
   }
 
   function getDepthPortfolioObjective(records, pool) {
-    const fourSubsetKeys = new Set();
-    const fiveSubsetKeys = new Set();
+    const fourSubsetMasks = new Set();
+    const fiveSubsetMasks = new Set();
     const exposure = Object.fromEntries(pool.map(number => [number, 0]));
     let stableSupportSum = 0;
     let maximumOverlap = 0;
     records.forEach((record, index) => {
-      record.fourSubsetKeys.forEach(key => fourSubsetKeys.add(key));
-      record.fiveSubsetKeys.forEach(key => fiveSubsetKeys.add(key));
+      record.fourSubsetMasks.forEach(mask => fourSubsetMasks.add(mask));
+      record.fiveSubsetMasks.forEach(mask => fiveSubsetMasks.add(mask));
       record.numbers.forEach(number => { exposure[number] += 1; });
       stableSupportSum += record.stableSupportSum;
       for (let previous = 0; previous < index; previous += 1) {
         maximumOverlap = Math.max(
           maximumOverlap,
-          getOverlap(record.numbers, records[previous].numbers),
+          countDepthMaskBits(record.poolMask & records[previous].poolMask),
         );
       }
     });
     return {
-      uniqueFourSubsetCount: fourSubsetKeys.size,
-      uniqueFiveSubsetCount: fiveSubsetKeys.size,
+      uniqueFourSubsetCount: fourSubsetMasks.size,
+      uniqueFiveSubsetCount: fiveSubsetMasks.size,
       stableSupportSum,
       maximumOverlap,
       exposureVariance: getDepthExposureVariance(exposure, pool),
@@ -2379,12 +2530,10 @@
     return current;
   }
 
-  function getDepthPartitionScore(record, fourSubsetKeys, exposure, pool) {
-    const nextExposure = { ...exposure };
-    record.numbers.forEach(number => { nextExposure[number] = (nextExposure[number] || 0) + 1; });
+  function getDepthPartitionScore(record, fourSubsetMasks, exposure, pool) {
     return {
-      newFourSubsetCount: record.fourSubsetKeys.filter(key => !fourSubsetKeys.has(key)).length,
-      exposureVariance: getDepthExposureVariance(nextExposure, pool),
+      newFourSubsetCount: countNewDepthSubsets(record.fourSubsetMasks, fourSubsetMasks),
+      exposureVariance: getDepthVarianceAfterAddition(record, exposure, pool),
       key: record.key,
     };
   }
@@ -2398,7 +2547,7 @@
   function partitionDepthRows(records, pool) {
     const remaining = records.slice().sort((first, second) => first.key.localeCompare(second.key));
     const forms = [[], []];
-    const fourSubsetKeys = [new Set(), new Set()];
+    const fourSubsetMasks = [new Set(), new Set()];
     const exposures = [
       Object.fromEntries(pool.map(number => [number, 0])),
       Object.fromEntries(pool.map(number => [number, 0])),
@@ -2408,14 +2557,14 @@
       let bestIndex = 0;
       let bestScore = getDepthPartitionScore(
         remaining[0],
-        fourSubsetKeys[formIndex],
+        fourSubsetMasks[formIndex],
         exposures[formIndex],
         pool,
       );
       for (let index = 1; index < remaining.length; index += 1) {
         const score = getDepthPartitionScore(
           remaining[index],
-          fourSubsetKeys[formIndex],
+          fourSubsetMasks[formIndex],
           exposures[formIndex],
           pool,
         );
@@ -2426,7 +2575,7 @@
       }
       const [selected] = remaining.splice(bestIndex, 1);
       forms[formIndex].push(selected);
-      selected.fourSubsetKeys.forEach(key => fourSubsetKeys[formIndex].add(key));
+      selected.fourSubsetMasks.forEach(mask => fourSubsetMasks[formIndex].add(mask));
       selected.numbers.forEach(number => { exposures[formIndex][number] += 1; });
     }
     if (forms.some(form => form.length !== 14)) {
@@ -2449,12 +2598,9 @@
       );
     }
     const normalizedForbiddenKeys = new Set(Array.from(forbiddenKeys || [], String));
-    const forbiddenRows = Array.from(normalizedForbiddenKeys).map(key => key.split('-').map(Number))
-      .filter(numbers => numbers.length === 6 && numbers.every(Number.isInteger));
     const candidates = buildDepthCandidates(
       normalizedPool,
       stableSupportByNumber,
-      forbiddenRows,
     ).filter(record => !normalizedForbiddenKeys.has(record.key));
     const greedy = selectGreedyDepthRows(candidates, normalizedForbiddenKeys, normalizedPool);
     const selected = searchDepthRows(
@@ -2840,11 +2986,35 @@
     return currentRows;
   }
 
-  function getCoverageExposureVariance(rows) {
-    const exposures = Object.values(getCoverageGroupMetrics(rows).numberExposure);
-    const mean = exposures.reduce((sum, exposure) => sum + exposure, 0) / exposures.length;
-    return exposures.reduce((sum, exposure) => sum + ((exposure - mean) ** 2), 0)
-      / exposures.length;
+  function getCoverageExposureState(rows) {
+    const exposure = Array(38).fill(0);
+    rows.forEach(numbers => {
+      numbers.forEach(number => { exposure[number] += 1; });
+    });
+    return { exposure };
+  }
+
+  function getCoverageExposureVariance(exposure) {
+    const values = exposure.slice(1);
+    const mean = values.reduce((sum, count) => sum + count, 0) / values.length;
+    return values.reduce((sum, count) => sum + ((count - mean) ** 2), 0) / values.length;
+  }
+
+  function getCoverageSwapVariance(firstState, secondState, firstRow, secondRow) {
+    const firstExposure = firstState.exposure.slice();
+    const secondExposure = secondState.exposure.slice();
+    firstRow.forEach(number => {
+      if (secondRow.includes(number)) return;
+      firstExposure[number] -= 1;
+      secondExposure[number] += 1;
+    });
+    secondRow.forEach(number => {
+      if (firstRow.includes(number)) return;
+      firstExposure[number] += 1;
+      secondExposure[number] -= 1;
+    });
+    return getCoverageExposureVariance(firstExposure)
+      + getCoverageExposureVariance(secondExposure);
   }
 
   function getCoveragePartitionKey(firstForm, secondForm) {
@@ -2860,31 +3030,45 @@
     });
     let firstForm = sortedRows.filter((row, index) => index % 2 === 0);
     let secondForm = sortedRows.filter((row, index) => index % 2 === 1);
-    let currentVariance = getCoverageExposureVariance(firstForm)
-      + getCoverageExposureVariance(secondForm);
+    let firstExposureState = getCoverageExposureState(firstForm);
+    let secondExposureState = getCoverageExposureState(secondForm);
+    let currentVariance = getCoverageExposureVariance(firstExposureState.exposure)
+      + getCoverageExposureVariance(secondExposureState.exposure);
 
     while (true) {
       let bestSwap = null;
       for (let firstIndex = 0; firstIndex < firstForm.length; firstIndex += 1) {
         for (let secondIndex = 0; secondIndex < secondForm.length; secondIndex += 1) {
+          const variance = getCoverageSwapVariance(
+            firstExposureState,
+            secondExposureState,
+            firstForm[firstIndex],
+            secondForm[secondIndex],
+          );
+          if (variance >= currentVariance
+            || (bestSwap && variance > bestSwap.variance)) continue;
           const candidateFirst = firstForm.slice();
           const candidateSecond = secondForm.slice();
           candidateFirst[firstIndex] = secondForm[secondIndex];
           candidateSecond[secondIndex] = firstForm[firstIndex];
-          const variance = getCoverageExposureVariance(candidateFirst)
-            + getCoverageExposureVariance(candidateSecond);
-          if (variance >= currentVariance) continue;
           const key = getCoveragePartitionKey(candidateFirst, candidateSecond);
           if (!bestSwap
             || variance < bestSwap.variance
             || (variance === bestSwap.variance && key < bestSwap.key)) {
-            bestSwap = { firstForm: candidateFirst, secondForm: candidateSecond, variance, key };
+            bestSwap = {
+              firstForm: candidateFirst,
+              secondForm: candidateSecond,
+              variance,
+              key,
+            };
           }
         }
       }
       if (!bestSwap) break;
       firstForm = bestSwap.firstForm;
       secondForm = bestSwap.secondForm;
+      firstExposureState = getCoverageExposureState(firstForm);
+      secondExposureState = getCoverageExposureState(secondForm);
       currentVariance = bestSwap.variance;
     }
     const sortRows = form => form.slice().sort((first, second) => {
@@ -3065,6 +3249,7 @@
     const identityEvaluation = evaluateStrategyWindows(rows, plan.windows, { onProgress, isCancelled });
     const rankings = identityEvaluation.rankings;
     const policyAggregates = createEmptyPolicyAggregates();
+    const portfolioTargetContexts = [];
 
     plan.holdoutTargets.forEach((targetIndex, index) => {
       if (isCancelled()) {
@@ -3075,8 +3260,21 @@
       const pool = buildWindowCandidatePool(plan.chronological, targetIndex, plan.windows);
       const training500 = plan.chronological.slice(targetIndex - 500, targetIndex).reverse();
       const allEarlier = plan.chronological.slice(0, targetIndex).reverse();
-      const optimized = selectOptimizedForms(pool, rankings, training500);
+      const training500Snapshot = buildAnalysisSnapshot(training500);
+      const optimized = selectOptimizedForms(
+        pool,
+        rankings,
+        training500,
+        training500Snapshot,
+      );
       const baseline = generateBaselineForms(allEarlier);
+      const latest500Baseline = generateBaselineForms(training500, training500Snapshot);
+      portfolioTargetContexts.push({
+        targetIndex,
+        earlierNewestFirst: allEarlier,
+        candidatePool: pool,
+        legacyForms: buildLegacy56PortfolioFromBaselines(baseline, latest500Baseline),
+      });
       const bucketIndex = getChronologyBucket(index, plan.holdoutTargets.length);
       addPolicyDraw(
         policyAggregates.main,
@@ -3102,11 +3300,27 @@
     });
 
     const policies = finalizePolicyAggregates(policyAggregates);
-    const currentForms = buildCurrentOptimizedForms(rows, rankings, plan.windows);
+    const currentNewestFirst = toNewestFirst(rows);
+    const currentCandidatePool = plan.windows.flatMap(windowSize => (
+      generateRawCandidates(currentNewestFirst, windowSize)
+    ));
+    const currentTraining500 = currentNewestFirst.slice(0, 500);
+    const currentTraining500Snapshot = buildAnalysisSnapshot(currentTraining500);
+    const currentForms = selectOptimizedForms(
+      currentCandidatePool,
+      rankings,
+      currentTraining500,
+      currentTraining500Snapshot,
+    );
     const portfolio = runFourPinPortfolioBacktest(rows, {
       ...options,
       rankings,
       plan,
+      portfolioTargetContexts,
+      portfolioCurrentContext: {
+        newestFirst: currentNewestFirst,
+        candidatePool: currentCandidatePool,
+      },
     });
     return {
       version: ALGORITHM_VERSION,
