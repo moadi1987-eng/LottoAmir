@@ -5,8 +5,8 @@
 }(typeof self !== 'undefined' ? self : globalThis, function createLottoStrategyCore() {
   'use strict';
 
-  const ALGORITHM_VERSION = 'lotto-backtest-v2';
-  const CONSTRAINT_VERSION = 'forms-v2';
+  const ALGORITHM_VERSION = 'lotto-backtest-v3';
+  const CONSTRAINT_VERSION = 'forms-v3';
   const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v1';
   const PORTFOLIO_CONSTRAINT_VERSION = 'four-pin-constraints-v1';
   const BINARY_METRIC_VERSION = 'draw-win-3plus-v1';
@@ -1616,6 +1616,244 @@
     };
   }
 
+  function buildPortfolioAtTarget(chronological, targetIndex, rankings, options = {}) {
+    const settings = options && typeof options === 'object' ? options : {};
+    const windows = settings.windows || BACKTEST_WINDOWS;
+    const earlierChronological = chronological.slice(0, targetIndex);
+    const earlierNewestFirst = earlierChronological.slice().reverse();
+    const candidatePool = buildWindowCandidatePool(
+      chronological,
+      targetIndex,
+      windows,
+    );
+    return buildFourPinPortfolio(
+      earlierNewestFirst,
+      candidatePool,
+      rankings,
+      {
+        windows,
+        coverageSearchIterations: settings.coverageSearchIterations,
+        depthSearchIterations: settings.depthSearchIterations,
+        seed: `${fingerprintRows(earlierNewestFirst)}:${FOUR_PIN_PORTFOLIO_VERSION}`,
+      },
+    );
+  }
+
+  function validateFourPinPortfolioResult(result) {
+    const reasons = [];
+    const comparisons = result.comparisons;
+    if (result.selectionFailures > 0) reasons.push('selection-failure');
+    if (comparisons.portfolio3Plus.difference <= 0) {
+      reasons.push('portfolio-three-plus-regression');
+    }
+    if (comparisons.coverage3Plus.difference < 0) {
+      reasons.push('coverage-three-plus-regression');
+    }
+    if (comparisons.depth4Plus.difference <= 0) {
+      reasons.push('depth-four-plus-regression');
+    }
+    if (comparisons.depth3Plus.difference < -0.01) {
+      reasons.push('depth-three-plus-guardrail');
+    }
+    if (result.bucketSampleCounts.some(count => count < 1)) {
+      reasons.push('insufficient-bucket-samples');
+    }
+    if (result.bucketDifferences.filter(value => value >= 0).length < 2) {
+      reasons.push('bucket-instability');
+    }
+    return { validated: reasons.length === 0, reasons };
+  }
+
+  function runFourPinPortfolioBacktest(rows, options = {}) {
+    const settings = options && typeof options === 'object' ? options : {};
+    const suppliedPlan = settings.plan;
+    const windows = settings.windows || (suppliedPlan && suppliedPlan.windows) || BACKTEST_WINDOWS;
+    const plan = suppliedPlan || createBacktestPlan(rows, windows);
+    const onProgress = typeof settings.onProgress === 'function'
+      ? settings.onProgress
+      : function noop() {};
+    const isCancelled = typeof settings.isCancelled === 'function'
+      ? settings.isCancelled
+      : function neverCancelled() { return false; };
+    const rankings = settings.rankings || evaluateStrategyWindows(rows, plan.windows, {
+      onProgress,
+      isCancelled,
+    }).rankings;
+    const newPortfolio3 = [];
+    const legacyPortfolio3 = [];
+    const newCoverage3 = [];
+    const legacyCoverage3 = [];
+    const newDepth3 = [];
+    const legacyDepth3 = [];
+    const newDepth4 = [];
+    const legacyDepth4 = [];
+    const newPortfolio3Strong = [];
+    const legacyPortfolio3Strong = [];
+    const bucketSampleCounts = [0, 0, 0];
+    const bucketNewWins = [0, 0, 0];
+    const bucketLegacyWins = [0, 0, 0];
+    const selectionFailureCodes = [];
+    let selectionFailures = 0;
+
+    plan.holdoutTargets.forEach((targetIndex, index) => {
+      if (isCancelled()) {
+        const error = new Error('Backtest cancelled');
+        error.code = 'CANCELLED';
+        throw error;
+      }
+      const earlierNewestFirst = plan.chronological.slice(0, targetIndex).reverse();
+      const legacyForms = buildLegacy56Portfolio(earlierNewestFirst);
+      const draw = plan.chronological[targetIndex];
+      let newForms = null;
+      let failureCode = null;
+      try {
+        newForms = buildPortfolioAtTarget(
+          plan.chronological,
+          targetIndex,
+          rankings,
+          { ...settings, windows: plan.windows },
+        ).forms;
+      } catch (error) {
+        selectionFailures += 1;
+        failureCode = error && error.code ? error.code : 'FOUR_PIN_SELECTION_FAILED';
+        selectionFailureCodes.push(failureCode);
+      }
+
+      const newPortfolioWon = newForms
+        ? hasRegularWin(Object.values(newForms), draw, 3)
+        : false;
+      const legacyPortfolioWon = hasRegularWin(Object.values(legacyForms), draw, 3);
+      newPortfolio3.push(newPortfolioWon);
+      legacyPortfolio3.push(legacyPortfolioWon);
+      newCoverage3.push(newForms
+        ? hasRegularWin([newForms.coverage1, newForms.coverage2], draw, 3)
+        : false);
+      legacyCoverage3.push(hasRegularWin(
+        [legacyForms.coverage1, legacyForms.coverage2],
+        draw,
+        3,
+      ));
+      newDepth3.push(newForms
+        ? hasRegularWin([newForms.depth1, newForms.depth2], draw, 3)
+        : false);
+      legacyDepth3.push(hasRegularWin(
+        [legacyForms.depth1, legacyForms.depth2],
+        draw,
+        3,
+      ));
+      newDepth4.push(newForms
+        ? hasRegularWin([newForms.depth1, newForms.depth2], draw, 4)
+        : false);
+      legacyDepth4.push(hasRegularWin(
+        [legacyForms.depth1, legacyForms.depth2],
+        draw,
+        4,
+      ));
+      newPortfolio3Strong.push(newForms
+        ? hasRegularAndStrongWin(Object.values(newForms), draw, 3)
+        : false);
+      legacyPortfolio3Strong.push(hasRegularAndStrongWin(
+        Object.values(legacyForms),
+        draw,
+        3,
+      ));
+
+      const bucketIndex = getChronologyBucket(index, plan.holdoutTargets.length);
+      bucketSampleCounts[bucketIndex] += 1;
+      if (newPortfolioWon) bucketNewWins[bucketIndex] += 1;
+      if (legacyPortfolioWon) bucketLegacyWins[bucketIndex] += 1;
+      const progress = {
+        phase: 'portfolio-holdout',
+        completed: index + 1,
+        total: plan.holdoutTargets.length,
+      };
+      if (failureCode) progress.failureCode = failureCode;
+      onProgress(progress);
+    });
+
+    const bucketDifferences = bucketSampleCounts.map((count, index) => (
+      count ? (bucketNewWins[index] - bucketLegacyWins[index]) / count : 0
+    ));
+    const comparisonSeed = `${fingerprintRows(rows)}:${CONFIDENCE_METHOD_VERSION}`;
+    const compare = (newOutcomes, legacyOutcomes, metric) => comparePairedBinaryOutcomes(
+      newOutcomes,
+      legacyOutcomes,
+      {
+        bootstrapSamples: settings.bootstrapSamples,
+        seed: `${comparisonSeed}:${metric}`,
+      },
+    );
+    const comparisons = {
+      portfolio3Plus: compare(newPortfolio3, legacyPortfolio3, 'portfolio3Plus'),
+      coverage3Plus: compare(newCoverage3, legacyCoverage3, 'coverage3Plus'),
+      depth3Plus: compare(newDepth3, legacyDepth3, 'depth3Plus'),
+      depth4Plus: compare(newDepth4, legacyDepth4, 'depth4Plus'),
+    };
+    const diagnostics = {
+      portfolio3PlusStrong: compare(
+        newPortfolio3Strong,
+        legacyPortfolio3Strong,
+        'portfolio3PlusStrong',
+      ),
+      selectionFailureCodes,
+      currentFailureCode: null,
+    };
+    const gate = validateFourPinPortfolioResult({
+      selectionFailures,
+      comparisons,
+      bucketDifferences,
+      bucketSampleCounts,
+    });
+
+    let current = null;
+    let validated = gate.validated;
+    const reasons = gate.reasons.slice();
+    if (isCancelled()) {
+      const error = new Error('Backtest cancelled');
+      error.code = 'CANCELLED';
+      throw error;
+    }
+    try {
+      const currentNewestFirst = toNewestFirst(rows);
+      const currentCandidatePool = plan.windows.flatMap(windowSize => (
+        generateRawCandidates(currentNewestFirst, windowSize)
+      ));
+      current = buildFourPinPortfolio(
+        currentNewestFirst,
+        currentCandidatePool,
+        rankings,
+        {
+          ...settings,
+          windows: plan.windows,
+          seed: `${fingerprintRows(rows)}:${FOUR_PIN_PORTFOLIO_VERSION}`,
+        },
+      );
+    } catch (error) {
+      diagnostics.currentFailureCode = error && error.code
+        ? error.code
+        : 'FOUR_PIN_CURRENT_GENERATION_FAILED';
+      reasons.push('current-generation-failure');
+      validated = false;
+    }
+    onProgress({ phase: 'portfolio-current', completed: 1, total: 1 });
+
+    return {
+      version: FOUR_PIN_PORTFOLIO_VERSION,
+      constraintVersion: PORTFOLIO_CONSTRAINT_VERSION,
+      metricVersion: BINARY_METRIC_VERSION,
+      confidenceVersion: CONFIDENCE_METHOD_VERSION,
+      validated,
+      reasons,
+      sampleCount: plan.holdoutTargets.length,
+      selectionFailures,
+      current,
+      comparisons,
+      diagnostics,
+      bucketDifferences,
+      bucketSampleCounts,
+    };
+  }
+
   function createEmptyIdentityAccumulator() {
     return {
       totalRegularPoints: 0,
@@ -2865,6 +3103,11 @@
 
     const policies = finalizePolicyAggregates(policyAggregates);
     const currentForms = buildCurrentOptimizedForms(rows, rankings, plan.windows);
+    const portfolio = runFourPinPortfolioBacktest(rows, {
+      ...options,
+      rankings,
+      plan,
+    });
     return {
       version: ALGORITHM_VERSION,
       constraintVersion: CONSTRAINT_VERSION,
@@ -2878,6 +3121,7 @@
       rankings,
       policies,
       currentForms,
+      portfolio,
     };
   }
 
@@ -2921,6 +3165,9 @@
     finalizeBinaryRateAccumulator,
     wilsonInterval,
     comparePairedBinaryOutcomes,
+    buildPortfolioAtTarget,
+    validateFourPinPortfolioResult,
+    runFourPinPortfolioBacktest,
     aggregateIdentityMetrics,
     evaluateStrategyWindows,
     rankPortfolioIdentities,
