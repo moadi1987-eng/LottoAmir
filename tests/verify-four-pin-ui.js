@@ -121,6 +121,151 @@ assert.deepStrictEqual(
   result.portfolio,
 );
 
+context.__coverageRows = [
+  ...result.portfolio.current.forms.coverage1,
+  ...result.portfolio.current.forms.coverage2,
+];
+for (const roleName of ['coverage1', 'coverage2', 'depth1', 'depth2']) {
+  context.__roleName = roleName;
+  assert.strictEqual(evaluate(`isValidPortfolioForm(
+    __result.portfolio.current.forms[__roleName],
+    {
+      name: __roleName,
+      coverageRows: __coverageRows,
+      depthPool: new Set(__result.portfolio.current.depthPool)
+    },
+    new Set()
+  )`), true, `${roleName} must accept its complete role metadata`);
+}
+
+function observeValidation(expression) {
+  try {
+    return evaluate(expression);
+  } catch (error) {
+    return `THREW: ${error.message}`;
+  }
+}
+
+const malformedCoverageResult = clone(result);
+malformedCoverageResult.portfolio.current.forms.coverage2[0].numbers = { malformed: true };
+context.__malformedCoverageResult = malformedCoverageResult;
+context.__missingCurrentResult = clone(result);
+delete context.__missingCurrentResult.portfolio.current;
+context.__undefinedCurrentResult = clone(result);
+context.__undefinedCurrentResult.portfolio.current = undefined;
+context.__sparseReasonsResult = clone(result);
+context.__sparseReasonsResult.portfolio.reasons = new Array(2);
+context.__sparseDifferencesResult = clone(result);
+context.__sparseDifferencesResult.portfolio.bucketDifferences = new Array(3);
+context.__sparseCountsResult = clone(result);
+context.__sparseCountsResult.portfolio.bucketSampleCounts = new Array(3);
+context.__sparseCountsResult.portfolio.bucketSampleCounts[2] = result.split.holdoutCount;
+context.__sparsePolicyBucketsResult = clone(result);
+context.__sparsePolicyBucketsResult.policies.main.baseline.bucketAverages = new Array(3);
+
+const reviewRegressionObservations = {
+  nullRole: observeValidation(`isValidPortfolioForm(
+    __result.portfolio.current.forms.coverage1,
+    null,
+    null
+  )`),
+  unknownRole: observeValidation(`isValidPortfolioForm(
+    __result.portfolio.current.forms.coverage1,
+    { name: 'unknown', coverageRows: __coverageRows },
+    new Set()
+  )`),
+  malformedForbiddenKeys: observeValidation(`isValidPortfolioForm(
+    __result.portfolio.current.forms.coverage1,
+    { name: 'coverage1', coverageRows: __coverageRows },
+    {}
+  )`),
+  malformedLaterCoverageRow: observeValidation(`isValidPortfolioForm(
+    __malformedCoverageResult.portfolio.current.forms.coverage1,
+    {
+      name: 'coverage1',
+      coverageRows: __malformedCoverageResult.portfolio.current.forms.coverage1.concat(
+        __malformedCoverageResult.portfolio.current.forms.coverage2
+      )
+    },
+    new Set()
+  )`),
+  missingCurrent: observeValidation(
+    'isCompatibleBacktestResult(__missingCurrentResult, __rows)',
+  ),
+  undefinedCurrent: observeValidation(
+    'isCompatibleBacktestResult(__undefinedCurrentResult, __rows)',
+  ),
+  sparseReasons: observeValidation(
+    'isCompatibleBacktestResult(__sparseReasonsResult, __rows)',
+  ),
+  sparseBucketDifferences: observeValidation(
+    'isCompatibleBacktestResult(__sparseDifferencesResult, __rows)',
+  ),
+  sparseBucketSampleCounts: observeValidation(
+    'isCompatibleBacktestResult(__sparseCountsResult, __rows)',
+  ),
+  sparsePolicyBucketAverages: observeValidation(
+    'isCompatibleBacktestResult(__sparsePolicyBucketsResult, __rows)',
+  ),
+};
+
+evaluate('hydrateFourPinPortfolio(__result)');
+context.__reviewWorker = {
+  terminationCount: 0,
+  terminate() { this.terminationCount += 1; },
+};
+const cacheBeforeIncompatibleCompletion = values.get(key);
+let incompatibleCompletionThrew = null;
+try {
+  evaluate(`
+    currentBacktestResult = null;
+    selectedData = __rows;
+    currentBacktestRunId = 'malformed-complete-run';
+    currentBacktestWorker = __reviewWorker;
+    setBacktestRunning(true);
+    handleBacktestWorkerMessage({ data: {
+      type: 'complete',
+      runId: 'malformed-complete-run',
+      result: __malformedCoverageResult
+    } });
+  `);
+} catch (error) {
+  incompatibleCompletionThrew = error.message;
+}
+reviewRegressionObservations.incompatibleCompletion = {
+  threw: incompatibleCompletionThrew,
+  portfolioCleared: evaluate('currentFourPinPortfolio === null'),
+  workerCleared: evaluate('currentBacktestWorker === null'),
+  runCleared: evaluate('currentBacktestRunId === null'),
+  runningUiCleared: elements.get('backtestProgress').hidden,
+  resultNotAccepted: evaluate('currentBacktestResult === null'),
+  cacheNotWritten: values.get(key) === cacheBeforeIncompatibleCompletion,
+  terminationCount: context.__reviewWorker.terminationCount,
+};
+
+assert.deepStrictEqual(reviewRegressionObservations, {
+  nullRole: false,
+  unknownRole: false,
+  malformedForbiddenKeys: false,
+  malformedLaterCoverageRow: false,
+  missingCurrent: false,
+  undefinedCurrent: false,
+  sparseReasons: false,
+  sparseBucketDifferences: false,
+  sparseBucketSampleCounts: false,
+  sparsePolicyBucketAverages: false,
+  incompatibleCompletion: {
+    threw: null,
+    portfolioCleared: true,
+    workerCleared: true,
+    runCleared: true,
+    runningUiCleared: true,
+    resultNotAccepted: true,
+    cacheNotWritten: true,
+    terminationCount: 1,
+  },
+}, 'Review regressions must fail closed without leaving a partial completion');
+
 function expectRejected(name, mutate) {
   const candidate = clone(result);
   mutate(candidate);

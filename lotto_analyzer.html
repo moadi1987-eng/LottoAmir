@@ -1758,43 +1758,78 @@
             return row.numbers.slice().sort(function(a, b) { return a - b; }).join('-');
         }
 
-        function isValidPortfolioForm(form, role, forbiddenKeys) {
-            if (!Array.isArray(form) || form.length !== 14) return false;
-            const roleName = typeof role === 'string' ? role : role && role.name;
-            const depthPool = role && role.depthPool instanceof Set ? role.depthPool : null;
-            const coverageRows = role && Array.isArray(role.coverageRows) ? role.coverageRows : null;
-            const keys = new Set();
-            const strongCounts = Object.fromEntries(Array.from({ length: 7 }, function(_, index) {
-                return [index + 1, 0];
-            }));
-            for (const row of form) {
-                if (!row || !Array.isArray(row.numbers) || row.numbers.length !== 6) return false;
-                if (row.numbers.some(function(number, index) {
-                    return !Number.isInteger(number)
-                        || number < 1
-                        || number > 37
-                        || (index > 0 && row.numbers[index - 1] >= number);
-                })) return false;
-                const key = getPortfolioRowKey(row);
-                if (keys.has(key) || (forbiddenKeys && forbiddenKeys.has(key))) return false;
-                keys.add(key);
-                if (!Number.isInteger(row.strong) || row.strong < 1 || row.strong > 7) return false;
-                strongCounts[row.strong] += 1;
-                if (roleName && roleName.indexOf('depth') === 0
-                    && (!depthPool || row.numbers.some(function(number) { return !depthPool.has(number); }))) {
-                    return false;
-                }
-            }
-            if (Object.values(strongCounts).some(function(count) { return count !== 2; })) return false;
-            if (roleName && roleName.indexOf('coverage') === 0) {
-                if (!coverageRows || coverageRows.length !== 28) return false;
-                const metrics = LottoStrategyCore.getCoverageGroupMetrics(coverageRows);
-                if (metrics.maximumOverlap > 2
-                    || Object.values(metrics.numberExposure).some(function(count) {
-                        return count !== 4 && count !== 5;
-                    })) return false;
+        function isDenseArray(value, expectedLength) {
+            if (!Array.isArray(value)) return false;
+            if (expectedLength != null && value.length !== expectedLength) return false;
+            for (let index = 0; index < value.length; index++) {
+                if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
             }
             return true;
+        }
+
+        function isStructurallyValidPortfolioRow(row) {
+            if (!row || !isDenseArray(row.numbers, 6)) return false;
+            for (let index = 0; index < row.numbers.length; index++) {
+                const number = row.numbers[index];
+                if (!Number.isInteger(number)
+                    || number < 1
+                    || number > 37
+                    || (index > 0 && row.numbers[index - 1] >= number)) return false;
+            }
+            return Number.isInteger(row.strong) && row.strong >= 1 && row.strong <= 7;
+        }
+
+        function isValidPortfolioForm(form, role, forbiddenKeys) {
+            try {
+                const roleNames = ['coverage1', 'coverage2', 'depth1', 'depth2'];
+                if (!role || typeof role !== 'object' || !roleNames.includes(role.name)) return false;
+                if (forbiddenKeys !== null && !(forbiddenKeys instanceof Set)) return false;
+                if (!isDenseArray(form, 14)) return false;
+                const isCoverageRole = role.name === 'coverage1' || role.name === 'coverage2';
+                const isDepthRole = role.name === 'depth1' || role.name === 'depth2';
+                if (isCoverageRole) {
+                    if (!isDenseArray(role.coverageRows, 28)
+                        || role.coverageRows.some(function(row) {
+                            return !isStructurallyValidPortfolioRow(row);
+                        })) return false;
+                }
+                if (isDepthRole) {
+                    if (!(role.depthPool instanceof Set)
+                        || role.depthPool.size !== 14
+                        || [...role.depthPool].some(function(number) {
+                            return !Number.isInteger(number) || number < 1 || number > 37;
+                        })) return false;
+                }
+                const keys = new Set();
+                const strongCounts = Object.fromEntries(Array.from({ length: 7 }, function(_, index) {
+                    return [index + 1, 0];
+                }));
+                for (const row of form) {
+                    if (!isStructurallyValidPortfolioRow(row)) return false;
+                    const key = getPortfolioRowKey(row);
+                    if (keys.has(key) || (forbiddenKeys && forbiddenKeys.has(key))) return false;
+                    keys.add(key);
+                    strongCounts[row.strong] += 1;
+                    if (isDepthRole && row.numbers.some(function(number) {
+                        return !role.depthPool.has(number);
+                    })) return false;
+                }
+                if (Object.values(strongCounts).some(function(count) { return count !== 2; })) return false;
+                if (isCoverageRole) {
+                    const metrics = LottoStrategyCore.getCoverageGroupMetrics(role.coverageRows);
+                    if (!metrics || !Number.isFinite(metrics.maximumOverlap)
+                        || !metrics.numberExposure || typeof metrics.numberExposure !== 'object') return false;
+                    const exposureValues = Object.values(metrics.numberExposure);
+                    if (metrics.maximumOverlap > 2
+                        || exposureValues.length !== 37
+                        || exposureValues.some(function(count) {
+                            return count !== 4 && count !== 5;
+                        })) return false;
+                }
+                return true;
+            } catch (error) {
+                return false;
+            }
         }
 
         function isValidPortfolioComparison(comparison, expectedTotal) {
@@ -1823,20 +1858,20 @@
                 || portfolio.metricVersion !== LottoStrategyCore.BINARY_METRIC_VERSION
                 || portfolio.confidenceVersion !== LottoStrategyCore.CONFIDENCE_METHOD_VERSION) return false;
             if (typeof portfolio.validated !== 'boolean'
-                || !Array.isArray(portfolio.reasons)
+                || !isDenseArray(portfolio.reasons)
                 || portfolio.reasons.some(function(reason) { return typeof reason !== 'string'; })) return false;
             if (!Number.isInteger(portfolio.sampleCount) || portfolio.sampleCount < 0
                 || !Number.isInteger(portfolio.selectionFailures) || portfolio.selectionFailures < 0
                 || portfolio.selectionFailures > portfolio.sampleCount) return false;
 
-            if (portfolio.current == null) {
+            if (!Object.prototype.hasOwnProperty.call(portfolio, 'current')) return false;
+            if (portfolio.current === null) {
                 if (portfolio.validated) return false;
             } else {
                 const current = portfolio.current;
                 if (!current || typeof current !== 'object'
                     || !current.forms || typeof current.forms !== 'object'
-                    || !Array.isArray(current.depthPool)
-                    || current.depthPool.length !== 14
+                    || !isDenseArray(current.depthPool, 14)
                     || new Set(current.depthPool).size !== 14
                     || current.depthPool.some(function(number) {
                         return !Number.isInteger(number) || number < 1 || number > 37;
@@ -1845,7 +1880,7 @@
                 if (Object.keys(current.forms).length !== formIds.length
                     || formIds.some(function(formId) {
                         return !Object.prototype.hasOwnProperty.call(current.forms, formId)
-                            || !Array.isArray(current.forms[formId]);
+                            || !isDenseArray(current.forms[formId], 14);
                     })) return false;
                 const coverageRows = current.forms.coverage1.concat(current.forms.coverage2);
                 const depthPool = new Set(current.depthPool);
@@ -1872,13 +1907,11 @@
                     portfolio.diagnostics.portfolio3PlusStrong,
                     portfolio.sampleCount
                 )) return false;
-            if (!Array.isArray(portfolio.bucketDifferences)
-                || portfolio.bucketDifferences.length !== 3
+            if (!isDenseArray(portfolio.bucketDifferences, 3)
                 || portfolio.bucketDifferences.some(function(value) {
                     return typeof value !== 'number' || !Number.isFinite(value);
                 })) return false;
-            if (!Array.isArray(portfolio.bucketSampleCounts)
-                || portfolio.bucketSampleCounts.length !== 3
+            if (!isDenseArray(portfolio.bucketSampleCounts, 3)
                 || portfolio.bucketSampleCounts.some(function(value) {
                     return !Number.isInteger(value) || value < 0;
                 })
@@ -1932,7 +1965,7 @@
             if (result.version !== LottoStrategyCore.ALGORITHM_VERSION) return false;
             if (result.constraintVersion !== LottoStrategyCore.CONSTRAINT_VERSION) return false;
             if (result.fingerprint !== LottoStrategyCore.fingerprintRows(rows)) return false;
-            if (!Array.isArray(result.windows)) return false;
+            if (!isDenseArray(result.windows, LottoStrategyCore.BACKTEST_WINDOWS.length)) return false;
             if (result.windows.join('-') !== LottoStrategyCore.BACKTEST_WINDOWS.join('-')) return false;
             if (!result.split || !['eligibleCount', 'calibrationCount', 'holdoutCount'].every(function(field) {
                 return Number.isInteger(result.split[field]) && result.split[field] >= 0;
@@ -1940,7 +1973,7 @@
             if (result.split.calibrationCount + result.split.holdoutCount !== result.split.eligibleCount) return false;
 
             const expectedRankingCount = result.windows.length * 28;
-            if (!Array.isArray(result.rankings) || result.rankings.length !== expectedRankingCount) return false;
+            if (!isDenseArray(result.rankings, expectedRankingCount)) return false;
             const rankingIdentities = new Set();
             const identityMetricFields = ['score', 'stability', 'rate3Plus', 'averagePoints'];
             for (const ranking of result.rankings) {
@@ -1967,8 +2000,7 @@
                 if (!isFiniteBacktestMetricSet(policy.baseline, formMetricFields)) return false;
                 if (!isFiniteBacktestMetricSet(policy.optimized, formMetricFields)) return false;
                 for (const metrics of [policy.baseline, policy.optimized]) {
-                    if (!Array.isArray(metrics.bucketAverages)
-                        || metrics.bucketAverages.length !== 3
+                    if (!isDenseArray(metrics.bucketAverages, 3)
                         || metrics.bucketAverages.some(function(value) { return !Number.isFinite(Number(value)); })) return false;
                 }
             }
