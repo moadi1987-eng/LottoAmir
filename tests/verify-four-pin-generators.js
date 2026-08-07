@@ -64,6 +64,22 @@ assert.strictEqual(support.byStrong[2].windowScores[100], 1);
 assert.strictEqual(support.byStrong[2].windowScores[200], 1);
 assert.strictEqual(support.byStrong[2].windowScores[500], 1);
 
+const invalidStrongRows = buildSyntheticDraws(500).map((row, index) => ({
+  ...row,
+  strong: index === 0 ? 1 : 8,
+}));
+const invalidStrongSupport = core.buildStablePortfolioSupport(
+  candidates,
+  rankings,
+  invalidStrongRows,
+  windows,
+);
+assert.deepStrictEqual(invalidStrongSupport.byStrong[1].windowScores, {
+  100: 1,
+  200: 1,
+  500: 1,
+});
+
 const pool = core.selectDepthPool(support, 14);
 assert.strictEqual(pool.length, 14);
 assert.strictEqual(new Set(pool).size, 14);

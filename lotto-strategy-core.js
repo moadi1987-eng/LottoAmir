@@ -1801,6 +1801,7 @@
     windows.forEach(windowSize => {
       newestFirst.slice(0, windowSize).forEach(row => {
         const strong = Number(row.strong);
+        if (!Number.isInteger(strong) || strong < 1 || strong > 7) return;
         strongScores[windowSize][strong] = (strongScores[windowSize][strong] || 0) + 1;
       });
     });
