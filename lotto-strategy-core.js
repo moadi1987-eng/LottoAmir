@@ -7,6 +7,10 @@
 
   const ALGORITHM_VERSION = 'lotto-backtest-v2';
   const CONSTRAINT_VERSION = 'forms-v2';
+  const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v1';
+  const BINARY_METRIC_VERSION = 'draw-win-3plus-v1';
+  const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v1';
+  const DEFAULT_BOOTSTRAP_SAMPLES = 10000;
   const BACKTEST_WINDOWS = Object.freeze([100, 200, 500]);
   const REGULAR_POINTS = Object.freeze([0, 1, 3, 10, 35, 120, 400]);
   const FORM1_OPTIONS = Object.freeze({
@@ -1417,6 +1421,161 @@
     return { rows, best, drawScore: best.rowPoints + otherPoints * 0.05 };
   }
 
+  function flattenPortfolioForms(forms) {
+    if (Array.isArray(forms)) return forms.flatMap(value => (
+      Array.isArray(value) ? value : [value]
+    ));
+    return Object.values(forms || {}).flatMap(value => (
+      Array.isArray(value) ? value : []
+    ));
+  }
+
+  function hasRegularWin(forms, draw, threshold) {
+    const drawNumbers = new Set((draw && draw.numbers) || []);
+    return flattenPortfolioForms(forms).some(combo => (
+      (combo.numbers || []).filter(number => drawNumbers.has(number)).length >= threshold
+    ));
+  }
+
+  function hasRegularAndStrongWin(forms, draw, threshold) {
+    const drawNumbers = new Set((draw && draw.numbers) || []);
+    return flattenPortfolioForms(forms).some(combo => (
+      Number(combo.strong) === Number(draw && draw.strong)
+      && (combo.numbers || []).filter(number => drawNumbers.has(number)).length >= threshold
+    ));
+  }
+
+  function scoreBinaryPortfolioDraw(forms, draw) {
+    return {
+      win3Plus: hasRegularWin(forms, draw, 3),
+      win4Plus: hasRegularWin(forms, draw, 4),
+      win5Plus: hasRegularWin(forms, draw, 5),
+      win6: hasRegularWin(forms, draw, 6),
+    };
+  }
+
+  function wilsonInterval(wins, total, z = 1.959963984540054) {
+    if (!total) return { low: 0, high: 0 };
+    const rate = wins / total;
+    const zSquared = z * z;
+    const denominator = 1 + zSquared / total;
+    const center = (rate + zSquared / (2 * total)) / denominator;
+    const margin = (z / denominator) * Math.sqrt((rate * (1 - rate) + zSquared / (4 * total)) / total);
+    return {
+      low: Math.max(0, Math.min(1, center - margin)),
+      high: Math.max(0, Math.min(1, center + margin)),
+    };
+  }
+
+  function createBinaryRateAccumulator() {
+    return { wins: 0, total: 0 };
+  }
+
+  function addBinaryRateObservation(accumulator, won) {
+    if (typeof won !== 'boolean') {
+      const error = new Error('Binary observations must be boolean');
+      error.code = 'INVALID_BINARY_OBSERVATION';
+      throw error;
+    }
+    accumulator.total += 1;
+    if (won) accumulator.wins += 1;
+  }
+
+  function finalizeBinaryRateAccumulator(accumulator) {
+    const total = accumulator.total || 0;
+    const wins = accumulator.wins || 0;
+    return {
+      wins,
+      total,
+      rate: total ? wins / total : 0,
+      interval: wilsonInterval(wins, total),
+    };
+  }
+
+  function fnv1aSeed(value) {
+    let hash = 0x811c9dc5;
+    const text = String(value);
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+  }
+
+  function createMulberry32(seed) {
+    let state = seed >>> 0;
+    return function next() {
+      state += 0x6D2B79F5;
+      let value = state;
+      value = Math.imul(value ^ (value >>> 15), value | 1);
+      value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+      return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function pairedBootstrapInterval(newOutcomes, legacyOutcomes, samples, seed) {
+    const total = newOutcomes.length;
+    if (!total) return { low: 0, high: 0 };
+    const random = createMulberry32(fnv1aSeed(seed));
+    const differences = [];
+    for (let sample = 0; sample < samples; sample += 1) {
+      let newWins = 0;
+      let legacyWins = 0;
+      for (let index = 0; index < total; index += 1) {
+        const sampledIndex = Math.floor(random() * total);
+        if (newOutcomes[sampledIndex]) newWins += 1;
+        if (legacyOutcomes[sampledIndex]) legacyWins += 1;
+      }
+      differences.push((newWins - legacyWins) / total);
+    }
+    differences.sort((first, second) => first - second);
+    return {
+      low: differences[Math.floor((differences.length - 1) * 0.025)],
+      high: differences[Math.ceil((differences.length - 1) * 0.975)],
+    };
+  }
+
+  function comparePairedBinaryOutcomes(newOutcomes, legacyOutcomes, options = {}) {
+    if (newOutcomes.length !== legacyOutcomes.length) {
+      const error = new Error('Paired outcome arrays must have matching lengths');
+      error.code = 'PAIRED_LENGTH_MISMATCH';
+      throw error;
+    }
+    const paired = { both: 0, newOnly: 0, legacyOnly: 0, neither: 0 };
+    newOutcomes.forEach((newWon, index) => {
+      const legacyWon = legacyOutcomes[index];
+      if (newWon && legacyWon) paired.both += 1;
+      else if (newWon) paired.newOnly += 1;
+      else if (legacyWon) paired.legacyOnly += 1;
+      else paired.neither += 1;
+    });
+    const total = newOutcomes.length;
+    const newWins = paired.both + paired.newOnly;
+    const legacyWins = paired.both + paired.legacyOnly;
+    const newRate = total ? newWins / total : 0;
+    const legacyRate = total ? legacyWins / total : 0;
+    const bootstrapSamples = options.bootstrapSamples == null
+      ? DEFAULT_BOOTSTRAP_SAMPLES
+      : options.bootstrapSamples;
+    return {
+      total,
+      newWins,
+      legacyWins,
+      newRate,
+      legacyRate,
+      difference: newRate - legacyRate,
+      newInterval: wilsonInterval(newWins, total),
+      legacyInterval: wilsonInterval(legacyWins, total),
+      differenceInterval: pairedBootstrapInterval(
+        newOutcomes,
+        legacyOutcomes,
+        bootstrapSamples,
+        options.seed == null ? '' : options.seed,
+      ),
+      paired,
+    };
+  }
+
   function createEmptyIdentityAccumulator() {
     return {
       totalRegularPoints: 0,
@@ -1745,6 +1904,10 @@
   return {
     ALGORITHM_VERSION,
     CONSTRAINT_VERSION,
+    FOUR_PIN_PORTFOLIO_VERSION,
+    BINARY_METRIC_VERSION,
+    CONFIDENCE_METHOD_VERSION,
+    DEFAULT_BOOTSTRAP_SAMPLES,
     BACKTEST_WINDOWS,
     REGULAR_POINTS,
     FORM1_OPTIONS,
@@ -1765,6 +1928,15 @@
     buildWindowCandidatePool,
     scoreLine,
     scoreForm,
+    flattenPortfolioForms,
+    hasRegularWin,
+    hasRegularAndStrongWin,
+    scoreBinaryPortfolioDraw,
+    createBinaryRateAccumulator,
+    addBinaryRateObservation,
+    finalizeBinaryRateAccumulator,
+    wilsonInterval,
+    comparePairedBinaryOutcomes,
     aggregateIdentityMetrics,
     evaluateStrategyWindows,
     selectPerformanceForm,
