@@ -1728,6 +1728,110 @@
     };
   }
 
+  function comparePortfolioIdentities(first, second) {
+    return second.calibration.rate3Plus - first.calibration.rate3Plus
+      || second.calibration.stability - first.calibration.stability
+      || first.strategyId - second.strategyId
+      || first.window - second.window
+      || first.identity.localeCompare(second.identity);
+  }
+
+  function getMedianScore(scores) {
+    const sorted = scores.slice().sort((first, second) => first - second);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function rankPortfolioIdentities(rankings, windows) {
+    return (windows || BACKTEST_WINDOWS).flatMap(windowSize => {
+      const ranked = (rankings || [])
+        .filter(record => record.window === windowSize)
+        .slice()
+        .sort(comparePortfolioIdentities);
+      const median = getMedianScore(ranked.map(record => record.calibration.rate3Plus));
+      const retained = ranked.filter(record => record.calibration.rate3Plus >= median);
+      return retained.map((record, index) => ({
+        ...record,
+        rank: index + 1,
+        rankWeight: (retained.length - index) / retained.length,
+      }));
+    });
+  }
+
+  function buildSupportRecords(maximum, windows, scoresByNumber) {
+    const records = Array.from({ length: maximum }, (_, index) => {
+      const number = index + 1;
+      const windowScores = Object.fromEntries(windows.map(windowSize => [windowSize, 0]));
+      windows.forEach(windowSize => {
+        const rawScores = scoresByNumber[windowSize] || {};
+        const highest = Math.max(0, ...Object.values(rawScores));
+        windowScores[windowSize] = highest ? (rawScores[number] || 0) / highest : 0;
+      });
+      const sortedScores = Object.values(windowScores).sort((first, second) => first - second);
+      const medianScore = sortedScores[1];
+      const minimumScore = sortedScores[0];
+      return {
+        number,
+        windowScores,
+        medianScore,
+        minimumScore,
+        stableSupport: medianScore * 0.70 + minimumScore * 0.30,
+      };
+    });
+    return records.sort((first, second) => (
+      second.stableSupport - first.stableSupport || first.number - second.number
+    ));
+  }
+
+  function buildStablePortfolioSupport(candidatePool, rankings, earlierRows, windows = BACKTEST_WINDOWS) {
+    const ranked = rankPortfolioIdentities(rankings, windows);
+    const candidatesByIdentity = new Map((candidatePool || []).map(candidate => [candidate.identity, candidate]));
+    const regularScores = Object.fromEntries(windows.map(windowSize => [windowSize, {}]));
+    ranked.forEach(record => {
+      const candidate = candidatesByIdentity.get(record.identity);
+      if (!candidate) return;
+      candidate.numbers.forEach(number => {
+        regularScores[record.window][number] = (regularScores[record.window][number] || 0) + record.rankWeight;
+      });
+    });
+    const strongScores = Object.fromEntries(windows.map(windowSize => [windowSize, {}]));
+    const newestFirst = toNewestFirst(earlierRows || []);
+    windows.forEach(windowSize => {
+      newestFirst.slice(0, windowSize).forEach(row => {
+        const strong = Number(row.strong);
+        strongScores[windowSize][strong] = (strongScores[windowSize][strong] || 0) + 1;
+      });
+    });
+    const numbers = buildSupportRecords(37, windows, regularScores);
+    const strong = buildSupportRecords(7, windows, strongScores);
+    return {
+      numbers,
+      strong,
+      byNumber: Object.fromEntries(numbers.map(record => [record.number, record])),
+      byStrong: Object.fromEntries(strong.map(record => [record.number, record])),
+    };
+  }
+
+  function selectDepthPool(support, count) {
+    if (!Number.isInteger(count) || count < 6 || count > 37) {
+      const error = new Error('Depth pool size must be an integer from 6 through 37');
+      error.code = 'INVALID_DEPTH_POOL_SIZE';
+      throw error;
+    }
+    const records = (support && support.numbers ? support.numbers : []).slice();
+    const stable = records.filter(record => (
+      Object.values(record.windowScores).filter(score => score > 0).length >= 2
+    )).sort((first, second) => second.stableSupport - first.stableSupport || first.number - second.number);
+    const remaining = records.filter(record => !stable.includes(record)).sort((first, second) => (
+      second.minimumScore - first.minimumScore
+      || second.stableSupport - first.stableSupport
+      || first.number - second.number
+    ));
+    return stable.concat(remaining).slice(0, count).map(record => record.number);
+  }
+
   function createEmptyFormAccumulator() {
     return {
       drawScoreTotal: 0,
@@ -1939,6 +2043,9 @@
     comparePairedBinaryOutcomes,
     aggregateIdentityMetrics,
     evaluateStrategyWindows,
+    rankPortfolioIdentities,
+    buildStablePortfolioSupport,
+    selectDepthPool,
     selectPerformanceForm,
     selectDiversityForm,
     selectOptimizedForms,
