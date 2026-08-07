@@ -240,6 +240,45 @@ assert.deepStrictEqual({
   },
 });
 
+const replacementTieDepth = core.buildDepthPair(
+  tiedDepthPool,
+  tiedDepthSupport,
+  new Set(),
+  { seed: 'positive-depth-887', searchIterations: 1 },
+);
+const replacementTieRowKeys = [
+  ...replacementTieDepth.forms.depth1,
+  ...replacementTieDepth.forms.depth2,
+].map(row => row.numbers.join('-')).sort();
+assert.ok(replacementTieRowKeys.includes('1-5-6-9-10-12'));
+assert.ok(!replacementTieRowKeys.includes('1-5-7-9-10-12'));
+assert.deepStrictEqual({
+  rowKeys: replacementTieRowKeys,
+  metrics: replacementTieDepth.metrics,
+}, {
+  rowKeys: [
+    '1-10-11-12-13-14', '1-2-3-5-10-11', '1-2-3-8-9-12', '1-2-4-5-9-14',
+    '1-2-7-8-11-13', '1-3-4-7-12-14', '1-3-5-6-8-13', '1-4-5-9-11-13',
+    '1-4-6-7-12-13', '1-4-6-8-10-14', '1-5-6-9-10-12', '1-6-7-9-11-14',
+    '2-3-4-5-6-7', '2-3-4-8-11-14', '2-3-9-10-13-14', '2-4-6-10-11-13',
+    '2-4-8-9-10-12', '2-5-7-8-10-14', '2-5-7-9-11-12', '2-6-8-12-13-14',
+    '3-4-5-10-12-13', '3-4-7-9-10-11', '3-5-7-11-13-14', '3-6-7-8-10-12',
+    '3-6-9-11-12-13', '4-5-6-11-12-14', '4-7-8-9-13-14', '5-6-8-9-10-11',
+  ],
+  metrics: {
+    rowCount: 28,
+    uniqueRowCount: 28,
+    uniqueFourSubsetCount: 416,
+    uniqueFiveSubsetCount: 168,
+    numberExposure: {
+      1: 12, 2: 12, 3: 12, 4: 13, 5: 12, 6: 12, 7: 11,
+      8: 11, 9: 12, 10: 12, 11: 13, 12: 12, 13: 12, 14: 12,
+    },
+    maximumOverlap: 4,
+    poolCoverage: 14,
+  },
+});
+
 const portfolioRows = buildSyntheticDraws(540);
 const portfolioPlan = core.createBacktestPlan(portfolioRows);
 const portfolioTarget = 539;
