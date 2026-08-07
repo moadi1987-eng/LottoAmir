@@ -102,6 +102,7 @@ assert.deepStrictEqual(coverage, repeatedCoverage);
 assert.strictEqual(core.PORTFOLIO_CONSTRAINT_VERSION, 'four-pin-constraints-v1');
 assert.deepStrictEqual(core.COVERAGE_FORM_IDS, ['coverage1', 'coverage2']);
 assert.strictEqual(coverage.seed, 'coverage-fixture');
+assert.deepStrictEqual(Object.keys(coverage.forms), ['coverage1', 'coverage2']);
 assert.strictEqual(coverage.forms.coverage1.length, 14);
 assert.strictEqual(coverage.forms.coverage2.length, 14);
 assert.ok(Object.values(coverage.forms).every(form => form.every((row, index) => (
@@ -125,6 +126,15 @@ assert.deepStrictEqual(coverage.metrics, coverageMetrics);
 assert.strictEqual(coverageMetrics.maximumOverlap, 2);
 assert.strictEqual(coverageMetrics.uniqueTripleCount, 28 * 20);
 assert.ok(Object.values(coverageMetrics.numberExposure).every(count => count === 4 || count === 5));
+const rankedCoverageNumbers = support.numbers.slice().sort((first, second) => (
+  second.stableSupport - first.stableSupport || first.number - second.number
+));
+rankedCoverageNumbers.slice(0, 20).forEach(record => {
+  assert.strictEqual(coverageMetrics.numberExposure[record.number], 5);
+});
+rankedCoverageNumbers.slice(20).forEach(record => {
+  assert.strictEqual(coverageMetrics.numberExposure[record.number], 4);
+});
 
 assert.deepStrictEqual(
   core.getSubsetKeys([1, 2, 3, 4, 5, 6], 3),
