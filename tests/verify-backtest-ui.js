@@ -24,6 +24,8 @@ const required = [
   'function isCompatibleBacktestResult(result, rows)',
   'function getEffectiveBacktestRows()',
   'function saveBacktestCache(result)',
+  'function hydrateFourPinPortfolio(result)',
+  'const BACKTEST_PROGRESS_RANGES = {',
   'function applyFormMode(source, mode)',
   'function renderActiveForms()',
   "new Worker('lotto-backtest-worker.js')",
@@ -114,6 +116,10 @@ assert.strictEqual(
   vm.runInContext('loadCompatibleBacktestCache(__rows).fingerprint', context),
   result.fingerprint,
 );
+assert.deepStrictEqual(
+  JSON.parse(vm.runInContext('JSON.stringify(currentFourPinPortfolio)', context)),
+  result.portfolio,
+);
 
 const changedRows = rows.map(draw => ({ ...draw, numbers: draw.numbers.slice() }));
 changedRows[0].strong = changedRows[0].strong === 7 ? 6 : 7;
@@ -167,6 +173,12 @@ assert.deepStrictEqual(
   Array.from(postedMessage.windows),
   Array.from(LottoStrategyCore.BACKTEST_WINDOWS),
 );
+const portfolioBeforeCancel = vm.runInContext('JSON.stringify(currentFourPinPortfolio)', context);
 vm.runInContext("cancelBacktest('user')", context);
+assert.strictEqual(
+  vm.runInContext('JSON.stringify(currentFourPinPortfolio)', context),
+  portfolioBeforeCancel,
+  'Cancelling a run must preserve the last compatible hydrated portfolio',
+);
 
 console.log('Backtest analyzer UI verification passed');
