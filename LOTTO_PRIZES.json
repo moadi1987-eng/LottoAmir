@@ -67157,8 +67157,86 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3954"
+    },
+    "3955": {
+      "drawDate": "13/08/2026",
+      "drawNumber": 3955,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 52006
+        },
+        "3+strong": {
+          "prizeIls": 39,
+          "winnerCount": 8535
+        },
+        "4": {
+          "prizeIls": 52,
+          "winnerCount": 3681
+        },
+        "4+strong": {
+          "prizeIls": 158,
+          "winnerCount": 600
+        },
+        "5": {
+          "prizeIls": 722,
+          "winnerCount": 88
+        },
+        "5+strong": {
+          "prizeIls": 4397,
+          "winnerCount": 10
+        },
+        "6": {
+          "prizeIls": 750000,
+          "winnerCount": 2
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3955"
+    },
+    "3956": {
+      "drawDate": "15/08/2026",
+      "drawNumber": 3956,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 60194
+        },
+        "3+strong": {
+          "prizeIls": 33,
+          "winnerCount": 11053
+        },
+        "4": {
+          "prizeIls": 48,
+          "winnerCount": 4725
+        },
+        "4+strong": {
+          "prizeIls": 135,
+          "winnerCount": 786
+        },
+        "5": {
+          "prizeIls": 728,
+          "winnerCount": 115
+        },
+        "5+strong": {
+          "prizeIls": 3313,
+          "winnerCount": 13
+        },
+        "6": {
+          "prizeIls": 375000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3956"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-08-12T06:16:22.116349+00:00"
+  "updatedAt": "2026-08-15T20:55:25.971344+00:00"
 }
