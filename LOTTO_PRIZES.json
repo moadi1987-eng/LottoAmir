@@ -67313,8 +67313,47 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3958"
+    },
+    "3959": {
+      "drawDate": "25/08/2026",
+      "drawNumber": 3959,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 64233
+        },
+        "3+strong": {
+          "prizeIls": 43,
+          "winnerCount": 9766
+        },
+        "4": {
+          "prizeIls": 55,
+          "winnerCount": 4639
+        },
+        "4+strong": {
+          "prizeIls": 169,
+          "winnerCount": 725
+        },
+        "5": {
+          "prizeIls": 747,
+          "winnerCount": 100
+        },
+        "5+strong": {
+          "prizeIls": 4876,
+          "winnerCount": 16
+        },
+        "6": {
+          "prizeIls": 250000,
+          "winnerCount": 2
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3959"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-08-23T05:37:17.963631+00:00"
+  "updatedAt": "2026-08-25T20:55:21.893462+00:00"
 }
