@@ -5,8 +5,13 @@
 }(typeof self !== 'undefined' ? self : globalThis, function createLottoStrategyCore() {
   'use strict';
 
-  const ALGORITHM_VERSION = 'lotto-backtest-v2';
-  const CONSTRAINT_VERSION = 'forms-v2';
+  const ALGORITHM_VERSION = 'lotto-backtest-v4';
+  const CONSTRAINT_VERSION = 'forms-v3';
+  const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v2';
+  const PORTFOLIO_CONSTRAINT_VERSION = 'four-pin-constraints-v1';
+  const BINARY_METRIC_VERSION = 'draw-win-3plus-v1';
+  const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v2';
+  const DEFAULT_BOOTSTRAP_SAMPLES = 10000;
   const BACKTEST_WINDOWS = Object.freeze([100, 200, 500]);
   const REGULAR_POINTS = Object.freeze([0, 1, 3, 10, 35, 120, 400]);
   const FORM1_OPTIONS = Object.freeze({
@@ -26,6 +31,20 @@
     'איזון פיזור', 'זוגות מאמצע הדירוג', 'שלישייה מובילה + קרים',
     'ממוצע נע', 'אנטי-אחרון', 'מספרים בשלים', 'תנודה בין חלונות',
     'חזרת מגמה', 'סינרגיה מלאה', 'ממוצע משוקלל',
+  ]);
+  const COVERAGE_FORM_IDS = Object.freeze(['coverage1', 'coverage2']);
+  const FOUR_PIN_FORM_IDS = Object.freeze(['coverage1', 'coverage2', 'depth1', 'depth2']);
+  const COVERAGE_TEMPLATE = Object.freeze([
+    [13, 14, 20, 24, 33, 37], [9, 14, 21, 25, 32, 37], [2, 5, 14, 19, 27, 37],
+    [3, 5, 13, 17, 28, 31], [2, 7, 9, 11, 25, 26], [8, 12, 17, 27, 31, 33],
+    [1, 9, 10, 16, 21, 36], [3, 6, 7, 26, 29, 30], [7, 11, 17, 18, 19, 34],
+    [2, 11, 15, 21, 29, 30], [4, 10, 12, 30, 31, 34], [5, 8, 15, 26, 34, 35],
+    [7, 8, 13, 16, 21, 28], [3, 14, 18, 27, 30, 32], [3, 4, 18, 20, 28, 35],
+    [5, 9, 11, 29, 33, 36], [4, 13, 16, 23, 33, 36], [1, 10, 15, 18, 20, 22],
+    [6, 9, 13, 20, 22, 32], [1, 4, 5, 11, 19, 24], [4, 15, 16, 19, 22, 28],
+    [8, 17, 20, 23, 25, 37], [6, 12, 15, 18, 31, 35], [1, 12, 22, 23, 32, 35],
+    [2, 6, 10, 12, 17, 19], [1, 2, 7, 23, 24, 29], [3, 10, 24, 26, 27, 34],
+    [6, 8, 14, 16, 25, 36],
   ]);
 
   function isValidDraw(draw) {
@@ -588,8 +607,8 @@
   }
 
   function getOverlap(firstNumbers, secondNumbers) {
-    const second = new Set(secondNumbers || []);
-    return (firstNumbers || []).filter(number => second.has(number)).length;
+    const second = secondNumbers || [];
+    return (firstNumbers || []).filter(number => second.includes(number)).length;
   }
 
   function forEachNumberSelection(values, count, visitSelection) {
@@ -1005,9 +1024,9 @@
     ];
   }
 
-  function generateBaselineForms(newestFirstRows) {
+  function generateBaselineForms(newestFirstRows, suppliedSnapshot) {
     const rows = toNewestFirst(newestFirstRows);
-    const snapshot = buildAnalysisSnapshot(rows);
+    const snapshot = suppliedSnapshot || buildAnalysisSnapshot(rows);
     const main = generateMainCandidates(snapshot, rows);
     const form2Raw = generateForm2RawCandidates(snapshot, rows);
     const priority = buildForm2CandidatePriority(snapshot.numbers, snapshot.hot, snapshot.medium, snapshot.cold);
@@ -1019,6 +1038,35 @@
     const rotation = buildBalancedStrongRotation(snapshot.strong);
     form2.forEach((combo, index) => { combo.strong = rotation[index]; });
     return { main, form2, snapshot };
+  }
+
+  function cloneCombinationRows(rows) {
+    return rows.map(combo => ({ ...combo, numbers: combo.numbers.slice() }));
+  }
+
+  function buildLegacy56PortfolioFromBaselines(expanding, latest500) {
+    const normalizeForm = rows => {
+      if (!Array.isArray(rows)
+        || rows.length < 14
+        || rows.slice(0, 14).some(row => !row || !Array.isArray(row.numbers))) {
+        const error = new Error('Legacy portfolio requires four complete 14-row forms');
+        error.code = 'LEGACY_PORTFOLIO_INVALID';
+        throw error;
+      }
+      return cloneCombinationRows(rows.slice(0, 14));
+    };
+    return {
+      coverage1: normalizeForm(expanding.main),
+      coverage2: normalizeForm(expanding.form2),
+      depth1: normalizeForm(latest500.main),
+      depth2: normalizeForm(latest500.form2),
+    };
+  }
+
+  function buildLegacy56Portfolio(earlierRows) {
+    const expanding = generateBaselineForms(earlierRows);
+    const latest500 = generateBaselineForms(toNewestFirst(earlierRows).slice(0, 500));
+    return buildLegacy56PortfolioFromBaselines(expanding, latest500);
   }
 
   function createSelectionError(code) {
@@ -1100,13 +1148,14 @@
     }).sort(compareCandidateRecords);
   }
 
-  function buildRankedNumberPriority(records, training500) {
+  function buildRankedNumberPriority(records, training500, suppliedSnapshot) {
     const weightedScores = Object.fromEntries(Array.from({ length: 37 }, (_, index) => [index + 1, 0]));
     records.forEach((record, index) => {
       const weight = records.length - index;
       record.numbers.forEach(number => { weightedScores[number] += weight; });
     });
-    const snapshot = buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500));
+    const snapshot = suppliedSnapshot
+      || buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500));
     const frequencyRank = new Map(snapshot.numbers.map((item, index) => [item.number, index]));
     return Array.from({ length: 37 }, (_, index) => index + 1).sort((first, second) => (
       weightedScores[second] - weightedScores[first]
@@ -1145,10 +1194,18 @@
       && metrics.maximumOverlap <= settings.maximumOverlap;
   }
 
-  function finalizeSelectedForm(combos, training500, settings, code, forbiddenKeys) {
+  function finalizeSelectedForm(
+    combos,
+    training500,
+    settings,
+    code,
+    forbiddenKeys,
+    suppliedSnapshot,
+  ) {
     if (!formSatisfiesConstraints(combos, settings, forbiddenKeys)) throw createSelectionError(code);
     const rotation = buildBalancedStrongRotation(
-      buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500)).strong,
+      (suppliedSnapshot
+        || buildAnalysisSnapshot(toNewestFirst(training500).slice(0, 500))).strong,
     );
     return combos.map((combo, index) => ({
       comboNum: index + 1,
@@ -1179,7 +1236,13 @@
     return selected;
   }
 
-  function selectPerformanceForm(candidates, rankings, training500, options = FORM1_OPTIONS) {
+  function selectPerformanceForm(
+    candidates,
+    rankings,
+    training500,
+    options = FORM1_OPTIONS,
+    suppliedSnapshot,
+  ) {
     const settings = {
       ...FORM1_OPTIONS,
       ...(options || {}),
@@ -1197,7 +1260,14 @@
         throw createSelectionError('FORM1_SELECTION_FAILED');
       }
     }
-    return finalizeSelectedForm(selected, training500, settings, 'FORM1_SELECTION_FAILED', []);
+    return finalizeSelectedForm(
+      selected,
+      training500,
+      settings,
+      'FORM1_SELECTION_FAILED',
+      [],
+      suppliedSnapshot,
+    );
   }
 
   function getMedianIdentityScore(rankings, records) {
@@ -1273,7 +1343,14 @@
     return selected;
   }
 
-  function selectDiversityForm(candidates, rankings, training500, form1Rows, options = FORM2_OPTIONS) {
+  function selectDiversityForm(
+    candidates,
+    rankings,
+    training500,
+    form1Rows,
+    options = FORM2_OPTIONS,
+    suppliedSnapshot,
+  ) {
     const settings = { ...FORM2_OPTIONS, ...(options || {}), enforceMinimumRetained: true };
     const records = buildRankedCandidateRecords(candidates, rankings);
     if (records.length < 14) throw createSelectionError('FORM2_SELECTION_FAILED');
@@ -1286,7 +1363,7 @@
       try {
         selected = diversifyForm2Combinations(
           base,
-          buildRankedNumberPriority(records, training500),
+          buildRankedNumberPriority(records, training500, suppliedSnapshot),
           { ...settings, forbiddenKeys },
         );
       } catch (error) {
@@ -1299,13 +1376,20 @@
       settings,
       'FORM2_SELECTION_FAILED',
       forbiddenKeys,
+      suppliedSnapshot,
     );
   }
 
-  function selectOptimizedForms(candidates, rankings, training500) {
+  function selectOptimizedForms(candidates, rankings, training500, suppliedSnapshot) {
     const result = { main: null, form2: null, errors: { main: null, form2: null } };
     try {
-      result.main = selectPerformanceForm(candidates, rankings, training500, FORM1_OPTIONS);
+      result.main = selectPerformanceForm(
+        candidates,
+        rankings,
+        training500,
+        FORM1_OPTIONS,
+        suppliedSnapshot,
+      );
     } catch (error) {
       result.errors.main = error && error.code ? error.code : 'FORM1_SELECTION_FAILED';
     }
@@ -1316,6 +1400,7 @@
         training500,
         result.main || [],
         FORM2_OPTIONS,
+        suppliedSnapshot,
       );
     } catch (error) {
       result.errors.form2 = error && error.code ? error.code : 'FORM2_SELECTION_FAILED';
@@ -1417,6 +1502,425 @@
     return { rows, best, drawScore: best.rowPoints + otherPoints * 0.05 };
   }
 
+  function flattenPortfolioForms(forms) {
+    if (Array.isArray(forms)) return forms.flatMap(value => (
+      Array.isArray(value) ? value : [value]
+    ));
+    return Object.values(forms || {}).flatMap(value => (
+      Array.isArray(value) ? value : []
+    ));
+  }
+
+  function hasRegularWin(forms, draw, threshold) {
+    const drawNumbers = new Set((draw && draw.numbers) || []);
+    return flattenPortfolioForms(forms).some(combo => (
+      (combo.numbers || []).filter(number => drawNumbers.has(number)).length >= threshold
+    ));
+  }
+
+  function hasRegularAndStrongWin(forms, draw, threshold) {
+    const drawNumbers = new Set((draw && draw.numbers) || []);
+    return flattenPortfolioForms(forms).some(combo => (
+      Number(combo.strong) === Number(draw && draw.strong)
+      && (combo.numbers || []).filter(number => drawNumbers.has(number)).length >= threshold
+    ));
+  }
+
+  function scoreBinaryPortfolioDraw(forms, draw) {
+    return {
+      win3Plus: hasRegularWin(forms, draw, 3),
+      win4Plus: hasRegularWin(forms, draw, 4),
+      win5Plus: hasRegularWin(forms, draw, 5),
+      win6: hasRegularWin(forms, draw, 6),
+    };
+  }
+
+  function wilsonInterval(wins, total, z = 1.959963984540054) {
+    if (!total) return { low: 0, high: 0 };
+    const rate = wins / total;
+    const zSquared = z * z;
+    const denominator = 1 + zSquared / total;
+    const center = (rate + zSquared / (2 * total)) / denominator;
+    const margin = (z / denominator) * Math.sqrt((rate * (1 - rate) + zSquared / (4 * total)) / total);
+    return {
+      low: Math.max(0, Math.min(1, center - margin)),
+      high: Math.max(0, Math.min(1, center + margin)),
+    };
+  }
+
+  function createBinaryRateAccumulator() {
+    return { wins: 0, total: 0 };
+  }
+
+  function addBinaryRateObservation(accumulator, won) {
+    if (typeof won !== 'boolean') {
+      const error = new Error('Binary observations must be boolean');
+      error.code = 'INVALID_BINARY_OBSERVATION';
+      throw error;
+    }
+    accumulator.total += 1;
+    if (won) accumulator.wins += 1;
+  }
+
+  function finalizeBinaryRateAccumulator(accumulator) {
+    const total = accumulator.total || 0;
+    const wins = accumulator.wins || 0;
+    return {
+      wins,
+      total,
+      rate: total ? wins / total : 0,
+      interval: wilsonInterval(wins, total),
+    };
+  }
+
+  function fnv1aSeed(value) {
+    let hash = 0x811c9dc5;
+    const text = String(value);
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+  }
+
+  function createMulberry32(seed) {
+    let state = seed >>> 0;
+    return function next() {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let value = state;
+      value = Math.imul(value ^ (value >>> 15), value | 1);
+      value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+      return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function pairedBootstrapInterval(newOutcomes, legacyOutcomes, samples, seed) {
+    const total = newOutcomes.length;
+    if (!total) return { low: 0, high: 0 };
+    const random = createMulberry32(fnv1aSeed(seed));
+    const differences = [];
+    for (let sample = 0; sample < samples; sample += 1) {
+      let newWins = 0;
+      let legacyWins = 0;
+      for (let index = 0; index < total; index += 1) {
+        const sampledIndex = Math.floor(random() * total);
+        if (newOutcomes[sampledIndex]) newWins += 1;
+        if (legacyOutcomes[sampledIndex]) legacyWins += 1;
+      }
+      differences.push((newWins - legacyWins) / total);
+    }
+    differences.sort((first, second) => first - second);
+    return {
+      low: differences[Math.floor((differences.length - 1) * 0.025)],
+      high: differences[Math.ceil((differences.length - 1) * 0.975)],
+    };
+  }
+
+  function comparePairedBinaryOutcomes(newOutcomes, legacyOutcomes, options = {}) {
+    if (newOutcomes.length !== legacyOutcomes.length) {
+      const error = new Error('Paired outcome arrays must have matching lengths');
+      error.code = 'PAIRED_LENGTH_MISMATCH';
+      throw error;
+    }
+    const paired = { both: 0, newOnly: 0, legacyOnly: 0, neither: 0 };
+    newOutcomes.forEach((newWon, index) => {
+      const legacyWon = legacyOutcomes[index];
+      if (newWon && legacyWon) paired.both += 1;
+      else if (newWon) paired.newOnly += 1;
+      else if (legacyWon) paired.legacyOnly += 1;
+      else paired.neither += 1;
+    });
+    const total = newOutcomes.length;
+    const newWins = paired.both + paired.newOnly;
+    const legacyWins = paired.both + paired.legacyOnly;
+    const newRate = total ? newWins / total : 0;
+    const legacyRate = total ? legacyWins / total : 0;
+    const bootstrapSamples = options.bootstrapSamples == null
+      ? DEFAULT_BOOTSTRAP_SAMPLES
+      : options.bootstrapSamples;
+    return {
+      total,
+      newWins,
+      legacyWins,
+      newRate,
+      legacyRate,
+      difference: newRate - legacyRate,
+      newInterval: wilsonInterval(newWins, total),
+      legacyInterval: wilsonInterval(legacyWins, total),
+      differenceInterval: pairedBootstrapInterval(
+        newOutcomes,
+        legacyOutcomes,
+        bootstrapSamples,
+        options.seed == null ? '' : options.seed,
+      ),
+      paired,
+    };
+  }
+
+  function buildPortfolioAtTarget(chronological, targetIndex, rankings, options = {}) {
+    const settings = options && typeof options === 'object' ? options : {};
+    const windows = settings.windows || BACKTEST_WINDOWS;
+    const earlierChronological = chronological.slice(0, targetIndex);
+    const earlierNewestFirst = earlierChronological.slice().reverse();
+    const candidatePool = buildWindowCandidatePool(
+      chronological,
+      targetIndex,
+      windows,
+    );
+    return buildFourPinPortfolio(
+      earlierNewestFirst,
+      candidatePool,
+      rankings,
+      {
+        windows,
+        coverageSearchIterations: settings.coverageSearchIterations,
+        depthSearchIterations: settings.depthSearchIterations,
+        seed: `${fingerprintRows(earlierNewestFirst)}:${FOUR_PIN_PORTFOLIO_VERSION}`,
+      },
+    );
+  }
+
+  function validateFourPinPortfolioResult(result) {
+    const reasons = [];
+    const comparisons = result.comparisons;
+    if (result.selectionFailures > 0) reasons.push('selection-failure');
+    if (comparisons.portfolio3Plus.difference <= 0) {
+      reasons.push('portfolio-three-plus-regression');
+    }
+    if (comparisons.coverage3Plus.difference < 0) {
+      reasons.push('coverage-three-plus-regression');
+    }
+    if (comparisons.depth4Plus.difference <= 0) {
+      reasons.push('depth-four-plus-regression');
+    }
+    if (comparisons.depth3Plus.difference < -0.01) {
+      reasons.push('depth-three-plus-guardrail');
+    }
+    if (result.bucketSampleCounts.some(count => count < 1)) {
+      reasons.push('insufficient-bucket-samples');
+    }
+    if (result.bucketDifferences.filter(value => value >= 0).length < 2) {
+      reasons.push('bucket-instability');
+    }
+    return { validated: reasons.length === 0, reasons };
+  }
+
+  function runFourPinPortfolioBacktest(rows, options = {}) {
+    const settings = options && typeof options === 'object' ? options : {};
+    const suppliedPlan = settings.plan;
+    const windows = settings.windows || (suppliedPlan && suppliedPlan.windows) || BACKTEST_WINDOWS;
+    const plan = suppliedPlan || createBacktestPlan(rows, windows);
+    const onProgress = typeof settings.onProgress === 'function'
+      ? settings.onProgress
+      : function noop() {};
+    const isCancelled = typeof settings.isCancelled === 'function'
+      ? settings.isCancelled
+      : function neverCancelled() { return false; };
+    const rankings = settings.rankings || evaluateStrategyWindows(rows, plan.windows, {
+      onProgress,
+      isCancelled,
+    }).rankings;
+    const targetContexts = Array.isArray(settings.portfolioTargetContexts)
+      ? settings.portfolioTargetContexts
+      : null;
+    const newPortfolio3 = [];
+    const legacyPortfolio3 = [];
+    const newCoverage3 = [];
+    const legacyCoverage3 = [];
+    const newDepth3 = [];
+    const legacyDepth3 = [];
+    const newDepth4 = [];
+    const legacyDepth4 = [];
+    const newPortfolio3Strong = [];
+    const legacyPortfolio3Strong = [];
+    const bucketSampleCounts = [0, 0, 0];
+    const bucketNewWins = [0, 0, 0];
+    const bucketLegacyWins = [0, 0, 0];
+    const selectionFailureCodes = [];
+    let selectionFailures = 0;
+
+    plan.holdoutTargets.forEach((targetIndex, index) => {
+      if (isCancelled()) {
+        const error = new Error('Backtest cancelled');
+        error.code = 'CANCELLED';
+        throw error;
+      }
+      const suppliedContext = targetContexts && targetContexts[index];
+      const targetContext = suppliedContext && suppliedContext.targetIndex === targetIndex
+        ? suppliedContext
+        : null;
+      const earlierNewestFirst = targetContext
+        ? targetContext.earlierNewestFirst
+        : plan.chronological.slice(0, targetIndex).reverse();
+      const legacyForms = targetContext
+        ? targetContext.legacyForms
+        : buildLegacy56Portfolio(earlierNewestFirst);
+      const draw = plan.chronological[targetIndex];
+      let newForms = null;
+      let failureCode = null;
+      try {
+        newForms = targetContext
+          ? buildFourPinPortfolio(
+            earlierNewestFirst,
+            targetContext.candidatePool,
+            rankings,
+            {
+              ...settings,
+              windows: plan.windows,
+              seed: `${fingerprintRows(earlierNewestFirst)}:${FOUR_PIN_PORTFOLIO_VERSION}`,
+            },
+          ).forms
+          : buildPortfolioAtTarget(
+            plan.chronological,
+            targetIndex,
+            rankings,
+            { ...settings, windows: plan.windows },
+          ).forms;
+      } catch (error) {
+        selectionFailures += 1;
+        failureCode = error && error.code ? error.code : 'FOUR_PIN_SELECTION_FAILED';
+        selectionFailureCodes.push(failureCode);
+      }
+
+      const newPortfolioWon = newForms
+        ? hasRegularWin(Object.values(newForms), draw, 3)
+        : false;
+      const legacyPortfolioWon = hasRegularWin(Object.values(legacyForms), draw, 3);
+      newPortfolio3.push(newPortfolioWon);
+      legacyPortfolio3.push(legacyPortfolioWon);
+      newCoverage3.push(newForms
+        ? hasRegularWin([newForms.coverage1, newForms.coverage2], draw, 3)
+        : false);
+      legacyCoverage3.push(hasRegularWin(
+        [legacyForms.coverage1, legacyForms.coverage2],
+        draw,
+        3,
+      ));
+      newDepth3.push(newForms
+        ? hasRegularWin([newForms.depth1, newForms.depth2], draw, 3)
+        : false);
+      legacyDepth3.push(hasRegularWin(
+        [legacyForms.depth1, legacyForms.depth2],
+        draw,
+        3,
+      ));
+      newDepth4.push(newForms
+        ? hasRegularWin([newForms.depth1, newForms.depth2], draw, 4)
+        : false);
+      legacyDepth4.push(hasRegularWin(
+        [legacyForms.depth1, legacyForms.depth2],
+        draw,
+        4,
+      ));
+      newPortfolio3Strong.push(newForms
+        ? hasRegularAndStrongWin(Object.values(newForms), draw, 3)
+        : false);
+      legacyPortfolio3Strong.push(hasRegularAndStrongWin(
+        Object.values(legacyForms),
+        draw,
+        3,
+      ));
+
+      const bucketIndex = getChronologyBucket(index, plan.holdoutTargets.length);
+      bucketSampleCounts[bucketIndex] += 1;
+      if (newPortfolioWon) bucketNewWins[bucketIndex] += 1;
+      if (legacyPortfolioWon) bucketLegacyWins[bucketIndex] += 1;
+      const progress = {
+        phase: 'portfolio-holdout',
+        completed: index + 1,
+        total: plan.holdoutTargets.length,
+      };
+      if (failureCode) progress.failureCode = failureCode;
+      onProgress(progress);
+    });
+
+    const bucketDifferences = bucketSampleCounts.map((count, index) => (
+      count ? (bucketNewWins[index] - bucketLegacyWins[index]) / count : 0
+    ));
+    const comparisonSeed = `${fingerprintRows(rows)}:${CONFIDENCE_METHOD_VERSION}`;
+    const compare = (newOutcomes, legacyOutcomes, metric) => comparePairedBinaryOutcomes(
+      newOutcomes,
+      legacyOutcomes,
+      {
+        bootstrapSamples: settings.bootstrapSamples,
+        seed: `${comparisonSeed}:${metric}`,
+      },
+    );
+    const comparisons = {
+      portfolio3Plus: compare(newPortfolio3, legacyPortfolio3, 'portfolio3Plus'),
+      coverage3Plus: compare(newCoverage3, legacyCoverage3, 'coverage3Plus'),
+      depth3Plus: compare(newDepth3, legacyDepth3, 'depth3Plus'),
+      depth4Plus: compare(newDepth4, legacyDepth4, 'depth4Plus'),
+    };
+    const diagnostics = {
+      portfolio3PlusStrong: compare(
+        newPortfolio3Strong,
+        legacyPortfolio3Strong,
+        'portfolio3PlusStrong',
+      ),
+      selectionFailureCodes,
+      currentFailureCode: null,
+    };
+    const gate = validateFourPinPortfolioResult({
+      selectionFailures,
+      comparisons,
+      bucketDifferences,
+      bucketSampleCounts,
+    });
+
+    let current = null;
+    let validated = gate.validated;
+    const reasons = gate.reasons.slice();
+    if (isCancelled()) {
+      const error = new Error('Backtest cancelled');
+      error.code = 'CANCELLED';
+      throw error;
+    }
+    try {
+      const currentNewestFirst = settings.portfolioCurrentContext
+        ? settings.portfolioCurrentContext.newestFirst
+        : toNewestFirst(rows);
+      const currentCandidatePool = settings.portfolioCurrentContext
+        ? settings.portfolioCurrentContext.candidatePool
+        : plan.windows.flatMap(windowSize => (
+          generateRawCandidates(currentNewestFirst, windowSize)
+        ));
+      current = buildFourPinPortfolio(
+        currentNewestFirst,
+        currentCandidatePool,
+        rankings,
+        {
+          ...settings,
+          windows: plan.windows,
+          seed: `${fingerprintRows(rows)}:${FOUR_PIN_PORTFOLIO_VERSION}`,
+        },
+      );
+    } catch (error) {
+      diagnostics.currentFailureCode = error && error.code
+        ? error.code
+        : 'FOUR_PIN_CURRENT_GENERATION_FAILED';
+      reasons.push('current-generation-failure');
+      validated = false;
+    }
+    onProgress({ phase: 'portfolio-current', completed: 1, total: 1 });
+
+    return {
+      version: FOUR_PIN_PORTFOLIO_VERSION,
+      constraintVersion: PORTFOLIO_CONSTRAINT_VERSION,
+      metricVersion: BINARY_METRIC_VERSION,
+      confidenceVersion: CONFIDENCE_METHOD_VERSION,
+      validated,
+      reasons,
+      sampleCount: plan.holdoutTargets.length,
+      selectionFailures,
+      current,
+      comparisons,
+      diagnostics,
+      bucketDifferences,
+      bucketSampleCounts,
+    };
+  }
+
   function createEmptyIdentityAccumulator() {
     return {
       totalRegularPoints: 0,
@@ -1425,6 +1929,8 @@
       hitCounts: Array(7).fill(0),
       bucketPoints: Array(3).fill(0),
       bucketCounts: Array(3).fill(0),
+      bucket3PlusWins: Array(3).fill(0),
+      bucket3PlusCounts: Array(3).fill(0),
     };
   }
 
@@ -1436,6 +1942,8 @@
     if (bucketIndex >= 0 && bucketIndex < 3) {
       accumulator.bucketPoints[bucketIndex] += lineScore.regularPoints;
       accumulator.bucketCounts[bucketIndex] += 1;
+      accumulator.bucket3PlusCounts[bucketIndex] += 1;
+      if (lineScore.regularMatches >= 3) accumulator.bucket3PlusWins[bucketIndex] += 1;
     }
   }
 
@@ -1451,6 +1959,27 @@
     const stability = averageBucketScore === 0
       ? 0
       : Math.max(0, Math.min(1, minimumBucket / averageBucketScore));
+    const bucket3PlusWins = Array.isArray(accumulator.bucket3PlusWins)
+      ? accumulator.bucket3PlusWins.slice(0, 3)
+      : [0, 0, 0];
+    const bucket3PlusCounts = Array.isArray(accumulator.bucket3PlusCounts)
+      ? accumulator.bucket3PlusCounts.slice(0, 3)
+      : accumulator.bucketCounts.slice(0, 3);
+    while (bucket3PlusWins.length < 3) bucket3PlusWins.push(0);
+    while (bucket3PlusCounts.length < 3) bucket3PlusCounts.push(0);
+    const bucket3PlusRates = bucket3PlusWins.map((wins, index) => (
+      bucket3PlusCounts[index] ? wins / bucket3PlusCounts[index] : 0
+    ));
+    const averageBucket3PlusRate = bucket3PlusRates.reduce(
+      (sum, rate) => sum + rate,
+      0,
+    ) / bucket3PlusRates.length;
+    const binary3PlusStability = averageBucket3PlusRate === 0
+      ? 0
+      : Math.max(
+        0,
+        Math.min(1, Math.min(...bucket3PlusRates) / averageBucket3PlusRate),
+      );
     const rateAtLeast = threshold => {
       if (!sampleCount) return 0;
       return accumulator.hitCounts.slice(threshold).reduce((sum, count) => sum + count, 0) / sampleCount;
@@ -1477,6 +2006,10 @@
       bucketAverages,
       averageBucketScore,
       stability,
+      bucket3PlusWins,
+      bucket3PlusCounts,
+      bucket3PlusRates,
+      binary3PlusStability,
       score: averagePoints * 0.80 + averagePoints * stability * 0.20,
     };
   }
@@ -1566,6 +2099,1063 @@
         holdoutCount: plan.holdoutTargets.length,
       },
       rankings,
+    };
+  }
+
+  function comparePortfolioIdentities(first, second) {
+    return second.calibration.rate3Plus - first.calibration.rate3Plus
+      || second.calibration.binary3PlusStability - first.calibration.binary3PlusStability
+      || first.strategyId - second.strategyId
+      || first.window - second.window
+      || first.identity.localeCompare(second.identity);
+  }
+
+  function getMedianScore(scores) {
+    const sorted = scores.slice().sort((first, second) => first - second);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function rankPortfolioIdentities(rankings, windows) {
+    return (windows || BACKTEST_WINDOWS).flatMap(windowSize => {
+      const ranked = (rankings || [])
+        .filter(record => record.window === windowSize)
+        .slice()
+        .sort(comparePortfolioIdentities);
+      const median = getMedianScore(ranked.map(record => record.calibration.rate3Plus));
+      const retained = ranked.filter(record => record.calibration.rate3Plus >= median);
+      return retained.map((record, index) => ({
+        ...record,
+        rank: index + 1,
+        rankWeight: (retained.length - index) / retained.length,
+      }));
+    });
+  }
+
+  function buildSupportRecords(maximum, windows, scoresByNumber) {
+    const records = Array.from({ length: maximum }, (_, index) => {
+      const number = index + 1;
+      const windowScores = Object.fromEntries(windows.map(windowSize => [windowSize, 0]));
+      windows.forEach(windowSize => {
+        const rawScores = scoresByNumber[windowSize] || {};
+        const highest = Math.max(0, ...Object.values(rawScores));
+        windowScores[windowSize] = highest ? (rawScores[number] || 0) / highest : 0;
+      });
+      const sortedScores = Object.values(windowScores).sort((first, second) => first - second);
+      const medianScore = sortedScores[1];
+      const minimumScore = sortedScores[0];
+      return {
+        number,
+        windowScores,
+        medianScore,
+        minimumScore,
+        stableSupport: medianScore * 0.70 + minimumScore * 0.30,
+      };
+    });
+    return records.sort((first, second) => (
+      second.stableSupport - first.stableSupport || first.number - second.number
+    ));
+  }
+
+  function buildStablePortfolioSupport(candidatePool, rankings, earlierRows, windows = BACKTEST_WINDOWS) {
+    const ranked = rankPortfolioIdentities(rankings, windows);
+    const candidatesByIdentity = new Map((candidatePool || []).map(candidate => [candidate.identity, candidate]));
+    const regularScores = Object.fromEntries(windows.map(windowSize => [windowSize, {}]));
+    ranked.forEach(record => {
+      const candidate = candidatesByIdentity.get(record.identity);
+      if (!candidate) return;
+      candidate.numbers.forEach(number => {
+        regularScores[record.window][number] = (regularScores[record.window][number] || 0) + record.rankWeight;
+      });
+    });
+    const strongScores = Object.fromEntries(windows.map(windowSize => [windowSize, {}]));
+    const newestFirst = toNewestFirst(earlierRows || []);
+    windows.forEach(windowSize => {
+      newestFirst.slice(0, windowSize).forEach(row => {
+        const strong = Number(row.strong);
+        if (!Number.isInteger(strong) || strong < 1 || strong > 7) return;
+        strongScores[windowSize][strong] = (strongScores[windowSize][strong] || 0) + 1;
+      });
+    });
+    const numbers = buildSupportRecords(37, windows, regularScores);
+    const strong = buildSupportRecords(7, windows, strongScores);
+    return {
+      numbers,
+      strong,
+      byNumber: Object.fromEntries(numbers.map(record => [record.number, record])),
+      byStrong: Object.fromEntries(strong.map(record => [record.number, record])),
+    };
+  }
+
+  function selectDepthPool(support, count) {
+    if (!Number.isInteger(count) || count < 6 || count > 37) {
+      const error = new Error('Depth pool size must be an integer from 6 through 37');
+      error.code = 'INVALID_DEPTH_POOL_SIZE';
+      throw error;
+    }
+    const records = (support && support.numbers ? support.numbers : []).slice();
+    const stable = records.filter(record => (
+      Object.values(record.windowScores).filter(score => score > 0).length >= 2
+    )).sort((first, second) => second.stableSupport - first.stableSupport || first.number - second.number);
+    const remaining = records.filter(record => !stable.includes(record)).sort((first, second) => (
+      second.minimumScore - first.minimumScore
+      || second.stableSupport - first.stableSupport
+      || first.number - second.number
+    ));
+    return stable.concat(remaining).slice(0, count).map(record => record.number);
+  }
+
+  function enumerateNumberCombinations(values, choose) {
+    if (!Array.isArray(values)) {
+      const error = new Error('Combination values must be unique regular numbers');
+      error.code = 'INVALID_COMBINATION_VALUES';
+      throw error;
+    }
+    if (values.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+      || new Set(values).size !== values.length) {
+      const error = new Error('Combination values must be unique regular numbers');
+      error.code = 'INVALID_COMBINATION_VALUES';
+      throw error;
+    }
+    if (!Number.isInteger(choose) || choose < 1 || choose > values.length) {
+      const error = new Error('Combination size must be within the supplied values');
+      error.code = 'INVALID_COMBINATION_SIZE';
+      throw error;
+    }
+    const sorted = values.slice().sort((first, second) => first - second);
+    const combinations = [];
+    function visit(startIndex, selected) {
+      if (selected.length === choose) {
+        combinations.push(selected.slice());
+        return;
+      }
+      const remaining = choose - selected.length;
+      for (let index = startIndex; index <= sorted.length - remaining; index += 1) {
+        selected.push(sorted[index]);
+        visit(index + 1, selected);
+        selected.pop();
+      }
+    }
+    visit(0, []);
+    return combinations;
+  }
+
+  function getSubsetKeys(numbers, size) {
+    const values = (numbers || []).slice().sort((first, second) => first - second);
+    if (!Number.isInteger(size) || size < 1 || size > values.length) return [];
+    const keys = [];
+    forEachNumberSelection(values, size, selection => {
+      keys.push(selection.join('-'));
+    });
+    return keys;
+  }
+
+  function getDepthRowNumbers(row) {
+    return (Array.isArray(row) ? row : (row && row.numbers) || []).slice();
+  }
+
+  function getDepthGroupMetrics(rows, pool) {
+    const normalizedPool = Array.isArray(pool)
+      ? pool.slice().sort((first, second) => first - second)
+      : [];
+    const normalizedRows = (rows || []).map(getDepthRowNumbers);
+    const rowKeys = new Set();
+    const fourSubsetKeys = new Set();
+    const fiveSubsetKeys = new Set();
+    const numberExposure = Object.fromEntries(normalizedPool.map(number => [number, 0]));
+    let maximumOverlap = 0;
+
+    normalizedRows.forEach(numbers => {
+      rowKeys.add(getCombinationKey(numbers));
+      getSubsetKeys(numbers, 4).forEach(key => fourSubsetKeys.add(key));
+      getSubsetKeys(numbers, 5).forEach(key => fiveSubsetKeys.add(key));
+      numbers.forEach(number => {
+        if (Object.prototype.hasOwnProperty.call(numberExposure, number)) {
+          numberExposure[number] += 1;
+        }
+      });
+    });
+    for (let first = 0; first < normalizedRows.length; first += 1) {
+      for (let second = first + 1; second < normalizedRows.length; second += 1) {
+        maximumOverlap = Math.max(
+          maximumOverlap,
+          getOverlap(normalizedRows[first], normalizedRows[second]),
+        );
+      }
+    }
+    return {
+      rowCount: normalizedRows.length,
+      uniqueRowCount: rowKeys.size,
+      uniqueFourSubsetCount: fourSubsetKeys.size,
+      uniqueFiveSubsetCount: fiveSubsetKeys.size,
+      numberExposure,
+      maximumOverlap,
+      poolCoverage: Object.values(numberExposure).filter(exposure => exposure > 0).length,
+    };
+  }
+
+  function createDepthError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function normalizeDepthInputs(pool, support) {
+    if (!Array.isArray(pool)
+      || pool.length !== 14
+      || pool.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+      || new Set(pool).size !== pool.length) {
+      throw createDepthError('DEPTH_INVALID_POOL', 'Depth generation requires 14 unique regular numbers');
+    }
+    const normalizedPool = pool.slice().sort((first, second) => first - second);
+    const supportRecords = support && Array.isArray(support.numbers) ? support.numbers : [];
+    const stableSupportByNumber = Object.fromEntries(supportRecords.map(record => [
+      Number(record && record.number),
+      Number(record && record.stableSupport),
+    ]));
+    if (normalizedPool.some(number => !Number.isFinite(stableSupportByNumber[number]))) {
+      throw createDepthError(
+        'DEPTH_INVALID_SUPPORT',
+        'Depth generation requires stable support for every pool number',
+      );
+    }
+    return { normalizedPool, stableSupportByNumber };
+  }
+
+  function getDepthExposureVariance(exposure, pool) {
+    const values = pool.map(number => exposure[number] || 0);
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+  }
+
+  function getDepthSubsetMasks(numberMasks, size) {
+    const subsetMasks = [];
+    forEachNumberSelection(numberMasks, size, selection => {
+      subsetMasks.push(selection.reduce((mask, value) => mask | value, 0));
+    });
+    return subsetMasks;
+  }
+
+  function countDepthMaskBits(mask) {
+    let value = mask;
+    value -= (value >>> 1) & 0x55555555;
+    value = (value & 0x33333333) + ((value >>> 2) & 0x33333333);
+    return (((value + (value >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+  }
+
+  let canonicalDepthCandidateMetadata = null;
+
+  function getCanonicalDepthCandidateMetadata() {
+    if (canonicalDepthCandidateMetadata) return canonicalDepthCandidateMetadata;
+    canonicalDepthCandidateMetadata = enumerateNumberCombinations(
+      Array.from({ length: 14 }, (_, index) => index + 1),
+      6,
+    ).map(positions => {
+      const positionIndexes = positions.map(position => position - 1);
+      const numberMasks = positionIndexes.map(index => 1 << index);
+      return {
+        positionIndexes,
+        poolMask: numberMasks.reduce((mask, value) => mask | value, 0),
+        fourSubsetMasks: getDepthSubsetMasks(numberMasks, 4),
+        fiveSubsetMasks: getDepthSubsetMasks(numberMasks, 5),
+      };
+    });
+    return canonicalDepthCandidateMetadata;
+  }
+
+  function buildDepthCandidates(pool, stableSupportByNumber) {
+    return getCanonicalDepthCandidateMetadata().map(metadata => {
+      const numbers = metadata.positionIndexes.map(index => pool[index]);
+      return {
+        numbers,
+        key: getCombinationKey(numbers),
+        positionIndexes: metadata.positionIndexes,
+        poolMask: metadata.poolMask,
+        fourSubsetMasks: metadata.fourSubsetMasks,
+        fiveSubsetMasks: metadata.fiveSubsetMasks,
+        stableSupportSum: numbers.reduce(
+          (sum, number) => sum + stableSupportByNumber[number],
+          0,
+        ),
+      };
+    });
+  }
+
+  function getDepthVarianceAfterAddition(record, exposure, pool) {
+    let total = 0;
+    for (let index = 0; index < pool.length; index += 1) {
+      total += (exposure[pool[index]] || 0)
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+    }
+    const mean = total / pool.length;
+    let squaredDifferenceTotal = 0;
+    for (let index = 0; index < pool.length; index += 1) {
+      const value = (exposure[pool[index]] || 0)
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+      squaredDifferenceTotal += (value - mean) ** 2;
+    }
+    return squaredDifferenceTotal / pool.length;
+  }
+
+  function countNewDepthSubsets(subsetMasks, selectedSubsetMasks) {
+    let count = 0;
+    for (let index = 0; index < subsetMasks.length; index += 1) {
+      if (!selectedSubsetMasks.has(subsetMasks[index])) count += 1;
+    }
+    return count;
+  }
+
+  function countNewDepthSubsetFlags(subsetMasks, selectedSubsetFlags) {
+    let count = 0;
+    for (let index = 0; index < subsetMasks.length; index += 1) {
+      if (selectedSubsetFlags[subsetMasks[index]] === 0) count += 1;
+    }
+    return count;
+  }
+
+  function getDepthPositionVarianceAfterAddition(record, exposureByPosition) {
+    let total = 0;
+    for (let index = 0; index < exposureByPosition.length; index += 1) {
+      total += exposureByPosition[index]
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+    }
+    const mean = total / exposureByPosition.length;
+    let squaredDifferenceTotal = 0;
+    for (let index = 0; index < exposureByPosition.length; index += 1) {
+      const value = exposureByPosition[index]
+        + ((record.poolMask & (1 << index)) ? 1 : 0);
+      squaredDifferenceTotal += (value - mean) ** 2;
+    }
+    return squaredDifferenceTotal / exposureByPosition.length;
+  }
+
+  function selectGreedyDepthRows(candidates, forbiddenKeys, pool) {
+    const selected = [];
+    const selectedKeys = new Set();
+    const fourSubsetFlags = new Uint8Array(1 << pool.length);
+    const fiveSubsetFlags = new Uint8Array(1 << pool.length);
+    const exposureByPosition = Array(pool.length).fill(0);
+
+    while (selected.length < 28) {
+      let best = null;
+      let bestNewFourSubsetCount = 0;
+      let bestNewFiveSubsetCount = 0;
+      let bestMaximumOverlap = 0;
+      let bestExposureVariance = 0;
+      candidates.forEach(record => {
+        if (forbiddenKeys.has(record.key) || selectedKeys.has(record.key)) return;
+        const newFourSubsetCount = countNewDepthSubsetFlags(
+          record.fourSubsetMasks,
+          fourSubsetFlags,
+        );
+        const newFiveSubsetCount = countNewDepthSubsetFlags(
+          record.fiveSubsetMasks,
+          fiveSubsetFlags,
+        );
+        let maximumOverlap = 0;
+        for (let index = 0; index < selected.length; index += 1) {
+          maximumOverlap = Math.max(
+            maximumOverlap,
+            countDepthMaskBits(record.poolMask & selected[index].poolMask),
+          );
+        }
+        const exposureVariance = getDepthPositionVarianceAfterAddition(
+          record,
+          exposureByPosition,
+        );
+        const comparison = best && (
+          bestNewFourSubsetCount - newFourSubsetCount
+          || bestNewFiveSubsetCount - newFiveSubsetCount
+          || compareDescending(record.stableSupportSum, best.stableSupportSum)
+          || maximumOverlap - bestMaximumOverlap
+          || exposureVariance - bestExposureVariance
+          || record.key.localeCompare(best.key)
+        );
+        if (!best || comparison < 0) {
+          best = record;
+          bestNewFourSubsetCount = newFourSubsetCount;
+          bestNewFiveSubsetCount = newFiveSubsetCount;
+          bestMaximumOverlap = maximumOverlap;
+          bestExposureVariance = exposureVariance;
+        }
+      });
+      if (!best) {
+        throw createDepthError('DEPTH_SELECTION_FAILED', 'Depth selection could not produce 28 rows');
+      }
+      selected.push(best);
+      selectedKeys.add(best.key);
+      best.fourSubsetMasks.forEach(mask => { fourSubsetFlags[mask] = 1; });
+      best.fiveSubsetMasks.forEach(mask => { fiveSubsetFlags[mask] = 1; });
+      best.positionIndexes.forEach(index => { exposureByPosition[index] += 1; });
+    }
+    return selected;
+  }
+
+  function getDepthPortfolioObjective(records, pool) {
+    const fourSubsetMasks = new Set();
+    const fiveSubsetMasks = new Set();
+    const exposure = Object.fromEntries(pool.map(number => [number, 0]));
+    let stableSupportSum = 0;
+    let maximumOverlap = 0;
+    records.forEach((record, index) => {
+      record.fourSubsetMasks.forEach(mask => fourSubsetMasks.add(mask));
+      record.fiveSubsetMasks.forEach(mask => fiveSubsetMasks.add(mask));
+      record.numbers.forEach(number => { exposure[number] += 1; });
+      stableSupportSum += record.stableSupportSum;
+      for (let previous = 0; previous < index; previous += 1) {
+        maximumOverlap = Math.max(
+          maximumOverlap,
+          countDepthMaskBits(record.poolMask & records[previous].poolMask),
+        );
+      }
+    });
+    return {
+      uniqueFourSubsetCount: fourSubsetMasks.size,
+      uniqueFiveSubsetCount: fiveSubsetMasks.size,
+      stableSupportSum,
+      maximumOverlap,
+      exposureVariance: getDepthExposureVariance(exposure, pool),
+      key: records.map(record => record.key).sort().join('|'),
+    };
+  }
+
+  function isDepthObjectiveBetter(candidate, current) {
+    if (candidate.uniqueFourSubsetCount !== current.uniqueFourSubsetCount) {
+      return candidate.uniqueFourSubsetCount > current.uniqueFourSubsetCount;
+    }
+    if (candidate.uniqueFiveSubsetCount !== current.uniqueFiveSubsetCount) {
+      return candidate.uniqueFiveSubsetCount > current.uniqueFiveSubsetCount;
+    }
+    if (candidate.stableSupportSum !== current.stableSupportSum) {
+      return candidate.stableSupportSum > current.stableSupportSum;
+    }
+    if (candidate.maximumOverlap !== current.maximumOverlap) {
+      return candidate.maximumOverlap < current.maximumOverlap;
+    }
+    if (candidate.exposureVariance !== current.exposureVariance) {
+      return candidate.exposureVariance < current.exposureVariance;
+    }
+    return candidate.key < current.key;
+  }
+
+  function searchDepthRows(selected, candidates, pool, seed, searchIterations) {
+    const random = createMulberry32(fnv1aSeed(seed));
+    let current = selected.slice();
+    let currentObjective = getDepthPortfolioObjective(current, pool);
+    for (let iteration = 0; iteration < searchIterations; iteration += 1) {
+      const selectedIndex = Math.floor(random() * current.length);
+      const replacement = candidates[Math.floor(random() * candidates.length)];
+      if (current.some(record => record.key === replacement.key)) continue;
+      const candidate = current.slice();
+      candidate[selectedIndex] = replacement;
+      const candidateObjective = getDepthPortfolioObjective(candidate, pool);
+      if (isDepthObjectiveBetter(candidateObjective, currentObjective)) {
+        current = candidate;
+        currentObjective = candidateObjective;
+      }
+    }
+    return current;
+  }
+
+  function getDepthPartitionScore(record, fourSubsetMasks, exposure, pool) {
+    return {
+      newFourSubsetCount: countNewDepthSubsets(record.fourSubsetMasks, fourSubsetMasks),
+      exposureVariance: getDepthVarianceAfterAddition(record, exposure, pool),
+      key: record.key,
+    };
+  }
+
+  function compareDepthPartitionScores(first, second) {
+    return second.newFourSubsetCount - first.newFourSubsetCount
+      || first.exposureVariance - second.exposureVariance
+      || first.key.localeCompare(second.key);
+  }
+
+  function partitionDepthRows(records, pool) {
+    const remaining = records.slice().sort((first, second) => first.key.localeCompare(second.key));
+    const forms = [[], []];
+    const fourSubsetMasks = [new Set(), new Set()];
+    const exposures = [
+      Object.fromEntries(pool.map(number => [number, 0])),
+      Object.fromEntries(pool.map(number => [number, 0])),
+    ];
+    for (let assignment = 0; assignment < records.length; assignment += 1) {
+      const formIndex = assignment % 2;
+      let bestIndex = 0;
+      let bestScore = getDepthPartitionScore(
+        remaining[0],
+        fourSubsetMasks[formIndex],
+        exposures[formIndex],
+        pool,
+      );
+      for (let index = 1; index < remaining.length; index += 1) {
+        const score = getDepthPartitionScore(
+          remaining[index],
+          fourSubsetMasks[formIndex],
+          exposures[formIndex],
+          pool,
+        );
+        if (compareDepthPartitionScores(score, bestScore) < 0) {
+          bestIndex = index;
+          bestScore = score;
+        }
+      }
+      const [selected] = remaining.splice(bestIndex, 1);
+      forms[formIndex].push(selected);
+      selected.fourSubsetMasks.forEach(mask => fourSubsetMasks[formIndex].add(mask));
+      selected.numbers.forEach(number => { exposures[formIndex][number] += 1; });
+    }
+    if (forms.some(form => form.length !== 14)) {
+      throw createDepthError('DEPTH_PARTITION_FAILED', 'Depth rows could not be split into two forms');
+    }
+    return forms;
+  }
+
+  function buildDepthPair(pool, support, forbiddenKeys, options = {}) {
+    const { normalizedPool, stableSupportByNumber } = normalizeDepthInputs(pool, support);
+    const settings = options && typeof options === 'object' ? options : {};
+    if (typeof settings.seed !== 'string') {
+      throw createDepthError('DEPTH_INVALID_SEED', 'Depth generation requires a seed string');
+    }
+    const searchIterations = settings.searchIterations == null ? 1000 : settings.searchIterations;
+    if (!Number.isInteger(searchIterations) || searchIterations < 0) {
+      throw createDepthError(
+        'DEPTH_INVALID_SEARCH_ITERATIONS',
+        'Depth search iterations must be a non-negative integer',
+      );
+    }
+    const normalizedForbiddenKeys = new Set(Array.from(forbiddenKeys || [], String));
+    const candidates = buildDepthCandidates(
+      normalizedPool,
+      stableSupportByNumber,
+    ).filter(record => !normalizedForbiddenKeys.has(record.key));
+    const greedy = selectGreedyDepthRows(candidates, normalizedForbiddenKeys, normalizedPool);
+    const selected = searchDepthRows(
+      greedy,
+      candidates,
+      normalizedPool,
+      settings.seed,
+      searchIterations,
+    );
+    const [firstForm, secondForm] = partitionDepthRows(selected, normalizedPool);
+    const annotate = form => form.map((record, index) => ({
+      comboNum: index + 1,
+      strategy: 'עומק 4+',
+      numbers: record.numbers.slice(),
+    }));
+    const forms = {
+      depth1: annotate(firstForm),
+      depth2: annotate(secondForm),
+    };
+    const rows = [...forms.depth1, ...forms.depth2];
+    return {
+      forms,
+      rows,
+      metrics: getDepthGroupMetrics(rows, normalizedPool),
+      seed: settings.seed,
+    };
+  }
+
+  function getStrongCollisionPairs(forms) {
+    const rows = FOUR_PIN_FORM_IDS.flatMap(formId => forms[formId].map((row, rowIndex) => ({
+      formId,
+      rowIndex,
+      row,
+    })));
+    let highestOverlap = 0;
+    const overlaps = [];
+    for (let first = 0; first < rows.length; first += 1) {
+      for (let second = first + 1; second < rows.length; second += 1) {
+        const overlap = getOverlap(rows[first].row.numbers, rows[second].row.numbers);
+        highestOverlap = Math.max(highestOverlap, overlap);
+        overlaps.push({ first: rows[first], second: rows[second], overlap });
+      }
+    }
+    return overlaps.filter(pair => pair.overlap === highestOverlap);
+  }
+
+  function countStrongCollisions(pairs) {
+    return pairs.filter(pair => pair.first.row.strong === pair.second.row.strong).length;
+  }
+
+  function assignPortfolioStrongNumbers(forms, strongSupport) {
+    const validForms = forms && FOUR_PIN_FORM_IDS.every(formId => (
+      Array.isArray(forms[formId]) && forms[formId].length === 14
+    ));
+    if (!validForms || Object.keys(forms).some(formId => !FOUR_PIN_FORM_IDS.includes(formId))) {
+      const error = new Error('Strong assignment requires four complete portfolio forms');
+      error.code = 'STRONG_ASSIGNMENT_INVALID_FORMS';
+      throw error;
+    }
+    const supportRecords = Array.isArray(strongSupport)
+      ? strongSupport
+      : (strongSupport && strongSupport.strong) || [];
+    const normalizedSupport = supportRecords.map(record => ({
+      number: Number(record && record.number),
+      stableSupport: Number(record && record.stableSupport),
+    }));
+    if (normalizedSupport.length !== 7
+      || new Set(normalizedSupport.map(record => record.number)).size !== 7
+      || normalizedSupport.some(record => (
+        !Number.isInteger(record.number)
+        || record.number < 1
+        || record.number > 7
+        || !Number.isFinite(record.stableSupport)
+      ))) {
+      const error = new Error('Strong assignment requires stable support for numbers 1 through 7');
+      error.code = 'STRONG_ASSIGNMENT_INVALID_SUPPORT';
+      throw error;
+    }
+    const order = normalizedSupport.slice().sort((first, second) => (
+      second.stableSupport - first.stableSupport || first.number - second.number
+    )).map(record => record.number);
+    const assigned = Object.fromEntries(FOUR_PIN_FORM_IDS.map(formId => [
+      formId,
+      forms[formId].map((row, index) => ({
+        ...row,
+        numbers: row.numbers.slice(),
+        strong: order[index % order.length],
+      })),
+    ]));
+
+    const collisionPairs = getStrongCollisionPairs(assigned);
+    let collisionCount = countStrongCollisions(collisionPairs);
+    while (collisionCount > 0) {
+      let bestSwap = null;
+      FOUR_PIN_FORM_IDS.forEach(formId => {
+        const form = assigned[formId];
+        for (let first = 0; first < form.length; first += 1) {
+          for (let second = first + 1; second < form.length; second += 1) {
+            if (form[first].strong === form[second].strong) continue;
+            const firstStrong = form[first].strong;
+            form[first].strong = form[second].strong;
+            form[second].strong = firstStrong;
+            const candidateCount = countStrongCollisions(collisionPairs);
+            form[second].strong = form[first].strong;
+            form[first].strong = firstStrong;
+            if (candidateCount < collisionCount
+              && (!bestSwap || candidateCount < bestSwap.collisionCount)) {
+              bestSwap = { formId, first, second, collisionCount: candidateCount };
+            }
+          }
+        }
+      });
+      if (!bestSwap) break;
+      const firstRow = assigned[bestSwap.formId][bestSwap.first];
+      const secondRow = assigned[bestSwap.formId][bestSwap.second];
+      const firstStrong = firstRow.strong;
+      firstRow.strong = secondRow.strong;
+      secondRow.strong = firstStrong;
+      collisionCount = bestSwap.collisionCount;
+    }
+    return assigned;
+  }
+
+  function createFourPinStageError(stage, cause) {
+    const error = new Error(`Four-PIN portfolio ${stage.toLowerCase()} stage failed`);
+    error.code = `FOUR_PIN_${stage}_FAILED`;
+    error.stage = stage.toLowerCase();
+    if (cause && cause.code) error.causeCode = cause.code;
+    return error;
+  }
+
+  function runFourPinStage(stage, operation) {
+    try {
+      return operation();
+    } catch (error) {
+      throw createFourPinStageError(stage, error);
+    }
+  }
+
+  function isStructurallyValidFourPinPortfolio(forms, depthPool) {
+    if (!forms || Object.keys(forms).join('|') !== FOUR_PIN_FORM_IDS.join('|')) return false;
+    const allRows = [];
+    for (const formId of FOUR_PIN_FORM_IDS) {
+      const form = forms[formId];
+      if (!Array.isArray(form) || form.length !== 14) return false;
+      const strongCounts = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [index + 1, 0]));
+      for (let index = 0; index < form.length; index += 1) {
+        const row = form[index];
+        if (!row
+          || row.comboNum !== index + 1
+          || !Array.isArray(row.numbers)
+          || row.numbers.length !== 6
+          || new Set(row.numbers).size !== 6
+          || row.numbers.some((number, numberIndex) => (
+            !Number.isInteger(number)
+            || number < 1
+            || number > 37
+            || (numberIndex > 0 && row.numbers[numberIndex - 1] >= number)
+          ))
+          || !Number.isInteger(row.strong)
+          || row.strong < 1
+          || row.strong > 7) return false;
+        strongCounts[row.strong] += 1;
+        allRows.push(row);
+      }
+      if (Object.values(strongCounts).some(count => count !== 2)) return false;
+    }
+    if (new Set(allRows.map(row => getCombinationKey(row.numbers))).size !== 56) return false;
+    const poolNumbers = new Set(depthPool);
+    const coverageKeys = new Set([
+      ...forms.coverage1,
+      ...forms.coverage2,
+    ].map(row => getCombinationKey(row.numbers)));
+    return [...forms.depth1, ...forms.depth2].every(row => (
+      row.numbers.every(number => poolNumbers.has(number))
+      && !coverageKeys.has(getCombinationKey(row.numbers))
+    ));
+  }
+
+  function buildFourPinPortfolio(earlierRows, candidatePool, rankings, options = {}) {
+    const settings = options && typeof options === 'object' ? options : {};
+    if (typeof settings.seed !== 'string') {
+      throw createFourPinStageError('SEED');
+    }
+    const fingerprintSeed = settings.seed;
+    const support = runFourPinStage('SUPPORT', () => buildStablePortfolioSupport(
+      candidatePool,
+      rankings,
+      earlierRows,
+      settings.windows || BACKTEST_WINDOWS,
+    ));
+    const coverage = runFourPinStage('COVERAGE', () => buildCoveragePair(support, {
+      seed: `${fingerprintSeed}:coverage`,
+      searchIterations: settings.coverageSearchIterations,
+    }));
+    const depthPool = runFourPinStage('DEPTH_POOL', () => selectDepthPool(support, 14));
+    const coverageKeys = new Set(coverage.rows.map(row => getCombinationKey(row.numbers)));
+    const depth = runFourPinStage('DEPTH', () => buildDepthPair(
+      depthPool,
+      support,
+      coverageKeys,
+      {
+        seed: `${fingerprintSeed}:depth`,
+        searchIterations: settings.depthSearchIterations,
+      },
+    ));
+    const unassignedForms = {
+      coverage1: coverage.forms.coverage1,
+      coverage2: coverage.forms.coverage2,
+      depth1: depth.forms.depth1,
+      depth2: depth.forms.depth2,
+    };
+    const forms = runFourPinStage('STRONG_ASSIGNMENT', () => (
+      assignPortfolioStrongNumbers(unassignedForms, support.strong)
+    ));
+    runFourPinStage('STRUCTURAL_VALIDATION', () => {
+      if (!isStructurallyValidFourPinPortfolio(forms, depthPool)) {
+        const error = new Error('Four-PIN portfolio failed structural validation');
+        error.code = 'FOUR_PIN_PORTFOLIO_INVALID';
+        throw error;
+      }
+    });
+    return {
+      forms,
+      depthPool,
+      support,
+      coverageMetrics: coverage.metrics,
+      depthMetrics: depth.metrics,
+      fingerprintSeed,
+    };
+  }
+
+  function getCoverageRowNumbers(row) {
+    return (Array.isArray(row) ? row : (row && row.numbers) || []).slice();
+  }
+
+  function getCoverageGroupMetrics(rows) {
+    const normalizedRows = (rows || []).map(getCoverageRowNumbers);
+    const combinationKeys = new Set();
+    const pairKeys = new Set();
+    const tripleKeys = new Set();
+    const numberExposure = Object.fromEntries(
+      Array.from({ length: 37 }, (_, index) => [index + 1, 0]),
+    );
+    let maximumOverlap = 0;
+
+    normalizedRows.forEach(numbers => {
+      combinationKeys.add(getCombinationKey(numbers));
+      getSubsetKeys(numbers, 2).forEach(key => pairKeys.add(key));
+      getSubsetKeys(numbers, 3).forEach(key => tripleKeys.add(key));
+      numbers.forEach(number => {
+        if (Object.prototype.hasOwnProperty.call(numberExposure, number)) {
+          numberExposure[number] += 1;
+        }
+      });
+    });
+    for (let first = 0; first < normalizedRows.length; first += 1) {
+      for (let second = first + 1; second < normalizedRows.length; second += 1) {
+        maximumOverlap = Math.max(
+          maximumOverlap,
+          getOverlap(normalizedRows[first], normalizedRows[second]),
+        );
+      }
+    }
+    const exposureValues = Object.values(numberExposure);
+    const exposureSpread = exposureValues.length
+      ? Math.max(...exposureValues) - Math.min(...exposureValues)
+      : 0;
+    return {
+      rowCount: normalizedRows.length,
+      uniqueCombinationCount: combinationKeys.size,
+      uniquePairCount: pairKeys.size,
+      uniqueTripleCount: tripleKeys.size,
+      maximumOverlap,
+      numberExposure,
+      exposureSpread,
+    };
+  }
+
+  function createCoverageError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function normalizeCoverageSupport(support) {
+    const records = support && Array.isArray(support.numbers) ? support.numbers : [];
+    const normalized = records.map(record => ({
+      number: Number(record && record.number),
+      stableSupport: Number(record && record.stableSupport),
+    }));
+    const valid = normalized.length === 37
+      && new Set(normalized.map(record => record.number)).size === 37
+      && normalized.every(record => (
+        Number.isInteger(record.number)
+        && record.number >= 1
+        && record.number <= 37
+        && Number.isFinite(record.stableSupport)
+      ));
+    if (!valid) {
+      throw createCoverageError(
+        'COVERAGE_INVALID_SUPPORT',
+        'Coverage generation requires support for all 37 regular numbers',
+      );
+    }
+    return normalized.sort((first, second) => (
+      second.stableSupport - first.stableSupport || first.number - second.number
+    ));
+  }
+
+  function getCoveragePortfolioKey(rows) {
+    return rows.map(getCombinationKey).sort().join('|');
+  }
+
+  function getCoverageObjective(rows, stableSupportByNumber) {
+    const metrics = getCoverageGroupMetrics(rows);
+    const exposureFiveSupport = Object.entries(metrics.numberExposure)
+      .filter(([, exposure]) => exposure === 5)
+      .reduce((sum, [number]) => sum + stableSupportByNumber[number], 0);
+    return {
+      metrics,
+      exposureFiveSupport,
+      portfolioKey: getCoveragePortfolioKey(rows),
+    };
+  }
+
+  function isCoverageObjectiveBetter(candidate, current) {
+    if (candidate.metrics.uniqueTripleCount !== current.metrics.uniqueTripleCount) {
+      return candidate.metrics.uniqueTripleCount > current.metrics.uniqueTripleCount;
+    }
+    if (candidate.metrics.uniquePairCount !== current.metrics.uniquePairCount) {
+      return candidate.metrics.uniquePairCount > current.metrics.uniquePairCount;
+    }
+    if (candidate.exposureFiveSupport !== current.exposureFiveSupport) {
+      return candidate.exposureFiveSupport > current.exposureFiveSupport;
+    }
+    return candidate.portfolioKey < current.portfolioKey;
+  }
+
+  function isValidCoveragePortfolio(rows) {
+    if (rows.length !== 28 || rows.some(numbers => (
+      numbers.length !== 6
+      || new Set(numbers).size !== 6
+      || numbers.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+    ))) return false;
+    const metrics = getCoverageGroupMetrics(rows);
+    return metrics.uniqueCombinationCount === 28
+      && metrics.uniqueTripleCount === 28 * 20
+      && metrics.maximumOverlap <= 2
+      && Object.values(metrics.numberExposure).every(exposure => exposure === 4 || exposure === 5);
+  }
+
+  function searchCoveragePortfolio(rows, stableSupportByNumber, seed, searchIterations) {
+    const random = createMulberry32(fnv1aSeed(seed));
+    let currentRows = rows.map(numbers => numbers.slice());
+    let currentObjective = getCoverageObjective(currentRows, stableSupportByNumber);
+    for (let iteration = 0; iteration < searchIterations; iteration += 1) {
+      const firstRowIndex = Math.floor(random() * currentRows.length);
+      const secondOffset = Math.floor(random() * (currentRows.length - 1));
+      const secondRowIndex = secondOffset >= firstRowIndex ? secondOffset + 1 : secondOffset;
+      const firstPosition = Math.floor(random() * 6);
+      const secondPosition = Math.floor(random() * 6);
+      const firstNumber = currentRows[firstRowIndex][firstPosition];
+      const secondNumber = currentRows[secondRowIndex][secondPosition];
+      if (firstNumber === secondNumber
+        || currentRows[firstRowIndex].includes(secondNumber)
+        || currentRows[secondRowIndex].includes(firstNumber)) continue;
+
+      const candidateRows = currentRows.map(numbers => numbers.slice());
+      candidateRows[firstRowIndex][firstPosition] = secondNumber;
+      candidateRows[secondRowIndex][secondPosition] = firstNumber;
+      candidateRows[firstRowIndex].sort((first, second) => first - second);
+      candidateRows[secondRowIndex].sort((first, second) => first - second);
+      const rowKeys = candidateRows.map(getCombinationKey);
+      if (new Set(rowKeys).size !== candidateRows.length) continue;
+      const candidateObjective = getCoverageObjective(candidateRows, stableSupportByNumber);
+      if (candidateObjective.metrics.maximumOverlap > 2) continue;
+      if (isCoverageObjectiveBetter(candidateObjective, currentObjective)) {
+        currentRows = candidateRows;
+        currentObjective = candidateObjective;
+      }
+    }
+    return currentRows;
+  }
+
+  function getCoverageExposureState(rows) {
+    const exposure = Array(38).fill(0);
+    rows.forEach(numbers => {
+      numbers.forEach(number => { exposure[number] += 1; });
+    });
+    return { exposure };
+  }
+
+  function getCoverageExposureVariance(exposure) {
+    const values = exposure.slice(1);
+    const mean = values.reduce((sum, count) => sum + count, 0) / values.length;
+    return values.reduce((sum, count) => sum + ((count - mean) ** 2), 0) / values.length;
+  }
+
+  function getCoverageSwapVariance(firstState, secondState, firstRow, secondRow) {
+    const firstExposure = firstState.exposure.slice();
+    const secondExposure = secondState.exposure.slice();
+    firstRow.forEach(number => {
+      if (secondRow.includes(number)) return;
+      firstExposure[number] -= 1;
+      secondExposure[number] += 1;
+    });
+    secondRow.forEach(number => {
+      if (firstRow.includes(number)) return;
+      firstExposure[number] += 1;
+      secondExposure[number] -= 1;
+    });
+    return getCoverageExposureVariance(firstExposure)
+      + getCoverageExposureVariance(secondExposure);
+  }
+
+  function getCoveragePartitionKey(firstForm, secondForm) {
+    return `${firstForm.map(getCombinationKey).sort().join('|')}::${secondForm
+      .map(getCombinationKey).sort().join('|')}`;
+  }
+
+  function partitionCoverageRows(rows) {
+    const sortedRows = rows.map(numbers => numbers.slice()).sort((first, second) => {
+      const firstKey = getCombinationKey(first);
+      const secondKey = getCombinationKey(second);
+      return firstKey < secondKey ? -1 : (firstKey > secondKey ? 1 : 0);
+    });
+    let firstForm = sortedRows.filter((row, index) => index % 2 === 0);
+    let secondForm = sortedRows.filter((row, index) => index % 2 === 1);
+    let firstExposureState = getCoverageExposureState(firstForm);
+    let secondExposureState = getCoverageExposureState(secondForm);
+    let currentVariance = getCoverageExposureVariance(firstExposureState.exposure)
+      + getCoverageExposureVariance(secondExposureState.exposure);
+
+    while (true) {
+      let bestSwap = null;
+      for (let firstIndex = 0; firstIndex < firstForm.length; firstIndex += 1) {
+        for (let secondIndex = 0; secondIndex < secondForm.length; secondIndex += 1) {
+          const variance = getCoverageSwapVariance(
+            firstExposureState,
+            secondExposureState,
+            firstForm[firstIndex],
+            secondForm[secondIndex],
+          );
+          if (variance >= currentVariance
+            || (bestSwap && variance > bestSwap.variance)) continue;
+          const candidateFirst = firstForm.slice();
+          const candidateSecond = secondForm.slice();
+          candidateFirst[firstIndex] = secondForm[secondIndex];
+          candidateSecond[secondIndex] = firstForm[firstIndex];
+          const key = getCoveragePartitionKey(candidateFirst, candidateSecond);
+          if (!bestSwap
+            || variance < bestSwap.variance
+            || (variance === bestSwap.variance && key < bestSwap.key)) {
+            bestSwap = {
+              firstForm: candidateFirst,
+              secondForm: candidateSecond,
+              variance,
+              key,
+            };
+          }
+        }
+      }
+      if (!bestSwap) break;
+      firstForm = bestSwap.firstForm;
+      secondForm = bestSwap.secondForm;
+      firstExposureState = getCoverageExposureState(firstForm);
+      secondExposureState = getCoverageExposureState(secondForm);
+      currentVariance = bestSwap.variance;
+    }
+    const sortRows = form => form.slice().sort((first, second) => {
+      const firstKey = getCombinationKey(first);
+      const secondKey = getCombinationKey(second);
+      return firstKey < secondKey ? -1 : (firstKey > secondKey ? 1 : 0);
+    });
+    return [sortRows(firstForm), sortRows(secondForm)];
+  }
+
+  function buildCoveragePair(support, options = {}) {
+    const rankedSupport = normalizeCoverageSupport(support);
+    const settings = options && typeof options === 'object' ? options : {};
+    if (typeof settings.seed !== 'string') {
+      throw createCoverageError('COVERAGE_INVALID_SEED', 'Coverage generation requires a seed string');
+    }
+    const searchIterations = settings.searchIterations == null ? 1000 : settings.searchIterations;
+    if (!Number.isInteger(searchIterations) || searchIterations < 0) {
+      throw createCoverageError(
+        'COVERAGE_INVALID_SEARCH_ITERATIONS',
+        'Coverage search iterations must be a non-negative integer',
+      );
+    }
+    const positionNumbers = rankedSupport.map(record => record.number);
+    const stableSupportByNumber = Object.fromEntries(
+      rankedSupport.map(record => [record.number, record.stableSupport]),
+    );
+    const templateRows = COVERAGE_TEMPLATE.map(templateRow => templateRow
+      .map(position => positionNumbers[position - 1])
+      .sort((first, second) => first - second));
+    if (!isValidCoveragePortfolio(templateRows)) {
+      throw createCoverageError('COVERAGE_TEMPLATE_INVALID', 'Coverage template failed hard constraints');
+    }
+    const searchedRows = searchCoveragePortfolio(
+      templateRows,
+      stableSupportByNumber,
+      settings.seed,
+      searchIterations,
+    );
+    if (!isValidCoveragePortfolio(searchedRows)) {
+      throw createCoverageError('COVERAGE_SEARCH_FAILED', 'Coverage search failed hard constraints');
+    }
+    const [firstRows, secondRows] = partitionCoverageRows(searchedRows);
+    const annotate = form => form.map((numbers, index) => ({
+      comboNum: index + 1,
+      strategy: 'כיסוי 3+',
+      numbers: numbers.slice(),
+    }));
+    const forms = {
+      coverage1: annotate(firstRows),
+      coverage2: annotate(secondRows),
+    };
+    const finalRows = [...forms.coverage1, ...forms.coverage2];
+    return {
+      forms,
+      rows: finalRows,
+      metrics: getCoverageGroupMetrics(finalRows),
+      seed: settings.seed,
     };
   }
 
@@ -1688,6 +3278,7 @@
     const identityEvaluation = evaluateStrategyWindows(rows, plan.windows, { onProgress, isCancelled });
     const rankings = identityEvaluation.rankings;
     const policyAggregates = createEmptyPolicyAggregates();
+    const portfolioTargetContexts = [];
 
     plan.holdoutTargets.forEach((targetIndex, index) => {
       if (isCancelled()) {
@@ -1698,8 +3289,21 @@
       const pool = buildWindowCandidatePool(plan.chronological, targetIndex, plan.windows);
       const training500 = plan.chronological.slice(targetIndex - 500, targetIndex).reverse();
       const allEarlier = plan.chronological.slice(0, targetIndex).reverse();
-      const optimized = selectOptimizedForms(pool, rankings, training500);
+      const training500Snapshot = buildAnalysisSnapshot(training500);
+      const optimized = selectOptimizedForms(
+        pool,
+        rankings,
+        training500,
+        training500Snapshot,
+      );
       const baseline = generateBaselineForms(allEarlier);
+      const latest500Baseline = generateBaselineForms(training500, training500Snapshot);
+      portfolioTargetContexts.push({
+        targetIndex,
+        earlierNewestFirst: allEarlier,
+        candidatePool: pool,
+        legacyForms: buildLegacy56PortfolioFromBaselines(baseline, latest500Baseline),
+      });
       const bucketIndex = getChronologyBucket(index, plan.holdoutTargets.length);
       addPolicyDraw(
         policyAggregates.main,
@@ -1725,7 +3329,28 @@
     });
 
     const policies = finalizePolicyAggregates(policyAggregates);
-    const currentForms = buildCurrentOptimizedForms(rows, rankings, plan.windows);
+    const currentNewestFirst = toNewestFirst(rows);
+    const currentCandidatePool = plan.windows.flatMap(windowSize => (
+      generateRawCandidates(currentNewestFirst, windowSize)
+    ));
+    const currentTraining500 = currentNewestFirst.slice(0, 500);
+    const currentTraining500Snapshot = buildAnalysisSnapshot(currentTraining500);
+    const currentForms = selectOptimizedForms(
+      currentCandidatePool,
+      rankings,
+      currentTraining500,
+      currentTraining500Snapshot,
+    );
+    const portfolio = runFourPinPortfolioBacktest(rows, {
+      ...options,
+      rankings,
+      plan,
+      portfolioTargetContexts,
+      portfolioCurrentContext: {
+        newestFirst: currentNewestFirst,
+        candidatePool: currentCandidatePool,
+      },
+    });
     return {
       version: ALGORITHM_VERSION,
       constraintVersion: CONSTRAINT_VERSION,
@@ -1739,17 +3364,24 @@
       rankings,
       policies,
       currentForms,
+      portfolio,
     };
   }
 
   return {
     ALGORITHM_VERSION,
     CONSTRAINT_VERSION,
+    FOUR_PIN_PORTFOLIO_VERSION,
+    PORTFOLIO_CONSTRAINT_VERSION,
+    BINARY_METRIC_VERSION,
+    CONFIDENCE_METHOD_VERSION,
+    DEFAULT_BOOTSTRAP_SAMPLES,
     BACKTEST_WINDOWS,
     REGULAR_POINTS,
     FORM1_OPTIONS,
     FORM2_OPTIONS,
     FORM2_STRATEGY_LABELS,
+    COVERAGE_FORM_IDS,
     isValidDraw,
     toChronological,
     buildAnalysisSnapshot,
@@ -1757,6 +3389,8 @@
     generateForm2RawCandidates,
     generateRawCandidates,
     generateBaselineForms,
+    cloneCombinationRows,
+    buildLegacy56Portfolio,
     diversifyForm2Combinations,
     buildBalancedStrongRotation,
     getFormDiversityMetrics,
@@ -1765,8 +3399,32 @@
     buildWindowCandidatePool,
     scoreLine,
     scoreForm,
+    flattenPortfolioForms,
+    hasRegularWin,
+    hasRegularAndStrongWin,
+    scoreBinaryPortfolioDraw,
+    createBinaryRateAccumulator,
+    addBinaryRateObservation,
+    finalizeBinaryRateAccumulator,
+    wilsonInterval,
+    createMulberry32ForTesting: createMulberry32,
+    comparePairedBinaryOutcomes,
+    buildPortfolioAtTarget,
+    validateFourPinPortfolioResult,
+    runFourPinPortfolioBacktest,
     aggregateIdentityMetrics,
     evaluateStrategyWindows,
+    rankPortfolioIdentities,
+    buildStablePortfolioSupport,
+    selectDepthPool,
+    enumerateNumberCombinations,
+    getSubsetKeys,
+    getDepthGroupMetrics,
+    buildDepthPair,
+    assignPortfolioStrongNumbers,
+    buildFourPinPortfolio,
+    getCoverageGroupMetrics,
+    buildCoveragePair,
     selectPerformanceForm,
     selectDiversityForm,
     selectOptimizedForms,
