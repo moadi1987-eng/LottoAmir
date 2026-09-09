@@ -932,6 +932,95 @@
         .backtest-comparison-band ol { margin: 12px 0 0; padding-inline-start: 24px; color: var(--text); }
         .backtest-comparison-band li { padding: 3px 0; overflow-wrap: anywhere; }
         .backtest-disclaimer { margin: 16px 0 0; color: var(--warning); font-size: 12px; }
+        .portfolio-summary {
+            min-width: 0;
+            padding: 2px 0 16px;
+        }
+        .portfolio-validation-banner {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-elevated);
+        }
+        .portfolio-validation-banner[data-validated="true"] { border-color: var(--success-border); }
+        .portfolio-validation-banner[data-validated="false"] { border-color: rgba(245, 158, 11, .55); }
+        .portfolio-metric-grid,
+        .portfolio-gate-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .portfolio-metric-card,
+        .portfolio-gate {
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-elevated);
+        }
+        .portfolio-metric-card h3,
+        .portfolio-form-card h3 { margin: 0 0 8px; color: var(--text); font-size: 15px; }
+        .portfolio-confidence,
+        .portfolio-paired,
+        .portfolio-reasons,
+        .portfolio-gate-evidence { color: var(--text-muted); font-size: 12px; line-height: 1.65; }
+        .portfolio-diagnostic {
+            border-style: dashed;
+            border-color: rgba(139, 92, 246, .65);
+        }
+        .portfolio-gate[data-passed="true"] { border-color: var(--success-border); }
+        .portfolio-gate[data-passed="false"] { border-color: rgba(239, 68, 68, .55); }
+        .portfolio-reasons { margin: 0 0 14px; padding-inline-start: 22px; }
+        .portfolio-reasons code { color: var(--warning); overflow-wrap: anywhere; }
+        .portfolio-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+        .portfolio-form-card {
+            min-width: 0;
+            padding: 14px;
+            border: 1px solid var(--success-border);
+            border-radius: 10px;
+            background: var(--bg-elevated);
+            overflow: hidden;
+        }
+        .portfolio-form-rows {
+            max-width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-bottom: 12px;
+        }
+        .portfolio-form-row {
+            display: flex;
+            width: max-content;
+            min-width: 100%;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 2px;
+            border-bottom: 1px solid var(--border-subtle);
+            white-space: nowrap;
+        }
+        .portfolio-form-row:last-child { border-bottom: 0; }
+        .portfolio-form-index { min-width: 28px; color: var(--text-muted); font-weight: 700; }
+        .portfolio-form-number-list { display: inline-flex; direction: rtl; gap: 4px; }
+        .portfolio-form-row .combo-number { flex: 0 0 auto; }
+        .portfolio-form-row .combo-strong { display: inline-flex; margin: 0 4px 0 0; padding: 3px 6px; }
+        .portfolio-form-row .combo-strong-number { flex: 0 0 auto; }
+        .portfolio-pin-button { width: 100%; min-height: 42px; }
+
+        @media (max-width: 760px) {
+            .portfolio-form-grid { grid-template-columns: 1fr; }
+            .portfolio-metric-grid,
+            .portfolio-gate-grid { grid-template-columns: 1fr; }
+        }
 
         /* ===== MOBILE RESPONSIVE ===== */
         @media (max-width: 768px) {
@@ -1423,11 +1512,17 @@
                     <button type="button" class="backtest-tab active" data-panel="backtestSummaryPanel" onclick="showBacktestPanel('backtestSummaryPanel')">סיכום</button>
                     <button type="button" class="backtest-tab" data-panel="backtestStrategiesPanel" onclick="showBacktestPanel('backtestStrategiesPanel')">אסטרטגיות</button>
                     <button type="button" class="backtest-tab" data-panel="backtestComparisonPanel" onclick="showBacktestPanel('backtestComparisonPanel')">בסיס מול משופר</button>
+                    <button type="button" class="backtest-tab" data-panel="fourPinPortfolioPanel" onclick="showBacktestPanel('fourPinPortfolioPanel')">ארבעה טפסים</button>
                 </div>
                 <div id="backtestSummaryPanel" class="backtest-panel"></div>
                 <div id="backtestStrategiesPanel" class="backtest-panel" hidden></div>
                 <div id="backtestComparisonPanel" class="backtest-panel" hidden></div>
-                <p class="backtest-disclaimer">הניתוח ההיסטורי אינו מבטיח תוצאות עתידיות או זכייה.</p>
+                <div id="fourPinPortfolioPanel" class="backtest-panel" hidden>
+                    <section data-portfolio-role="coverage1"><h3>כיסוי 1</h3></section>
+                    <section data-portfolio-role="coverage2"><h3>כיסוי 2</h3></section>
+                    <section data-portfolio-role="depth1"><h3>עומק 1</h3></section>
+                    <section data-portfolio-role="depth2"><h3>עומק 2</h3></section>
+                </div>
             </section>
         </div>
     </div>
@@ -1435,13 +1530,25 @@
     <script>
         let currentCombinations = [];
         let currentCombinationsForm2 = [];
-        const BACKTEST_CACHE_PREFIX = 'lottoBacktestCacheV1:';
+        const BACKTEST_CACHE_PREFIX = 'lottoBacktestCacheV3:';
+        // Persisted binary rates are integer ratios plus one subtraction. This
+        // tolerance admits floating-point roundoff while remaining far below
+        // one possible holdout observation.
+        const PORTFOLIO_RATE_TOLERANCE = 1e-12;
+        const BACKTEST_PROGRESS_RANGES = {
+            'identity-evaluation': [0, 55],
+            'holdout-policies': [55, 70],
+            'portfolio-holdout': [70, 95],
+            'portfolio-current': [95, 100]
+        };
         let baselineForms = { main: [], form2: [] };
         let optimizedForms = { main: null, form2: null };
         let activeFormModes = { main: 'baseline', form2: 'baseline' };
         let currentBacktestResult = null;
+        let currentFourPinPortfolio = null;
         let currentBacktestWorker = null;
         let currentBacktestRunId = null;
+        let currentBacktestProgress = 0;
         let analyzerWorkspaceMode = 'analysis';
         var comparisonFormSource = 'main';
         let currentData = null;
@@ -1465,6 +1572,12 @@
             baseline: { label: 'בסיס' },
             improved: { label: 'משופר' }
         };
+        const PORTFOLIO_PIN_SLOT_MAP = Object.freeze({
+            coverage1: Object.freeze({ source: 'main', mode: 'baseline', label: 'PIN 1 - כיסוי 3+' }),
+            coverage2: Object.freeze({ source: 'main', mode: 'improved', label: 'PIN 2 - כיסוי 3+' }),
+            depth1: Object.freeze({ source: 'form2', mode: 'baseline', label: 'PIN 3 - עומק 4+' }),
+            depth2: Object.freeze({ source: 'form2', mode: 'improved', label: 'PIN 4 - עומק 4+' })
+        });
 
         function isPlainPrizeObject(value) {
             return value !== null
@@ -1618,11 +1731,15 @@
                 .filter(function(combo) { return combo.numbers.length === 6; })
                 .slice(0, 14);
             if (combinations.length === 0) return null;
+            const defaultLabel = sourceMeta.label + ' - ' + modeMeta.label;
+            const defaultFullLabel = sourceMeta.fullLabel + ' - ' + modeMeta.label;
             return {
                 source: source,
                 mode: mode,
-                label: sourceMeta.label + ' - ' + modeMeta.label,
-                fullLabel: sourceMeta.fullLabel + ' - ' + modeMeta.label,
+                label: typeof pin.label === 'string' && pin.label.trim() ? pin.label : defaultLabel,
+                fullLabel: typeof pin.fullLabel === 'string' && pin.fullLabel.trim()
+                    ? pin.fullLabel
+                    : defaultFullLabel,
                 pinnedAt: pin.pinnedAt || new Date().toISOString(),
                 anchorDrawNumber: pin.anchorDrawNumber != null ? pin.anchorDrawNumber : null,
                 anchorDrawDate: pin.anchorDrawDate != null ? pin.anchorDrawDate : null,
@@ -1739,6 +1856,252 @@
             });
         }
 
+        function getPortfolioRowKey(row) {
+            return row.numbers.slice().sort(function(a, b) { return a - b; }).join('-');
+        }
+
+        function isDenseArray(value, expectedLength) {
+            if (!Array.isArray(value)) return false;
+            if (expectedLength != null && value.length !== expectedLength) return false;
+            for (let index = 0; index < value.length; index++) {
+                if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
+            }
+            return true;
+        }
+
+        function isStructurallyValidPortfolioRow(row) {
+            if (!row || !isDenseArray(row.numbers, 6)) return false;
+            for (let index = 0; index < row.numbers.length; index++) {
+                const number = row.numbers[index];
+                if (!Number.isInteger(number)
+                    || number < 1
+                    || number > 37
+                    || (index > 0 && row.numbers[index - 1] >= number)) return false;
+            }
+            return Number.isInteger(row.strong) && row.strong >= 1 && row.strong <= 7;
+        }
+
+        function isValidPortfolioForm(form, role, forbiddenKeys) {
+            try {
+                const roleNames = ['coverage1', 'coverage2', 'depth1', 'depth2'];
+                if (!role || typeof role !== 'object' || !roleNames.includes(role.name)) return false;
+                if (forbiddenKeys !== null && !(forbiddenKeys instanceof Set)) return false;
+                if (!isDenseArray(form, 14)) return false;
+                const isCoverageRole = role.name === 'coverage1' || role.name === 'coverage2';
+                const isDepthRole = role.name === 'depth1' || role.name === 'depth2';
+                if (isCoverageRole) {
+                    if (!isDenseArray(role.coverageRows, 28)
+                        || role.coverageRows.some(function(row) {
+                            return !isStructurallyValidPortfolioRow(row);
+                        })) return false;
+                }
+                if (isDepthRole) {
+                    if (!(role.depthPool instanceof Set)
+                        || role.depthPool.size !== 14
+                        || [...role.depthPool].some(function(number) {
+                            return !Number.isInteger(number) || number < 1 || number > 37;
+                        })) return false;
+                }
+                const keys = new Set();
+                const strongCounts = Object.fromEntries(Array.from({ length: 7 }, function(_, index) {
+                    return [index + 1, 0];
+                }));
+                for (const row of form) {
+                    if (!isStructurallyValidPortfolioRow(row)) return false;
+                    const key = getPortfolioRowKey(row);
+                    if (keys.has(key) || (forbiddenKeys && forbiddenKeys.has(key))) return false;
+                    keys.add(key);
+                    strongCounts[row.strong] += 1;
+                    if (isDepthRole && row.numbers.some(function(number) {
+                        return !role.depthPool.has(number);
+                    })) return false;
+                }
+                if (Object.values(strongCounts).some(function(count) { return count !== 2; })) return false;
+                if (isCoverageRole) {
+                    const metrics = LottoStrategyCore.getCoverageGroupMetrics(role.coverageRows);
+                    if (!metrics || !Number.isFinite(metrics.maximumOverlap)
+                        || !metrics.numberExposure || typeof metrics.numberExposure !== 'object') return false;
+                    const exposureValues = Object.values(metrics.numberExposure);
+                    if (metrics.maximumOverlap > 2
+                        || exposureValues.length !== 37
+                        || exposureValues.some(function(count) {
+                            return count !== 4 && count !== 5;
+                        })) return false;
+                }
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function isValidPortfolioComparison(comparison, expectedTotal) {
+            if (!comparison || typeof comparison !== 'object') return false;
+            if (!Number.isInteger(comparison.total) || comparison.total !== expectedTotal) return false;
+            if (!Number.isInteger(comparison.newWins) || comparison.newWins < 0
+                || !Number.isInteger(comparison.legacyWins) || comparison.legacyWins < 0
+                || comparison.newWins > comparison.total || comparison.legacyWins > comparison.total) return false;
+            if (!isFiniteBacktestMetricSet(comparison, ['newRate', 'legacyRate', 'difference'])) return false;
+            const paired = comparison.paired;
+            if (!paired || !['both', 'newOnly', 'legacyOnly', 'neither'].every(function(field) {
+                return Number.isInteger(paired[field]) && paired[field] >= 0;
+            })) return false;
+            const pairedTotal = paired.both + paired.newOnly + paired.legacyOnly + paired.neither;
+            const expectedNewWins = paired.both + paired.newOnly;
+            const expectedLegacyWins = paired.both + paired.legacyOnly;
+            const expectedNewRate = expectedTotal ? expectedNewWins / expectedTotal : 0;
+            const expectedLegacyRate = expectedTotal ? expectedLegacyWins / expectedTotal : 0;
+            const expectedDifference = expectedNewRate - expectedLegacyRate;
+            if (pairedTotal !== expectedTotal
+                || comparison.newWins !== expectedNewWins
+                || comparison.legacyWins !== expectedLegacyWins
+                || comparison.newRate < 0 || comparison.newRate > 1
+                || comparison.legacyRate < 0 || comparison.legacyRate > 1
+                || comparison.difference < -1 || comparison.difference > 1
+                || Math.abs(comparison.newRate - expectedNewRate) > PORTFOLIO_RATE_TOLERANCE
+                || Math.abs(comparison.legacyRate - expectedLegacyRate) > PORTFOLIO_RATE_TOLERANCE
+                || Math.abs(comparison.difference - expectedDifference) > PORTFOLIO_RATE_TOLERANCE) {
+                return false;
+            }
+            for (const intervalName of ['newInterval', 'legacyInterval']) {
+                const interval = comparison[intervalName];
+                if (!isFiniteBacktestMetricSet(interval, ['low', 'high'])
+                    || interval.low < 0 || interval.high > 1 || interval.low > interval.high) return false;
+            }
+            const differenceInterval = comparison.differenceInterval;
+            return isFiniteBacktestMetricSet(differenceInterval, ['low', 'high'])
+                && differenceInterval.low >= -1
+                && differenceInterval.high <= 1
+                && differenceInterval.low <= differenceInterval.high;
+        }
+
+        function isCompatibleFourPinPortfolioResult(portfolio) {
+            if (!portfolio || typeof portfolio !== 'object') return false;
+            if (portfolio.version !== LottoStrategyCore.FOUR_PIN_PORTFOLIO_VERSION
+                || portfolio.constraintVersion !== LottoStrategyCore.PORTFOLIO_CONSTRAINT_VERSION
+                || portfolio.metricVersion !== LottoStrategyCore.BINARY_METRIC_VERSION
+                || portfolio.confidenceVersion !== LottoStrategyCore.CONFIDENCE_METHOD_VERSION) return false;
+            if (typeof portfolio.validated !== 'boolean'
+                || !isDenseArray(portfolio.reasons)
+                || portfolio.reasons.some(function(reason) { return typeof reason !== 'string'; })) return false;
+            if (!Number.isInteger(portfolio.sampleCount) || portfolio.sampleCount < 0
+                || !Number.isInteger(portfolio.selectionFailures) || portfolio.selectionFailures < 0
+                || portfolio.selectionFailures > portfolio.sampleCount) return false;
+
+            if (!portfolio.diagnostics || typeof portfolio.diagnostics !== 'object'
+                || !Object.prototype.hasOwnProperty.call(portfolio.diagnostics, 'currentFailureCode')
+                || !isDenseArray(
+                    portfolio.diagnostics.selectionFailureCodes,
+                    portfolio.selectionFailures
+                )
+                || portfolio.diagnostics.selectionFailureCodes.some(function(code) {
+                    return typeof code !== 'string' || !code.trim();
+                })) return false;
+
+            if (!Object.prototype.hasOwnProperty.call(portfolio, 'current')) return false;
+            if (portfolio.current === null) {
+                if (typeof portfolio.diagnostics.currentFailureCode !== 'string'
+                    || !portfolio.diagnostics.currentFailureCode.trim()) return false;
+            } else {
+                if (portfolio.diagnostics.currentFailureCode !== null) return false;
+                const current = portfolio.current;
+                if (!current || typeof current !== 'object'
+                    || !current.forms || typeof current.forms !== 'object'
+                    || !isDenseArray(current.depthPool, 14)
+                    || new Set(current.depthPool).size !== 14
+                    || current.depthPool.some(function(number) {
+                        return !Number.isInteger(number) || number < 1 || number > 37;
+                    })) return false;
+                const formIds = ['coverage1', 'coverage2', 'depth1', 'depth2'];
+                if (Object.keys(current.forms).length !== formIds.length
+                    || formIds.some(function(formId) {
+                        return !Object.prototype.hasOwnProperty.call(current.forms, formId)
+                            || !isDenseArray(current.forms[formId], 14);
+                    })) return false;
+                const coverageRows = current.forms.coverage1.concat(current.forms.coverage2);
+                const depthPool = new Set(current.depthPool);
+                const forbiddenKeys = new Set();
+                for (const formId of formIds) {
+                    const role = {
+                        name: formId,
+                        coverageRows: coverageRows,
+                        depthPool: depthPool
+                    };
+                    const form = current.forms[formId];
+                    if (!isValidPortfolioForm(form, role, forbiddenKeys)) return false;
+                    form.forEach(function(row) { forbiddenKeys.add(getPortfolioRowKey(row)); });
+                }
+                if (forbiddenKeys.size !== 56) return false;
+            }
+
+            const comparisonNames = ['portfolio3Plus', 'coverage3Plus', 'depth3Plus', 'depth4Plus'];
+            if (!portfolio.comparisons || comparisonNames.some(function(name) {
+                return !isValidPortfolioComparison(portfolio.comparisons[name], portfolio.sampleCount);
+            })) return false;
+            if (!isValidPortfolioComparison(
+                    portfolio.diagnostics.portfolio3PlusStrong,
+                    portfolio.sampleCount
+                )) return false;
+            if (!isDenseArray(portfolio.bucketDifferences, 3)
+                || portfolio.bucketDifferences.some(function(value) {
+                    return typeof value !== 'number' || !Number.isFinite(value);
+                })) return false;
+            if (!isDenseArray(portfolio.bucketSampleCounts, 3)
+                || portfolio.bucketSampleCounts.some(function(value) {
+                    return !Number.isInteger(value) || value < 0;
+                })
+                || portfolio.bucketSampleCounts.reduce(function(sum, count) { return sum + count; }, 0)
+                    !== portfolio.sampleCount) return false;
+            let bucketNetDifference = 0;
+            for (let index = 0; index < portfolio.bucketDifferences.length; index++) {
+                const difference = portfolio.bucketDifferences[index];
+                const count = portfolio.bucketSampleCounts[index];
+                if (difference < -1 || difference > 1) return false;
+                const netDifference = difference * count;
+                if (Math.abs(netDifference - Math.round(netDifference)) > PORTFOLIO_RATE_TOLERANCE) {
+                    return false;
+                }
+                bucketNetDifference += netDifference;
+            }
+            const expectedPortfolioDifference = portfolio.sampleCount
+                ? bucketNetDifference / portfolio.sampleCount
+                : 0;
+            if (Math.abs(
+                expectedPortfolioDifference - portfolio.comparisons.portfolio3Plus.difference
+            ) > PORTFOLIO_RATE_TOLERANCE) return false;
+
+            let gate;
+            try {
+                gate = LottoStrategyCore.validateFourPinPortfolioResult({
+                    selectionFailures: portfolio.selectionFailures,
+                    comparisons: portfolio.comparisons,
+                    bucketDifferences: portfolio.bucketDifferences,
+                    bucketSampleCounts: portfolio.bucketSampleCounts
+                });
+            } catch (error) {
+                return false;
+            }
+            if (!gate || typeof gate.validated !== 'boolean' || !isDenseArray(gate.reasons)) return false;
+            const expectedReasons = gate.reasons.slice();
+            let expectedValidated = gate.validated;
+            if (portfolio.current === null) {
+                expectedReasons.push('current-generation-failure');
+                expectedValidated = false;
+            }
+            return portfolio.validated === expectedValidated
+                && portfolio.reasons.length === expectedReasons.length
+                && portfolio.reasons.every(function(reason, index) {
+                    return reason === expectedReasons[index];
+                });
+        }
+
+        function hydrateFourPinPortfolio(result) {
+            currentFourPinPortfolio = result && result.portfolio
+                && isCompatibleFourPinPortfolioResult(result.portfolio)
+                ? JSON.parse(JSON.stringify(result.portfolio))
+                : null;
+            return currentFourPinPortfolio;
+        }
+
         function isValidCachedOptimizedForm(form, source, forbiddenKeys) {
             if (form == null) return true;
             if (!Array.isArray(form) || form.length !== 14) return false;
@@ -1776,7 +2139,7 @@
             if (result.version !== LottoStrategyCore.ALGORITHM_VERSION) return false;
             if (result.constraintVersion !== LottoStrategyCore.CONSTRAINT_VERSION) return false;
             if (result.fingerprint !== LottoStrategyCore.fingerprintRows(rows)) return false;
-            if (!Array.isArray(result.windows)) return false;
+            if (!isDenseArray(result.windows, LottoStrategyCore.BACKTEST_WINDOWS.length)) return false;
             if (result.windows.join('-') !== LottoStrategyCore.BACKTEST_WINDOWS.join('-')) return false;
             if (!result.split || !['eligibleCount', 'calibrationCount', 'holdoutCount'].every(function(field) {
                 return Number.isInteger(result.split[field]) && result.split[field] >= 0;
@@ -1784,15 +2147,46 @@
             if (result.split.calibrationCount + result.split.holdoutCount !== result.split.eligibleCount) return false;
 
             const expectedRankingCount = result.windows.length * 28;
-            if (!Array.isArray(result.rankings) || result.rankings.length !== expectedRankingCount) return false;
+            if (!isDenseArray(result.rankings, expectedRankingCount)) return false;
             const rankingIdentities = new Set();
-            const identityMetricFields = ['score', 'stability', 'rate3Plus', 'averagePoints'];
+            const identityMetricFields = [
+                'score', 'stability', 'binary3PlusStability', 'rate3Plus', 'averagePoints'
+            ];
             for (const ranking of result.rankings) {
                 if (!ranking || typeof ranking.identity !== 'string' || rankingIdentities.has(ranking.identity)) return false;
                 rankingIdentities.add(ranking.identity);
                 if (!Number.isInteger(Number(ranking.window)) || !result.windows.includes(Number(ranking.window))) return false;
-                if (!isFiniteBacktestMetricSet(ranking.calibration, identityMetricFields)) return false;
-                if (!isFiniteBacktestMetricSet(ranking.holdout, identityMetricFields)) return false;
+                for (const metrics of [ranking.calibration, ranking.holdout]) {
+                    if (!isFiniteBacktestMetricSet(metrics, identityMetricFields)
+                        || metrics.binary3PlusStability < 0
+                        || metrics.binary3PlusStability > 1
+                        || !isDenseArray(metrics.bucket3PlusWins, 3)
+                        || !isDenseArray(metrics.bucket3PlusCounts, 3)
+                        || !isDenseArray(metrics.bucket3PlusRates, 3)) return false;
+                    for (let index = 0; index < 3; index++) {
+                        const wins = metrics.bucket3PlusWins[index];
+                        const count = metrics.bucket3PlusCounts[index];
+                        const rate = metrics.bucket3PlusRates[index];
+                        const expectedRate = count ? wins / count : 0;
+                        if (!Number.isInteger(wins) || wins < 0
+                            || !Number.isInteger(count) || count < 0 || wins > count
+                            || typeof rate !== 'number' || !Number.isFinite(rate)
+                            || rate < 0 || rate > 1
+                            || Math.abs(rate - expectedRate) > PORTFOLIO_RATE_TOLERANCE) return false;
+                    }
+                    const averageRate = metrics.bucket3PlusRates.reduce(function(sum, rate) {
+                        return sum + rate;
+                    }, 0) / 3;
+                    const expectedStability = averageRate === 0
+                        ? 0
+                        : Math.max(0, Math.min(
+                            1,
+                            Math.min.apply(null, metrics.bucket3PlusRates) / averageRate
+                        ));
+                    if (Math.abs(
+                        metrics.binary3PlusStability - expectedStability
+                    ) > PORTFOLIO_RATE_TOLERANCE) return false;
+                }
             }
 
             if (!result.policies || !result.currentForms) return false;
@@ -1811,8 +2205,7 @@
                 if (!isFiniteBacktestMetricSet(policy.baseline, formMetricFields)) return false;
                 if (!isFiniteBacktestMetricSet(policy.optimized, formMetricFields)) return false;
                 for (const metrics of [policy.baseline, policy.optimized]) {
-                    if (!Array.isArray(metrics.bucketAverages)
-                        || metrics.bucketAverages.length !== 3
+                    if (!isDenseArray(metrics.bucketAverages, 3)
                         || metrics.bucketAverages.some(function(value) { return !Number.isFinite(Number(value)); })) return false;
                 }
             }
@@ -1822,16 +2215,27 @@
             const mainKeys = new Set((Array.isArray(mainForm) ? mainForm : []).map(function(row) {
                 return row.numbers.slice().sort(function(a, b) { return a - b; }).join('-');
             }));
-            return isValidCachedOptimizedForm(result.currentForms.form2, 'form2', mainKeys);
+            return isValidCachedOptimizedForm(result.currentForms.form2, 'form2', mainKeys)
+                && isCompatibleFourPinPortfolioResult(result.portfolio)
+                && result.portfolio.sampleCount === result.split.holdoutCount;
         }
 
         function loadCompatibleBacktestCache(rows) {
             try {
                 const raw = localStorage.getItem(getBacktestCacheKey(rows));
-                if (!raw) return null;
+                if (!raw) {
+                    hydrateFourPinPortfolio(null);
+                    return null;
+                }
                 const parsed = JSON.parse(raw);
-                return isCompatibleBacktestResult(parsed, rows) ? parsed : null;
+                if (!isCompatibleBacktestResult(parsed, rows)) {
+                    hydrateFourPinPortfolio(null);
+                    return null;
+                }
+                hydrateFourPinPortfolio(parsed);
+                return parsed;
             } catch (error) {
+                hydrateFourPinPortfolio(null);
                 console.warn('Backtest cache ignored:', error);
                 return null;
             }
@@ -1968,6 +2372,78 @@
                 ? currentBacktestResult.policies[source]
                 : null;
             return Boolean(policy && policy.validated === true && optimizedForms[source]);
+        }
+
+        function getPortfolioForm(role) {
+            const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            if (!slot
+                || !currentData
+                || currentData.length === 0
+                || !lastAnalysis
+                || !currentFourPinPortfolio
+                || currentFourPinPortfolio.validated !== true
+                || !isCompatibleFourPinPortfolioResult(currentFourPinPortfolio)) {
+                return null;
+            }
+            const forms = currentFourPinPortfolio
+                && currentFourPinPortfolio.current
+                && currentFourPinPortfolio.current.forms;
+            return forms && Array.isArray(forms[role]) && forms[role].length === 14
+                ? forms[role]
+                : null;
+        }
+
+        function canPinPortfolioForm(role) {
+            if (!PORTFOLIO_PIN_SLOT_MAP[role]
+                || !currentData
+                || currentData.length === 0
+                || !lastAnalysis
+                || !currentFourPinPortfolio
+                || currentFourPinPortfolio.validated !== true
+                || !isCompatibleFourPinPortfolioResult(currentFourPinPortfolio)) {
+                return false;
+            }
+            const rows = getPortfolioForm(role);
+            return Array.isArray(rows) && rows.length === 14;
+        }
+
+        function pinPortfolioForm(role) {
+            const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            if (!slot) return false;
+            if (!currentData || currentData.length === 0 || !lastAnalysis) {
+                alert('הרץ ניתוח קודם כדי לקבע את הקומבינציות.');
+                return false;
+            }
+            if (!canPinPortfolioForm(role)) {
+                alert('יש להריץ Backtest מאומת ותואם לפני קיבוע הטופס הזה.');
+                return false;
+            }
+            const combinations = getPortfolioForm(role);
+            if (!combinations || combinations.length !== 14) {
+                alert('נדרשות בדיוק 14 קומבינציות לקיבוע הטופס הזה.');
+                return false;
+            }
+            const existingPin = getPinnedForm(slot.source, slot.mode);
+            if (existingPin && !confirm('כבר קיים PIN עבור ' + slot.label + '. להחליף אותו?')) {
+                return false;
+            }
+            const anchor = getLatestDrawAnchor();
+            const nextState = normalizePinnedFormsDocument(pinnedForms);
+            nextState[slot.source][slot.mode] = {
+                source: slot.source,
+                mode: slot.mode,
+                label: slot.label,
+                fullLabel: slot.label,
+                pinnedAt: new Date().toISOString(),
+                anchorDrawNumber: anchor.anchorDrawNumber,
+                anchorDrawDate: anchor.anchorDrawDate,
+                combinations: cloneFormRows(combinations).map(normalizePinnedCombination)
+            };
+            if (!savePinnedForms(nextState)) return false;
+            renderPinnedFormStatus();
+            renderPinnedFutureComparisons();
+            alert(slot.label + ' קובע ונשמר.');
+            return true;
         }
 
         function pinForm(source, mode) {
@@ -2867,6 +3343,8 @@
             lastAnalysis = null;
             currentData = data;
             currentBacktestResult = null;
+            currentFourPinPortfolio = null;
+            renderFourPinPortfolio(null);
             baselineForms = { main: [], form2: [] };
             optimizedForms = { main: null, form2: null };
             activeFormModes = { main: 'baseline', form2: 'baseline' };
@@ -3244,6 +3722,7 @@
             document.getElementById('backtestCancelBtn').hidden = !isRunning;
             document.getElementById('backtestProgress').hidden = !isRunning;
             if (isRunning) {
+                currentBacktestProgress = 0;
                 document.getElementById('backtestProgressBar').value = 0;
                 document.getElementById('backtestProgressText').textContent = '0%';
             }
@@ -3288,6 +3767,192 @@
 
         function formatBacktestPercent(value) {
             return `${(Number(value || 0) * 100).toFixed(1)}%`;
+        }
+
+        function formatPercentagePointDifference(value) {
+            let percentagePoints = Number(value || 0) * 100;
+            if (!Number.isFinite(percentagePoints) || Object.is(percentagePoints, -0)) {
+                percentagePoints = 0;
+            }
+            const sign = percentagePoints >= 0 ? '+' : '';
+            return sign + percentagePoints.toFixed(1) + ' נק׳ אחוז';
+        }
+
+        const PORTFOLIO_FORM_RENDER_META = {
+            coverage1: { buttonLabel: 'PIN 1', action: "pinPortfolioForm('coverage1')" },
+            coverage2: { buttonLabel: 'PIN 2', action: "pinPortfolioForm('coverage2')" },
+            depth1: { buttonLabel: 'PIN 3', action: "pinPortfolioForm('depth1')" },
+            depth2: { buttonLabel: 'PIN 4', action: "pinPortfolioForm('depth2')" }
+        };
+
+        function renderPortfolioComparisonCard(label, comparison, options = {}) {
+            const cardClass = options.diagnostic
+                ? 'portfolio-metric-card portfolio-diagnostic'
+                : 'portfolio-metric-card';
+            const diagnosticNote = options.diagnostic
+                ? '<div class="portfolio-gate-evidence"><strong>אבחון בלבד:</strong> מדד חזק זה נשמר מחוץ לתנאי האישור.</div>'
+                : '';
+            return `
+                <section class="${cardClass}">
+                    <h3>${escapeBacktestText(label)}</h3>
+                    <div class="backtest-metric-line">
+                        שיעור ישן ${formatBacktestPercent(comparison.legacyRate)} |
+                        שיעור חדש ${formatBacktestPercent(comparison.newRate)} |
+                        הפרש ${formatPercentagePointDifference(comparison.difference)}
+                    </div>
+                    <div class="portfolio-confidence">
+                        95% ישן [${formatBacktestPercent(comparison.legacyInterval.low)}–${formatBacktestPercent(comparison.legacyInterval.high)}] |
+                        חדש [${formatBacktestPercent(comparison.newInterval.low)}–${formatBacktestPercent(comparison.newInterval.high)}] |
+                        הפרש [${formatPercentagePointDifference(comparison.differenceInterval.low)}–${formatPercentagePointDifference(comparison.differenceInterval.high)}]
+                    </div>
+                    <div class="portfolio-paired">
+                        paired: both ${comparison.paired.both} |
+                        new-only ${comparison.paired.newOnly} |
+                        legacy-only ${comparison.paired.legacyOnly} |
+                        neither ${comparison.paired.neither}
+                    </div>
+                    ${diagnosticNote}
+                </section>
+            `;
+        }
+
+        function renderPortfolioValidationGates(portfolio) {
+            const comparisons = portfolio.comparisons;
+            const nonNegativeBuckets = portfolio.bucketDifferences.filter(function(value) {
+                return value >= 0;
+            }).length;
+            const gates = [
+                {
+                    label: 'יצירת תיק ללא כשלים',
+                    passed: portfolio.selectionFailures === 0,
+                    evidence: 'כשלים: ' + portfolio.selectionFailures
+                },
+                {
+                    label: '56 שורות: שיפור 3+',
+                    passed: comparisons.portfolio3Plus.difference > 0,
+                    evidence: formatPercentagePointDifference(comparisons.portfolio3Plus.difference)
+                },
+                {
+                    label: 'זוג כיסוי: ללא נסיגה ב-3+',
+                    passed: comparisons.coverage3Plus.difference >= 0,
+                    evidence: formatPercentagePointDifference(comparisons.coverage3Plus.difference)
+                },
+                {
+                    label: 'זוג עומק: שיפור 4+',
+                    passed: comparisons.depth4Plus.difference > 0,
+                    evidence: formatPercentagePointDifference(comparisons.depth4Plus.difference)
+                },
+                {
+                    label: 'זוג עומק: שמירת סף 3+',
+                    passed: comparisons.depth3Plus.difference >= -0.01,
+                    evidence: formatPercentagePointDifference(comparisons.depth3Plus.difference) + ' (סף ‎-1.0)'
+                },
+                {
+                    label: 'דגימה בכל שלושת הדליים',
+                    passed: portfolio.bucketSampleCounts.every(function(count) { return count >= 1; }),
+                    evidence: portfolio.bucketSampleCounts.join(' / ')
+                },
+                {
+                    label: 'יציבות בלפחות שני דליים',
+                    passed: nonNegativeBuckets >= 2,
+                    evidence: portfolio.bucketDifferences.map(formatPercentagePointDifference).join(' / ')
+                },
+                {
+                    label: 'יצירת ארבעת הטפסים הנוכחיים',
+                    passed: portfolio.current !== null
+                        && !(portfolio.diagnostics && portfolio.diagnostics.currentFailureCode),
+                    evidence: portfolio.diagnostics && portfolio.diagnostics.currentFailureCode
+                        ? portfolio.diagnostics.currentFailureCode
+                        : 'תקין'
+                }
+            ];
+            return '<div class="portfolio-gate-grid">' + gates.map(function(gate) {
+                return '<div class="portfolio-gate" data-passed="' + gate.passed + '">' +
+                    '<strong>' + (gate.passed ? '✅ ' : '❌ ') + escapeBacktestText(gate.label) + '</strong>' +
+                    '<div class="portfolio-gate-evidence">' + escapeBacktestText(gate.evidence) + '</div>' +
+                    '</div>';
+            }).join('') + '</div>';
+        }
+
+        function renderPortfolioFormCard(role, rows) {
+            const slot = PORTFOLIO_PIN_SLOT_MAP[role];
+            const meta = PORTFOLIO_FORM_RENDER_META[role];
+            const renderedRows = rows.map(function(row, index) {
+                const numbers = row.numbers.map(function(number) {
+                    return '<span class="combo-number">' + escapeBacktestText(number) + '</span>';
+                }).join('');
+                return `
+                    <div class="portfolio-form-row" data-portfolio-row="${index + 1}">
+                        <span class="portfolio-form-index">#${index + 1}</span>
+                        <span class="portfolio-form-number-list" dir="rtl">${numbers}</span>
+                        <span class="combo-strong">
+                            <span>חזק</span>
+                            <span class="combo-strong-number">${escapeBacktestText(row.strong)}</span>
+                        </span>
+                        <span class="combo-title">${escapeBacktestText(row.strategy || '')}</span>
+                    </div>
+                `;
+            }).join('');
+            const disabled = canPinPortfolioForm(role)
+                ? ''
+                : ' disabled aria-disabled="true"';
+            return `
+                <article class="portfolio-form-card" data-portfolio-role="${role}">
+                    <h3>${escapeBacktestText(slot.label)}</h3>
+                    <div class="portfolio-form-rows">${renderedRows}</div>
+                    <button type="button" class="pin-form-btn portfolio-pin-button" onclick="${meta.action}"${disabled}>📌 קבע כ-${meta.buttonLabel}</button>
+                </article>
+            `;
+        }
+
+        function renderFourPinPortfolio(result) {
+            const panel = document.getElementById('fourPinPortfolioPanel');
+            if (!panel) return;
+            const portfolio = result && result.portfolio
+                ? result.portfolio
+                : (result && result.current ? result : null);
+            if (!portfolio || !isCompatibleFourPinPortfolioResult(portfolio)) {
+                panel.innerHTML = '<div class="info-note">אין עדיין תוצאת תיק ארבעה טפסים תואמת.</div>';
+                return;
+            }
+            const comparisons = portfolio.comparisons;
+            const reasonItems = portfolio.reasons.length
+                ? portfolio.reasons.map(function(reason) {
+                    return '<li><code>' + escapeBacktestText(reason) + '</code></li>';
+                }).join('')
+                : '<li>אין סיבות דחייה.</li>';
+            const formGrid = portfolio.validated && portfolio.current
+                ? '<div class="portfolio-form-grid">' +
+                    ['coverage1', 'coverage2', 'depth1', 'depth2'].map(function(role) {
+                        return renderPortfolioFormCard(role, portfolio.current.forms[role]);
+                    }).join('') +
+                    '</div>'
+                : '<div class="info-note">המדיניות לא אושרה: ערכי השורות וכפתורי ה-PIN מוסתרים.</div>';
+            panel.innerHTML = `
+                <div class="portfolio-summary">
+                    <div class="portfolio-validation-banner" data-validated="${portfolio.validated}" role="status" aria-live="polite" aria-atomic="true">
+                        <strong>${portfolio.validated ? '✅ התיק אושר' : '⚠️ התיק לא אושר'}</strong>
+                        <span>מספר הגרלות holdout: ${portfolio.sampleCount}</span>
+                    </div>
+                    <div class="portfolio-metric-grid">
+                        ${renderPortfolioComparisonCard('56 שורות 3+', comparisons.portfolio3Plus)}
+                        ${renderPortfolioComparisonCard('זוג כיסוי 3+', comparisons.coverage3Plus)}
+                        ${renderPortfolioComparisonCard('זוג עומק 3+', comparisons.depth3Plus)}
+                        ${renderPortfolioComparisonCard('זוג עומק 4+', comparisons.depth4Plus)}
+                        ${renderPortfolioComparisonCard(
+                            'תיק 3+ עם התאמת מספר חזק',
+                            portfolio.diagnostics.portfolio3PlusStrong,
+                            { diagnostic: true }
+                        )}
+                    </div>
+                    <h3>תנאי אישור</h3>
+                    ${renderPortfolioValidationGates(portfolio)}
+                    <h3>סיבות דחייה</h3>
+                    <ul class="portfolio-reasons">${reasonItems}</ul>
+                    ${formGrid}
+                    <p class="backtest-disclaimer">הניתוח ההיסטורי אינו מבטיח תוצאות עתידיות או זכייה.</p>
+                </div>
+            `;
         }
 
         function renderBacktestResult(result) {
@@ -3344,6 +4009,8 @@
                 '</section>';
             }).join('');
 
+            renderFourPinPortfolio(result);
+
             renderBacktestStatus('הבדיקה הסתיימה עבור ' + result.split.eligibleCount + ' הגרלות.');
             showBacktestPanel('backtestSummaryPanel');
         }
@@ -3352,12 +4019,24 @@
             const message = event.data || {};
             if (message.runId !== currentBacktestRunId) return;
             if (message.type === 'progress') {
-                const phaseProgress = message.total ? message.completed / message.total : 0;
-                const percentage = message.phase === 'holdout-policies'
-                    ? Math.round(75 + phaseProgress * 25)
-                    : Math.round(phaseProgress * 75);
-                document.getElementById('backtestProgressBar').value = percentage;
-                document.getElementById('backtestProgressText').textContent = percentage + '%';
+                const range = BACKTEST_PROGRESS_RANGES[message.phase];
+                if (range) {
+                    const completed = Number(message.completed);
+                    const total = Number(message.total);
+                    const phaseProgress = Number.isFinite(completed) && Number.isFinite(total) && total > 0
+                        ? Math.max(0, Math.min(1, completed / total))
+                        : 0;
+                    const percentage = Math.max(0, Math.min(100, Math.round(
+                        range[0] + phaseProgress * (range[1] - range[0])
+                    )));
+                    currentBacktestProgress = Math.max(currentBacktestProgress, percentage);
+                    document.getElementById('backtestProgressBar').value = currentBacktestProgress;
+                }
+                const label = typeof message.label === 'string' && message.label
+                    ? message.label
+                    : String(message.phase || '');
+                document.getElementById('backtestProgressText').textContent =
+                    currentBacktestProgress + '%' + (label ? ' - ' + label : '');
                 return;
             }
             if (message.type === 'error') {
@@ -3367,11 +4046,14 @@
             if (message.type !== 'complete') return;
             const effectiveRows = getEffectiveBacktestRows();
             if (!isCompatibleBacktestResult(message.result, effectiveRows)) {
+                hydrateFourPinPortfolio(null);
+                renderFourPinPortfolio(null);
                 finishBacktestFailure('תוצאות הבדיקה אינן תואמות לקובץ הטעון.');
                 return;
             }
             currentBacktestResult = message.result;
             saveBacktestCache(message.result);
+            hydrateFourPinPortfolio(message.result);
             hydrateOptimizedForms(message.result);
             for (const source of ['main', 'form2']) applyFormMode(source, activeFormModes[source]);
             renderBacktestResult(message.result);

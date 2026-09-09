@@ -11,9 +11,12 @@ const identityMetrics = core.aggregateIdentityMetrics({
   hitCounts: [0, 0, 4, 0, 0, 0, 0],
   bucketPoints: [10, 20, 90],
   bucketCounts: [1, 1, 2],
+  bucket3PlusWins: [0, 0, 0],
+  bucket3PlusCounts: [1, 1, 2],
 });
 assert.ok(Math.abs(identityMetrics.stability - 0.4) < 1e-9);
 assert.ok(Math.abs(identityMetrics.score - 26.4) < 1e-9);
+assert.strictEqual(identityMetrics.binary3PlusStability, 0);
 
 const cleanRows = buildSyntheticDraws(500);
 const malformedRows = cleanRows.slice();
