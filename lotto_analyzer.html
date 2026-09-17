@@ -844,6 +844,7 @@
             font-weight: 700;
             list-style-position: inside;
         }
+        .pinned-draw-prize { white-space: nowrap; }
         .future-draw-body {
             border-top: 1px solid var(--border);
             padding: 12px;
@@ -2642,6 +2643,9 @@
             const draw = item.draw || {};
             const score = item.score;
             const winnings = item.winnings || { status: 'unavailable', lines: [] };
+            const winningsSummary = winnings.status === 'available'
+                ? formatPrizeIls(winnings.totalPrizeIls)
+                : 'לא זמין';
             const drawNumbers = (draw.numbers || []).filter(function(n) { return !isNaN(n) && n >= 1 && n <= 37; });
             const drawStrong = draw.strong;
             const drawNumberLabel = draw.drawNumber != null && draw.drawNumber !== '' ? 'הגרלה #' + draw.drawNumber : 'שורה ' + item.rowNumber;
@@ -2724,7 +2728,7 @@
 
             return `
                 <details class="future-draw" ${renderPinnedDrawMetricAttributes(metrics)} ${renderPinnedWinningsAttributes(winnings)} ${shouldOpen ? 'open' : ''}>
-                    <summary>${drawNumberLabel}${dateLabel} • ${bestSummary} • סך רגילות: ${score.totalRegular} • חזק: ${score.totalStrong}</summary>
+                    <summary>${drawNumberLabel}${dateLabel} • ${bestSummary} • סך רגילות: ${score.totalRegular} • חזק: ${score.totalStrong} • <span class="pinned-draw-prize" data-pin-draw-prize>זכייה: ${escapeBacktestText(winningsSummary)}</span></summary>
                     <div class="future-draw-body">
                         <div class="future-draw-numbers">
                             <strong>מספרים:</strong>

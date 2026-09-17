@@ -394,7 +394,22 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   const form2BaselineCard = form2Group.locator('[data-pin-mode="baseline"]');
   const form2ImprovedCard = form2Group.locator('[data-pin-mode="improved"]');
   const pinCards = [baselineCard, improvedCard, form2BaselineCard, form2ImprovedCard];
-  for (const card of pinCards) {
+  for (const [cardIndex, card] of pinCards.entries()) {
+    const drawSummaries = await card.locator('details.future-draw').evaluateAll(draws =>
+      draws.map(draw => ({
+        label: draw.dataset.pinDrawLabel,
+        text: draw.querySelector('summary').textContent,
+      }))
+    );
+    for (const summary of drawSummaries) {
+      const expectedPrize = summary.label === '#4002'
+        ? (cardIndex === 0 ? '₪89' : '₪0')
+        : 'לא זמין';
+      assert.ok(
+        summary.text.includes('זכייה: ' + expectedPrize),
+        `PIN card ${cardIndex + 1}, ${summary.label} must show its own winnings (${expectedPrize}) in the draw summary`,
+      );
+    }
     assert.strictEqual(
       await card.locator('[aria-live]').count(),
       1,
@@ -434,6 +449,11 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   assert.strictEqual(await baselineDraws.count(), 2);
   assert.ok(await newestDateOnlyDraw.evaluate(node => node.open));
   assert.ok(!(await olderNumberedDraw.evaluate(node => node.open)));
+  assert.ok(await olderNumberedDraw.locator('summary [data-pin-draw-prize]').isVisible());
+  assert.strictEqual(
+    (await olderNumberedDraw.locator('summary [data-pin-draw-prize]').textContent()).trim(),
+    'זכייה: ₪89',
+  );
   assert.strictEqual(await baselineCard.locator('details.future-draw[open]').count(), 1);
   assert.strictEqual(
     await baselineCard.locator('details.future-draw[open]').getAttribute('data-pin-draw-label'),
@@ -636,6 +656,11 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
     value: '—',
     meta: 'פתח הגרלה להצגת נתונים',
   });
+  assert.strictEqual(
+    (await olderNumberedDraw.locator('summary [data-pin-draw-prize]').textContent()).trim(),
+    'זכייה: ₪89',
+    'Collapsing a draw must retain its winnings in the summary',
+  );
 
   await session.page.evaluate(() => renderPinnedFutureComparisons());
   const resetBaselineCard = mainGroup.locator('[data-pin-mode="baseline"]');
@@ -690,6 +715,7 @@ async function verifyResponsiveGroups(browser, baseUrl, viewport, screenshotName
   );
 
   await session.page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
+  await resetBaselineCard.screenshot({ path: path.join(outputDir, 'summary-' + screenshotName) });
   await session.context.close();
 }
 
