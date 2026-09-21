@@ -8,6 +8,7 @@ const { openLearningHarness } = require('./helpers/learning-browser');
   try {
     assert.strictEqual(await page.evaluate(() => typeof LottoLearningCore.prepareAtCutoff), 'function', 'Real core loaded');
     assert.strictEqual(await page.evaluate(() => typeof LottoLearningStore), 'object', 'Store module must load in real Chromium');
+    await page.addScriptTag({ url: `${baseUrl}/lotto-learning-report.js` });
     console.time('Prepare reusable learning transition');
     const transition = await page.evaluate(() => makeStartTransition());
     console.timeEnd('Prepare reusable learning transition');
@@ -61,6 +62,48 @@ const { openLearningHarness } = require('./helpers/learning-browser');
           repeated.decisions.length, repeated.compatibility, repeated.rawBackup, repeated.incompatibilityCodes];
       } finally { store.close(); }
     }, [0, null, 1, 1, true, 1, 1, 'compatible', null, []]);
+
+    await check('report import/export is readonly across every physical store and PIN bytes', async () => {
+      const store = await LottoLearningStore.open();
+      try {
+        const change = settlement();
+        await store.commit(0, change);
+        const state = await store.read();
+        async function databaseBytes() {
+          return new Promise((resolve, reject) => {
+            const request = indexedDB.open('lottoLearningExperimentV1');
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              const db = request.result; const names = Array.from(db.objectStoreNames); const result = {};
+              const tx = db.transaction(names, 'readonly');
+              names.forEach(name => {
+                result[name] = {};
+                const objectStore = tx.objectStore(name);
+                objectStore.getAll().onsuccess = event => { result[name].records = event.target.result; };
+                objectStore.getAllKeys().onsuccess = event => { result[name].keys = event.target.result; };
+              });
+              tx.oncomplete = () => { db.close(); resolve(JSON.stringify(result)); };
+              tx.onabort = () => { db.close(); reject(tx.error); };
+            };
+          });
+        }
+        const before = await databaseBytes(); const beforeLocal = JSON.stringify(localStorage);
+        const exported = LottoLearningReport.exportBackup(state);
+        const imported = LottoLearningReport.readBackup(exported);
+        const firstEqual = before === await databaseBytes();
+        const repeated = LottoLearningReport.readBackup(exported);
+        const repeatEqual = before === await databaseBytes();
+        const modified = JSON.parse(exported);
+        modified.state.snapshots[0].arms.legacy[0].strategy = '<img src=x onerror="window.backupExecuted=true">';
+        const labelImport = LottoLearningReport.readBackup(JSON.stringify(modified));
+        const rejected = await codeOf(() => LottoLearningReport.readBackup(exported.replace('"schemaVersion":1', '"schemaVersion":99')));
+        return [imported.mode, imported.report.arms.learner.sampleCount, firstEqual, repeatEqual,
+          JSON.stringify(imported) === JSON.stringify(repeated), before === await databaseBytes(),
+          JSON.stringify(state) === JSON.stringify(await store.read()), beforeLocal === JSON.stringify(localStorage),
+          Boolean(window.backupExecuted), labelImport.state.snapshots[0].arms.legacy[0].strategy, rejected];
+      } finally { store.close(); }
+    }, ['readonly-import', 1, true, true, true, true, true, true, false,
+      '<img src=x onerror="window.backupExecuted=true">', 'UNSUPPORTED_BACKUP']);
 
     await check('core-preserved legacy order, identities and metadata round-trip immutably', async () => {
       const change = copyStart();
@@ -324,11 +367,13 @@ const { openLearningHarness } = require('./helpers/learning-browser');
           const commit = await codeOf(() => store.commit(1, copyStart()));
           const pause = await codeOf(() => store.setPaused(1, true));
           const again = await store.read();
+          const exported = LottoLearningReport.exportBackup(state);
           return [state.compatibility, state.incompatibilityCodes.length > 0, state.rawBackup !== null,
             state.experiment, ['snapshots', 'observations', 'decisions', 'prizes', 'faults'].every(key => state[key].length === 0),
-            commit, pause, JSON.stringify(state.rawBackup) === JSON.stringify(again.rawBackup)];
+            commit, pause, JSON.stringify(state.rawBackup) === JSON.stringify(again.rawBackup),
+            exported === JSON.stringify(state.rawBackup), JSON.stringify(state) === JSON.stringify(await store.read())];
         } finally { store.close(); }
-      }, ['readonly', true, true, null, true, 'INCOMPATIBLE_STORE', 'INCOMPATIBLE_STORE', true]);
+      }, ['readonly', true, true, null, true, 'INCOMPATIBLE_STORE', 'INCOMPATIBLE_STORE', true, true, true]);
     }
 
     await check('unknown store names cannot erase raw backup records through prototype keys', async () => {

@@ -350,5 +350,5 @@
       },
     };
   }
-  return { open };
+  return { open, validateState };
 }));
