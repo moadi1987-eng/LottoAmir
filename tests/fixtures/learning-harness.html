@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Learning browser test harness</title></head>
+<body>
+<script src="/lotto-strategy-core.js"></script>
+<script src="/lotto-learning-core.js"></script>
+<script src="/lotto-learning-store.js"></script>
+<script src="/tests/fixtures/learning-fixture.js"></script>
+<script>
+async function makeStartTransition() {
+  const rows = LottoLearningFixture.buildLearningDraws(700);
+  const cutoff = rows.at(-1).drawNumber;
+  const seedHex = '00112233445566778899aabbccddeeff';
+  const prepared = await LottoLearningCore.prepareAtCutoff(rows, {
+    originAnchor: cutoff, decisions: [], cutoff, seedHex, mode: 'live',
+  });
+  const experiment = {
+    id: 'fixture-experiment', protocolVersion: 'learning-experiment-v1',
+    coreVersion: LottoLearningCore.CORE_VERSION,
+    seedHex, originAnchor: cutoff, lastProcessedDraw: cutoff, status: 'active',
+    sourceDigest: prepared.digest, sourceCutoff: cutoff,
+  };
+  const createdAt = rows.at(-1).date + 'T12:00:00Z';
+  const snapshot = {
+    experimentId: experiment.id, target: cutoff + 1, anchor: cutoff, createdAt,
+    protocolVersion: experiment.protocolVersion, coreVersion: experiment.coreVersion,
+    seedHex, window: prepared.window, arms: prepared.arms,
+    source: { kind: 'canonical', url: 'NUMBERS.xlsx', fetchedAt: createdAt,
+      generation: 1, digest: prepared.digest },
+  };
+  return { experiment, decisions: prepared.decisions, snapshots: [snapshot],
+    observations: [], prizes: [], faults: [] };
+}
+</script>
+</body></html>
