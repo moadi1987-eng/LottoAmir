@@ -26,18 +26,16 @@ function makeLines({ duplicate = false, invalid = false, label = 'fixture' } = {
   });
 }
 
-function buildDiverseLearningDraws(count) {
-  let state = 0x12345678;
-  const nextUint32 = () => {
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    return state >>> 0;
-  };
-  return buildLearningDraws(count).map(draw => {
-    const numbers = new Set();
-    while (numbers.size < 6) numbers.add((nextUint32() % 37) + 1);
-    return { ...draw, numbers: [...numbers].sort((a, b) => a - b) };
+function buildFrequencyLearningDraws() {
+  return buildLearningDraws(700).map((draw, index) => {
+    if (index < 200) return draw;
+    const trainingIndex = index - 200;
+    let numbers;
+    if (trainingIndex < 200) numbers = [1, 2, 3, 4, 5, 6];
+    else if (trainingIndex < 300) numbers = [1, 2, 3, 4, 9, 10];
+    else if (trainingIndex < 400) numbers = [1, 2, 3, 8, 9, 10];
+    else numbers = [1, 2, 7, 8, 9, 10];
+    return { ...draw, numbers };
   });
 }
 
@@ -48,6 +46,11 @@ async function main() {
   ]);
 
   assert.equal(core.PROTOCOL_VERSION, 'learning-experiment-v1');
+  assert.equal(core.LEGACY_COMPLETION_VERSION, 'frequency-fill-v1');
+  assert.equal(
+    core.CORE_VERSION,
+    `${strategy.ALGORITHM_VERSION}:${strategy.CONSTRAINT_VERSION}:legacy-frequency-fill-v1`,
+  );
   assert.equal(core.parseLearningDate('2026-02-28'), '2026-02-28');
   assert.equal(core.parseLearningDate('28/02/2026'), '2026-02-28');
   assert.equal(core.parseLearningDate('28.02.2026'), '2026-02-28');
@@ -154,19 +157,14 @@ async function main() {
   const policy = core.generatePolicyForm(history, cutoff, 100);
   assert.equal(policy.length, 14);
   assert.equal(new Set(policy.map(row => row.numbers.join(','))).size, 14);
-  expectCode(
-    () => core.buildArms(history, cutoff, 100, 'abc123', 'historical'),
-    'GENERATION_FAILED',
-  );
-
-  const diverseHistory = buildDiverseLearningDraws(700);
-  const diverseCutoff = diverseHistory.at(-1).drawNumber;
-  const arms = core.buildArms(diverseHistory, diverseCutoff, 100, 'abc123', 'historical');
+  const arms = core.buildArms(history, cutoff, 100, 'abc123', 'historical');
   assert.deepStrictEqual(Object.keys(arms).sort(), ['learner', 'legacy', 'random']);
   assert.ok(Object.values(arms).every(lines => lines.length === 14));
+  assert.ok(arms.legacy.every(line => line.numbers.length === 6));
+  assert.ok(arms.legacy.some(line => line.strategy.endsWith(' • השלמה קבועה')));
   assert.deepStrictEqual(
     arms.random,
-    core.generateRandomForm(`learning-experiment-v1|historical|abc123|${diverseCutoff + 1}|random`),
+    core.generateRandomForm(`learning-experiment-v1|historical|abc123|${cutoff + 1}|random`),
   );
 
   const originalGenerate = strategy.generateBaselineForms;
@@ -183,6 +181,57 @@ async function main() {
     const duplicateLegacy = core.buildArms(history, cutoff, 100, 'abc123', 'live');
     assert.equal(new Set(duplicateLegacy.legacy.map(row => row.numbers.join(','))).size, 1);
 
+    const frequencyHistory = buildFrequencyLearningDraws();
+    const frequencyHistoryBefore = structuredClone(frequencyHistory);
+    const shortLegacy = makeLines({ label: 'legacy' });
+    for (let index = 0; index < 5; index += 1) {
+      shortLegacy[index] = {
+        comboNum: index + 1,
+        strategy: `short-${index + 1}`,
+        numbers: [2, 11, 12, 13, 14].slice(0, index + 1),
+        strong: index + 1,
+        marker: `keep-${index + 1}`,
+      };
+    }
+    shortLegacy[5] = {
+      comboNum: 6,
+      strategy: 'valid-sentinel',
+      numbers: [30, 1, 24, 7, 18, 12],
+      strong: 4,
+      marker: 'unchanged',
+    };
+    const shortLegacyBefore = structuredClone(shortLegacy);
+    strategy.generateBaselineForms = rows => (rows.length === 500
+      ? { main: shortLegacy }
+      : { form2: makeLines() });
+    const completed = core.buildArms(
+      frequencyHistory,
+      frequencyHistory.at(-1).drawNumber,
+      100,
+      'frequency-case',
+      'historical',
+    ).legacy;
+    assert.deepStrictEqual(completed[0], {
+      comboNum: 1,
+      strategy: 'short-1 • השלמה קבועה',
+      numbers: [1, 2, 3, 4, 9, 10],
+      strong: 1,
+      marker: 'keep-1',
+    });
+    assert.deepStrictEqual(completed[4], {
+      comboNum: 5,
+      strategy: 'short-5 • השלמה קבועה',
+      numbers: [1, 2, 11, 12, 13, 14],
+      strong: 5,
+      marker: 'keep-5',
+    });
+    assert.ok(completed.slice(0, 5).every((line, index) => line.numbers.length === 6
+      && line.strong === index + 1
+      && shortLegacy[index].numbers.every(number => line.numbers.includes(number))));
+    assert.deepStrictEqual(completed[5], shortLegacyBefore[5]);
+    assert.deepStrictEqual(shortLegacy, shortLegacyBefore);
+    assert.deepStrictEqual(frequencyHistory, frequencyHistoryBefore);
+
     strategy.generateBaselineForms = () => ({
       form2: makeLines({ invalid: true }),
       main: makeLines(),
@@ -195,6 +244,33 @@ async function main() {
       main: rows.length === 500 ? makeLines({ invalid: true }) : makeLines(),
     });
     expectCode(() => core.buildArms(history, cutoff, 100, 'abc123', 'live'), 'GENERATION_FAILED');
+
+    const malformedLegacyRows = [
+      { numbers: [] },
+      { numbers: 'not-an-array' },
+      { numbers: [1, 1] },
+      { numbers: ['1'] },
+      { numbers: [0] },
+      { numbers: [1, 2, 3, 4, 5, 6, 7] },
+      { comboNum: 0, numbers: [1] },
+      { comboNum: 15, numbers: [1] },
+      { comboNum: '1', numbers: [1] },
+      { strategy: null, numbers: [1] },
+      { strategy: '', numbers: [1] },
+      { strong: 9, numbers: [1] },
+      { strong: '1', numbers: [1] },
+    ];
+    for (const malformed of malformedLegacyRows) {
+      const main = makeLines({ label: 'legacy' });
+      main[0] = { ...main[0], ...malformed };
+      strategy.generateBaselineForms = rows => (rows.length === 500
+        ? { main }
+        : { form2: makeLines() });
+      expectCode(
+        () => core.buildArms(history, cutoff, 100, 'abc123', 'live'),
+        'GENERATION_FAILED',
+      );
+    }
   } finally {
     strategy.generateBaselineForms = originalGenerate;
   }

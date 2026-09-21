@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-21-lottoamir-learning-experiment-design.md` — approved in conversation, including per-draw forms versus 20-draw policy updates.
 
-**Status:** Plan prepared for user review. No product implementation has started. Execution method and worktree consent must be resolved at handoff; no deploy is included in plan approval.
+**Status:** User approved the plan, subagent-driven execution and an isolated worktree on 2026-09-21. Implementation started. On 2026-09-22 the user approved experiment-only legacy-row completion; read `docs/superpowers/specs/2026-09-22-learning-legacy-completion-amendment.md`, which supersedes the exact-legacy rule and coreVersion formula wherever they appear below. No deploy is included.
 
 ## סיכום למשתמש
 

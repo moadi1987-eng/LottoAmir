@@ -11,6 +11,8 @@
   'use strict';
 
   const PROTOCOL_VERSION = 'learning-experiment-v1';
+  const LEGACY_COMPLETION_VERSION = 'frequency-fill-v1';
+  const CORE_VERSION = `${LottoStrategyCore.ALGORITHM_VERSION}:${LottoStrategyCore.CONSTRAINT_VERSION}:legacy-${LEGACY_COMPLETION_VERSION}`;
   const RANDOM_ALGORITHM_VERSION = 'fnv1a32-xorshift32-rejection-fisher-yates-v1';
   const WINDOWS = Object.freeze([100, 200, 500]);
   const DAY_MILLISECONDS = 86400000;
@@ -213,6 +215,44 @@
     });
   }
 
+  function completeLegacyLines(lines, trainingRows) {
+    if (!Array.isArray(lines) || lines.length !== 14
+      || !Array.isArray(trainingRows) || trainingRows.length !== 500) {
+      throw codedError('GENERATION_FAILED');
+    }
+    const frequencies = Array(38).fill(0);
+    trainingRows.forEach(draw => {
+      draw.numbers.forEach(number => { frequencies[number] += 1; });
+    });
+    const frequencyRank = Array.from({ length: 37 }, (_, index) => index + 1)
+      .sort((first, second) => frequencies[second] - frequencies[first] || first - second);
+    const comboNumbers = new Set();
+    return lines.map(line => {
+      if (!line || typeof line !== 'object' || !Array.isArray(line.numbers)
+        || line.numbers.length < 1 || line.numbers.length > 6
+        || typeof line.strategy !== 'string' || line.strategy.trim().length === 0
+        || !Number.isInteger(line.comboNum) || line.comboNum < 1 || line.comboNum > 14
+        || comboNumbers.has(line.comboNum)
+        || !Number.isInteger(line.strong) || line.strong < 1 || line.strong > 7
+        || line.numbers.some(number => !Number.isInteger(number) || number < 1 || number > 37)
+        || new Set(line.numbers).size !== line.numbers.length) {
+        throw codedError('GENERATION_FAILED');
+      }
+      comboNumbers.add(line.comboNum);
+      if (line.numbers.length === 6) return { ...line, numbers: line.numbers.slice() };
+      const completedNumbers = line.numbers.slice();
+      for (const number of frequencyRank) {
+        if (!completedNumbers.includes(number)) completedNumbers.push(number);
+        if (completedNumbers.length === 6) break;
+      }
+      return {
+        ...line,
+        strategy: `${line.strategy} • השלמה קבועה`,
+        numbers: completedNumbers.sort((first, second) => first - second),
+      };
+    });
+  }
+
   function generateRandomForm(seedText) {
     const random = createRandom(seedText);
     const sourceNumbers = Array.from({ length: 37 }, (_, index) => index + 1);
@@ -279,10 +319,9 @@
     const eligibleRows = rowsThroughCutoff(rows, cutoff);
     if (eligibleRows.length < 500) throw codedError('INSUFFICIENT_HISTORY');
     const learner = generatePolicyForm(rows, cutoff, normalizeWindow(window));
-    const legacyBaseline = generatedForms(eligibleRows.slice(-500).reverse());
-    const legacy = normalizeGeneratedLines(legacyBaseline && legacyBaseline.main, {
-      allowDuplicateNumbers: true,
-    });
+    const legacyTrainingRows = eligibleRows.slice(-500);
+    const legacyBaseline = generatedForms(legacyTrainingRows.slice().reverse());
+    const legacy = completeLegacyLines(legacyBaseline && legacyBaseline.main, legacyTrainingRows);
     const cutoffNumber = decimalInteger(cutoff);
     const random = generateRandomForm(
       `${PROTOCOL_VERSION}|${mode}|${seedHex}|${cutoffNumber + 1}|random`,
@@ -312,6 +351,8 @@
 
   return {
     PROTOCOL_VERSION,
+    LEGACY_COMPLETION_VERSION,
+    CORE_VERSION,
     RANDOM_ALGORITHM_VERSION,
     parseLearningDate,
     validateHistory,
