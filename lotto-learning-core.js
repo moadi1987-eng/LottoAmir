@@ -14,6 +14,8 @@
   const LEGACY_COMPLETION_VERSION = 'frequency-fill-v1';
   const CORE_VERSION = `${LottoStrategyCore.ALGORITHM_VERSION}:${LottoStrategyCore.CONSTRAINT_VERSION}:legacy-${LEGACY_COMPLETION_VERSION}`;
   const RANDOM_ALGORITHM_VERSION = 'fnv1a32-xorshift32-rejection-fisher-yates-v1';
+  const HISTORICAL_SEED = 'learning-history-v1';
+  const POLICY_INTERVAL = 20;
   const WINDOWS = Object.freeze([100, 200, 500]);
   const DAY_MILLISECONDS = 86400000;
   const EXCEL_EPOCH_MILLISECONDS = Date.UTC(1899, 11, 30);
@@ -349,11 +351,155 @@
     };
   }
 
+  function validateCounts(counts) {
+    if (!counts || typeof counts !== 'object'
+      || Object.keys(counts).length !== 3
+      || WINDOWS.some(window => !Number.isInteger(counts[window])
+        || counts[window] < 0 || counts[window] > 200)) {
+      throw codedError('INVALID_DECISIONS');
+    }
+  }
+
+  function selectWindow(counts, incumbent) {
+    validateCounts(counts);
+    const order = [500, 200, 100];
+    const best = Math.max(...order.map(window => counts[window]));
+    if (order.includes(incumbent) && counts[incumbent] === best) return incumbent;
+    return order.find(window => counts[window] === best);
+  }
+
+  // Normalize the complete source for provenance, but exclude future rows BEFORE
+  // choosing its modern suffix: even a later strong-8 row cannot alter this run.
+  function cutoffHistory(inputRows, cutoff) {
+    const normalized = normalizeHistory(inputRows).rows;
+    if (!Number.isSafeInteger(cutoff) || !normalized.some(row => row.drawNumber === cutoff)) {
+      throw codedError('INVALID_CUTOFF');
+    }
+    const source = rowsThroughCutoff(normalized, cutoff);
+    return { source, rows: validateHistory(source).rows };
+  }
+
+  function createPolicyRun(rows, onProgress) {
+    // This cache belongs to this copied, immutable-history calculation only.
+    const forms = new Map();
+    function policyForm(targetIndex, window) {
+      const key = `${window}:${rows[targetIndex].drawNumber}`;
+      if (!forms.has(key)) {
+        if (targetIndex < 500) throw codedError('INSUFFICIENT_HISTORY');
+        const training = rows.slice(targetIndex - window, targetIndex).reverse();
+        const baseline = generatedForms(training);
+        forms.set(key, normalizeGeneratedLines(baseline && baseline.form2));
+      }
+      return forms.get(key);
+    }
+    function evaluate(cutoff, incumbent) {
+      const index = rows.findIndex(row => row.drawNumber === cutoff);
+      if (index < 699) throw codedError('INSUFFICIENT_HISTORY');
+      const counts = { 100: 0, 200: 0, 500: 0 };
+      for (let targetIndex = index - 199; targetIndex <= index; targetIndex += 1) {
+        for (const window of WINDOWS) {
+          counts[window] += scoreArm(policyForm(targetIndex, window), rows[targetIndex]).win3Plus;
+        }
+        if (typeof onProgress === 'function' && ((targetIndex - index + 200) % 20 === 0)) {
+          onProgress({ phase: 'selection', cutoff, completed: targetIndex - index + 200, total: 200 });
+        }
+      }
+      return { cutoff, window: selectWindow(counts, incumbent), counts };
+    }
+    return { evaluate };
+  }
+
+  function evaluateDecision(inputRows, cutoff, incumbent = 500, onProgress) {
+    const { rows } = cutoffHistory(inputRows, cutoff);
+    return createPolicyRun(rows, onProgress).evaluate(cutoff, incumbent);
+  }
+
+  function validateDecisions(decisions, originAnchor, cutoff) {
+    if (!Array.isArray(decisions)) throw codedError('INVALID_DECISIONS');
+    let previous = null;
+    decisions.forEach((decision, index) => {
+      if (!decision || typeof decision !== 'object'
+        || Object.keys(decision).some(key => !['cutoff', 'window', 'counts'].includes(key))
+        || !Number.isSafeInteger(decision.cutoff)
+        || (index === 0 && decision.cutoff !== originAnchor)
+        || decision.cutoff < originAnchor || decision.cutoff > cutoff
+        || (decision.cutoff - originAnchor) % POLICY_INTERVAL !== 0
+        || (previous !== null && decision.cutoff <= previous)
+        || !WINDOWS.includes(decision.window)) {
+        throw codedError('INVALID_DECISIONS');
+      }
+      validateCounts(decision.counts);
+      previous = decision.cutoff;
+    });
+  }
+
+  function advanceInRun(rows, run, originAnchor, decisions, cutoff) {
+    validateDecisions(decisions, originAnchor, cutoff);
+    if (!Number.isSafeInteger(originAnchor) || originAnchor > cutoff) throw codedError('INVALID_CUTOFF');
+    if (rows.findIndex(row => row.drawNumber === originAnchor) < 699) {
+      throw codedError('INSUFFICIENT_HISTORY');
+    }
+    const existing = new Map(decisions.map(decision => [decision.cutoff, decision]));
+    const result = [];
+    let incumbent = 500;
+    for (let boundary = originAnchor; boundary <= cutoff; boundary += POLICY_INTERVAL) {
+      const saved = existing.get(boundary);
+      if (saved && selectWindow(saved.counts, incumbent) !== saved.window) {
+        throw codedError('INVALID_DECISIONS');
+      }
+      const decision = saved
+        ? { cutoff: saved.cutoff, window: saved.window, counts: { ...saved.counts } }
+        : run.evaluate(boundary, incumbent);
+      result.push(decision);
+      incumbent = decision.window;
+    }
+    return result;
+  }
+
+  function advancePolicy(inputRows, originAnchor, decisions, cutoff, onProgress) {
+    const { rows } = cutoffHistory(inputRows, cutoff);
+    return advanceInRun(rows, createPolicyRun(rows, onProgress), originAnchor, decisions, cutoff);
+  }
+
+  async function prepareAtCutoff(inputRows, options, onProgress) {
+    const { originAnchor, decisions, cutoff, seedHex, mode, protocolVersion, coreVersion } = options || {};
+    if ((protocolVersion !== undefined && protocolVersion !== PROTOCOL_VERSION)
+      || (coreVersion !== undefined && coreVersion !== CORE_VERSION)) throw codedError('INVALID_VERSION');
+    const { source, rows } = cutoffHistory(inputRows, cutoff);
+    const updated = advanceInRun(rows, createPolicyRun(rows, onProgress), originAnchor, decisions, cutoff);
+    const window = updated[updated.length - 1].window;
+    const arms = buildArms(rows, cutoff, window, seedHex, mode);
+    const digest = await hashHistory(source);
+    return { decisions: updated, window, arms, digest, cutoff };
+  }
+
+  async function runHistoricalReplay(inputRows, onProgress) {
+    const rows = validateHistory(inputRows).rows;
+    if (rows.length < 900) throw codedError('INSUFFICIENT_HISTORY');
+    const firstTargetIndex = rows.length - 200;
+    const originAnchor = rows[firstTargetIndex - 1].drawNumber;
+    const run = createPolicyRun(rows, onProgress);
+    const decisions = advanceInRun(rows, run, originAnchor, [], rows[rows.length - 2].drawNumber);
+    const targets = [];
+    for (let index = firstTargetIndex; index < rows.length; index += 1) {
+      const draw = rows[index];
+      const decision = decisions[Math.floor((index - firstTargetIndex) / POLICY_INTERVAL)];
+      const arms = buildArms(rows, rows[index - 1].drawNumber, decision.window, HISTORICAL_SEED, 'historical');
+      const scores = Object.fromEntries(Object.entries(arms).map(([name, lines]) => [name, scoreArm(lines, draw)]));
+      targets.push({ target: draw.drawNumber, draw, arms, scores });
+      if (typeof onProgress === 'function') {
+        onProgress({ phase: 'replay', completed: targets.length, total: 200, target: draw.drawNumber });
+      }
+    }
+    return { mode: 'historical', sampleCount: 200, decisions, targets, seed: HISTORICAL_SEED };
+  }
+
   return {
     PROTOCOL_VERSION,
     LEGACY_COMPLETION_VERSION,
     CORE_VERSION,
     RANDOM_ALGORITHM_VERSION,
+    HISTORICAL_SEED,
     parseLearningDate,
     validateHistory,
     canonicalHistory,
@@ -362,5 +508,10 @@
     generatePolicyForm,
     buildArms,
     scoreArm,
+    selectWindow,
+    evaluateDecision,
+    advancePolicy,
+    prepareAtCutoff,
+    runHistoricalReplay,
   };
 }));
