@@ -105,12 +105,18 @@
       fields(snap.arms, ARMS);
       for (const arm of ARMS) {
         requireValue(Array.isArray(snap.arms[arm]) && snap.arms[arm].length === 14);
-        snap.arms[arm].forEach((line, index) => {
-          fields(line, ['comboNum', 'strategy', 'numbers', 'strong']);
-          requireValue(line.comboNum === index + 1 && text(line.strategy) && Array.isArray(line.numbers)
-            && line.numbers.length === 6 && line.numbers.every((number, i) => integer(number, 1)
-              && number <= 37 && (i === 0 || number > line.numbers[i - 1]))
+        const comboNumbers = new Set();
+        snap.arms[arm].forEach(line => {
+          // The core preserves JSON metadata and legacy number order. Identity
+          // belongs to comboNum, not the row's current position in its arm.
+          requireValue(object(line) && integer(line.comboNum, 1) && !comboNumbers.has(line.comboNum)
+            && (arm === 'learner' || line.comboNum <= 14) && typeof line.strategy === 'string'
+            && (arm !== 'legacy' || line.strategy.trim().length > 0) && Array.isArray(line.numbers)
+            && line.numbers.length === 6 && new Set(line.numbers).size === 6
+            && line.numbers.every((number, i) => integer(number, 1)
+              && number <= 37 && (arm === 'legacy' || i === 0 || number > line.numbers[i - 1]))
             && integer(line.strong, 1) && line.strong <= 7);
+          comboNumbers.add(line.comboNum);
         });
       }
       snapshots.set(snap.target, snap);

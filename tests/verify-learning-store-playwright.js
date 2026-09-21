@@ -62,6 +62,62 @@ const { openLearningHarness } = require('./helpers/learning-browser');
       } finally { store.close(); }
     }, [0, null, 1, 1, true, 1, 1, 'compatible', null, []]);
 
+    await check('core-preserved legacy order, identities and metadata round-trip immutably', async () => {
+      const change = copyStart();
+      const legacy = structuredClone(change.snapshots[0].arms.legacy);
+      [legacy[0], legacy[1]] = [legacy[1], legacy[0]];
+      legacy[0] = { comboNum: 2, strategy: 'valid-sentinel', numbers: [30, 1, 24, 7, 18, 12],
+        strong: 4, marker: 'unchanged', details: { weights: [3, 1], enabled: true } };
+      const original = LottoStrategyCore.generateBaselineForms;
+      try {
+        // Control generator input, but exercise the real completion adapter and store.
+        LottoStrategyCore.generateBaselineForms = rows => ({ ...original(rows), main: legacy });
+        change.snapshots[0].arms = LottoLearningCore.buildArms(LottoLearningFixture.buildLearningDraws(700),
+          change.experiment.originAnchor, change.snapshots[0].window, change.experiment.seedHex, 'live');
+      } finally { LottoStrategyCore.generateBaselineForms = original; }
+      window.preservedLegacyFixture = structuredClone(change);
+      const store = await LottoLearningStore.open();
+      try {
+        const result = await codeOf(() => store.commit(0, change));
+        if (result !== 'saved') return [result];
+        const saved = await store.read();
+        const repeated = await store.commit(1, structuredClone(change));
+        const reordered = structuredClone(change); reordered.snapshots[0].arms.legacy[0].numbers.sort((a, b) => a - b);
+        const changedMetadata = structuredClone(change); changedMetadata.snapshots[0].arms.legacy[0].details.weights[0] = 99;
+        const orderConflict = await codeOf(() => store.commit(1, reordered));
+        const metadataConflict = await codeOf(() => store.commit(1, changedMetadata));
+        return [saved.compatibility, saved.snapshots[0].arms.legacy[0], saved.snapshots[0].arms.legacy[1].comboNum,
+          repeated.revision, orderConflict, metadataConflict, JSON.stringify(await store.read()) === JSON.stringify(saved)];
+      } finally { store.close(); }
+    }, ['compatible', { comboNum: 2, strategy: 'valid-sentinel', numbers: [30, 1, 24, 7, 18, 12],
+      strong: 4, marker: 'unchanged', details: { weights: [3, 1], enabled: true } }, 1,
+    1, 'IMMUTABLE_CONFLICT', 'IMMUTABLE_CONFLICT', true]);
+
+    await check('legacy metadata support retains strict numbers, identities and JSON safety', async () => {
+      const store = await LottoLearningStore.open();
+      try {
+        const mutations = [
+          line => { line.numbers = [30, 1, 24, 7, 18, 18]; },
+          line => { line.numbers[0] = 38; },
+          line => { line.numbers[0] = '30'; },
+          line => { line.comboNum = 1; }, // Already owned by the next row.
+          line => { line.comboNum = 15; },
+          line => { line.comboNum = 0; },
+          line => { line.marker = Number.NaN; },
+          line => { line.details = JSON.parse('{"__proto__":{"polluted":true}}'); },
+          line => { line.details = Object.create({ inherited: true }); },
+        ];
+        const codes = [];
+        for (const mutate of mutations) {
+          const change = structuredClone(preservedLegacyFixture);
+          mutate(change.snapshots[0].arms.legacy[0]);
+          codes.push(await codeOf(() => store.commit(0, change)));
+        }
+        const state = await store.read();
+        return [codes, state.revision, state.snapshots.length];
+      } finally { store.close(); }
+    }, [Array(9).fill('MALFORMED_RECORD'), 0, 0]);
+
     // A differing-seed start must not mix one experiment's meta with another's arms.
     await page.evaluate(() => resetLearning());
     const alternative = structuredClone(transition);
