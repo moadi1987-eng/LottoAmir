@@ -116,26 +116,6 @@
       });
     }
   }
-  function validateWinnings(value) {
-    fields(value, ['status', 'totalPrizeIls', 'winningCombinationCount', 'sourceUrl', 'lines']);
-    requireValue(['available', 'unavailable'].includes(value.status) && Array.isArray(value.lines) && value.lines.length === 14);
-    requireValue(value.sourceUrl === null || typeof value.sourceUrl === 'string');
-    let sum = 0; let winners = 0;
-    value.lines.forEach(line => {
-      fields(line, ['status', 'tierKey', 'prizeIls']);
-      requireValue(line.tierKey === null || (typeof line.tierKey === 'string' && /^[0-6](?:\+strong)?$/.test(line.tierKey)));
-      if (value.status === 'unavailable') requireValue(line.status === 'unavailable' && line.tierKey === null && line.prizeIls === null);
-      else if (line.status === 'no-prize') requireValue(line.prizeIls === null);
-      else if (line.status === 'not-distributed') requireValue(line.tierKey !== null && line.prizeIls === 0);
-      else {
-        requireValue(line.status === 'won' && line.tierKey !== null && integer(line.prizeIls, 1));
-        sum += line.prizeIls; winners++;
-        requireValue(Number.isSafeInteger(sum));
-      }
-    });
-    if (value.status === 'unavailable') requireValue(value.totalPrizeIls === null && value.winningCombinationCount === null && value.sourceUrl === null);
-    else requireValue(integer(value.totalPrizeIls) && value.totalPrizeIls === sum && value.winningCombinationCount === winners);
-  }
   function preparedState(input) {
     checkLimits(input);
     const state = copyJSON(input);
@@ -151,7 +131,6 @@
       }
     }
     store.validateState(state);
-    state.prizes.forEach(prize => ARMS.forEach(arm => validateWinnings(prize.arms[arm])));
     return state;
   }
   function buildObservations(input, rows) {

@@ -1468,6 +1468,7 @@
         let learningSourceGeneration = 0;
         let latestLearningSource = null;
         let learningClosed = false;
+        let learningLifecycle = 0;
         window.lottoLearningController = null;
         window.lottoLearningView = null;
         let learningUI = null;
@@ -1516,32 +1517,57 @@
         }
         function rejectLearningSource(request, error) {
             if (request !== latestLearningSource || learningClosed) return;
+            request.error = error;
             void window.lottoLearningReady.then(controller => {
                 if (!controller || request !== latestLearningSource || learningClosed) return;
                 bindLearningSource(request); controller.rejectSource(request.generation, error);
             });
         }
-        window.lottoLearningReady = Promise.resolve().then(() => LottoLearningStore.open({
+        function initializeLearningController(restoreSource = false) {
+          const lifecycle = ++learningLifecycle;
+          return Promise.resolve().then(() => LottoLearningStore.open({
             onVersionChange: () => {
+                if (lifecycle !== learningLifecycle) return;
                 learningClosed = true;
                 if (window.lottoLearningController) window.lottoLearningController.close();
                 publishLearningView({ ...window.lottoLearningView,
                     error: { code: 'STORAGE_CLOSED', message: 'הטופס לא נשמר' } });
             }
-        })).then(store => {
-            if (learningClosed) { store.close(); return null; }
+        })).then(async store => {
+            if (learningClosed || lifecycle !== learningLifecycle) { store.close(); return null; }
             const controller = LottoLearningController.create({ store, prizeAdapter: fetchLearningPrizes,
                 onState: publishLearningView });
             window.lottoLearningController = controller;
             if (latestLearningSource) bindLearningSource(latestLearningSource);
+            const request = latestLearningSource;
+            if (restoreSource && request?.rows) {
+                await controller.acceptSource(request.rows, { kind: request.kind,
+                    url: request.kind === 'canonical' ? DEFAULT_NUMBERS_FILE : null,
+                    fetchedAt: request.fetchedAt, generation: request.generation });
+            } else if (restoreSource && request?.error) controller.rejectSource(request.generation, request.error);
             return controller;
         }).catch(error => {
+            if (learningClosed || lifecycle !== learningLifecycle) return null;
             publishLearningView({ error: { code: error.code || 'STORAGE_FAILED', message: 'הטופס לא נשמר' } });
             return null;
         });
+        }
+        window.lottoLearningReady = initializeLearningController();
         window.addEventListener('pagehide', () => {
             learningClosed = true;
+            learningLifecycle++;
             if (window.lottoLearningController) window.lottoLearningController.close();
+        });
+        window.addEventListener('pageshow', event => {
+            if (!event.persisted) return;
+            // BFCache keeps the DOM/closures but pagehide deliberately closes all work.
+            // Remount once with a fresh connection; persisted experiment identity stays in IDB.
+            if (learningUI) learningUI.unmount();
+            learningUI = null;
+            window.lottoLearningController = null;
+            window.lottoLearningView = null;
+            learningClosed = false;
+            window.lottoLearningReady = initializeLearningController(true);
         });
         let comparisonLiveUpdateTimer = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
@@ -2682,8 +2708,13 @@
             let document = null;
             try {
                 const response = await fetch(DEFAULT_PRIZES_FILE, { cache: 'no-store', signal });
-                if (response.ok) document = normalizeLottoPrizeDocument(await response.json());
-            } catch (_) { if (signal.aborted) throw Object.assign(new Error('Cancelled'), { code: 'CANCELLED' }); }
+                if (!response.ok) throw new Error('Prize retrieval failed');
+                document = normalizeLottoPrizeDocument(await response.json());
+                if (!document) throw new Error('Invalid prize document');
+            } catch (_) {
+                if (signal.aborted) throw Object.assign(new Error('Cancelled'), { code: 'CANCELLED' });
+                throw Object.assign(new Error('רענון נתוני הזכייה נכשל; נתוני הפרסים השמורים לא השתנו.'), { code: 'PRIZE_REFRESH_FAILED' });
+            }
             const prizes = [];
             for (const observation of state.observations) {
                 const snapshot = state.snapshots.find(item => item.target === observation.target);

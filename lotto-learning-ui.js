@@ -197,6 +197,8 @@
       Object.entries(armNames).forEach(([arm, label]) => {
         const target = arm === 'learner' ? node('section') : node('details');
         target.append(node(arm === 'learner' ? 'h4' : 'summary', label));
+        const distinct = new Set(snapshot.arms[arm].map(line => line.numbers.slice().sort((a, b) => a - b).join(','))).size;
+        target.append(node('p', `שישיות שונות: ${distinct} מתוך ${snapshot.arms[arm].length}`, { 'data-learning-distinct': arm }));
         if (observation) target.append(node('p', 'סך ליעד: ' + (prize?.arms[arm]?.status === 'available' ? money(prize.arms[arm].totalPrizeIls) : 'לא זמין')));
         target.append(lineTable(snapshot.arms[arm], observation?.scores?.[arm], observation ? prize?.arms[arm] || null : undefined, active && arm === 'learner'));
         parent.append(target);
@@ -223,10 +225,34 @@
         grid.append(card);
       });
       parent.append(grid);
-      report.blocks.forEach(block => parent.append(node('p', `בלוק ${block.k}: ${evidenceNames[block.status]} • ${block.eligibleCount}/${block.n} כשירים`)));
+      function difference(arm, value, label, attrs) {
+        const line = node('p', `${label} — לומד פחות ${armNames[arm]}: `, attrs);
+        if (value == null) line.append(document.createTextNode('לא זמין'));
+        else line.append(node('bdi', (value * 100).toFixed(1), { dir: 'ltr' }), document.createTextNode(' נקודות אחוז'));
+        return line;
+      }
+      for (const arm of ['legacy', 'random']) {
+        parent.append(difference(arm, report.paired[arm].meanDifference, 'הפרש שיעור 3+', { 'data-learning-paired': arm }));
+      }
+      report.blocks.forEach(block => {
+        const section = node('section', null, { 'data-learning-block': block.k, class: 'learning-evidence-block' });
+        section.append(node('p', `בלוק ${block.k}: ${evidenceNames[block.status]} • ${block.eligibleCount}/${block.n} כשירים`));
+        if (report.mode === 'live' && ['legacy', 'random'].every(arm => block.paired[arm].lowerBound != null)) {
+          for (const arm of ['legacy', 'random']) section.append(difference(arm, block.paired[arm].lowerBound,
+            'גבול תחתון להפרש', { 'data-learning-evidence-bound': arm }));
+          const method = node('div', null, { 'data-learning-evidence-method': '' });
+          const alpha = node('p', 'שיטה: Hoeffding שמרני, תיקון לשתי ביקורות ולבלוקים חוזרים. ');
+          alpha.append(node('bdi', `k = ${block.k}; n = ${block.n}; alpha = ${block.alpha}`, { dir: 'ltr' }));
+          method.append(alpha, node('p', 'D = winLearner - winBenchmark; alpha = 0.05 / (2 * k * (k + 1))', { dir: 'ltr' }),
+            node('p', 'lowerBound = max(-1, mean(D) - sqrt(2 * ln(1 / alpha) / 200))', { dir: 'ltr' }),
+            node('p', 'הגבולות מוצגים בנקודות אחוז, בהנחת הגרלות עצמאיות; מתייחסים לבלוק זה בלבד ואינם מבטיחים יתרון בעתיד.'));
+          section.append(method);
+        }
+        parent.append(section);
+      });
       if (report.mode === 'readonly-import') parent.append(node('p', 'גיבוי לא מאומת: מקור ופרסים לא מאומתים; בדיקת digest היא תחבירית בלבד.'));
     }
-    function renderLive(state, report) {
+    function renderLive(state, report, opened) {
       if (imported) live.append(node('p', 'גיבוי לקריאה בלבד', { 'data-learning-import': 'true', class: 'learning-disclaimer' }));
       if (!state || state.compatibility !== 'compatible') {
         live.append(node('p', 'אין נתונים תואמים להצגה. גיבוי קיים אינו נמחק או משוחזר אוטומטית.')); return;
@@ -242,18 +268,30 @@
       const observations = new Map(state.observations.map(item => [item.target, item]));
       for (let target = state.experiment?.lastProcessedDraw ?? 0; target > (state.experiment?.originAnchor ?? 0); target--) {
         const observation = observations.get(target); const snapshot = state.snapshots.find(s => s.target === target);
+        const prize = state.prizes.find(p => p.target === target);
         const details = node('details', null, { 'data-learning-history-target': target, 'data-learning-key': `history-${target}` });
-        details.append(node('summary', `${target} • ${observation?.draw?.date ?? ''} • ${kindNames[observation?.kind || 'missing']}`));
+        const heading = node('summary');
+        heading.append(node('bdi', target, { dir: 'ltr' }), document.createTextNode(' • '),
+          node('bdi', observation?.draw?.date ?? '', { dir: 'ltr' }), document.createTextNode(` • ${kindNames[observation?.kind || 'missing']}`));
+        const totals = node('span', null, { class: 'learning-history-totals' });
+        Object.entries(armNames).forEach(([arm, label]) => {
+          const total = node('span', label + ': ');
+          const winnings = prize?.arms[arm];
+          if (winnings?.status === 'available') total.append(node('bdi', money(winnings.totalPrizeIls), { dir: 'ltr' }));
+          else total.append(document.createTextNode('לא זמין'));
+          totals.append(total);
+        });
+        heading.append(totals); details.append(heading);
         let built = false;
         const build = () => {
           if (built) return; built = true;
           if (!snapshot) { details.append(node('p', 'טופס חסר — אין שורות שמורות ליעד זה.')); return; }
           meta(details, snapshot, state.experiment, state.decisions);
-          armTables(details, snapshot, observation || { scores: null }, state.prizes.find(p => p.target === target));
+          armTables(details, snapshot, observation || { scores: null }, prize);
         };
         details.addEventListener('toggle', () => { if (details.open) build(); });
-        // Small history tables are ready for screen readers; large histories remain expandable.
-        if (snapshot) build();
+        // Build only opened targets, including previously expanded entries on rerender.
+        if (opened.has(`history-${target}`)) { details.open = true; build(); }
         live.append(details);
       }
     }
@@ -271,7 +309,7 @@
         live.replaceChildren(); historical.replaceChildren();
         const localReport = imported ? imported.report : state?.compatibility === 'compatible'
           ? (view.mode === 'live' ? view.report : reportAPI.summarizeExperiment(state)) : null;
-        renderLive(state, localReport);
+        renderLive(state, localReport, opened);
         historical.append(node('p', 'סימולציה תיאורית על 200 יעדים קודמים; אינה מעקב עתידי ואינה יוצרת טפסים שמורים.'));
         if (view.mode === 'historical' && view.report) summary(historical, view.report);
         else historical.append(node('p', 'טרם הושלמה בדיקה היסטורית למקור הנוכחי.'));

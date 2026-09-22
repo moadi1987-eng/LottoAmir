@@ -63,6 +63,29 @@
   function storedKey(name, record) {
     return Array.isArray(KEYS[name]) ? KEYS[name].map(key => record[key]) : record[KEYS[name]];
   }
+  // One monetary contract for physical reads, writes, reports and readonly imports.
+  function validateWinnings(value) {
+    const amount = (value, minimum = 0) => integer(value, minimum) && !Object.is(value, -0);
+    fields(value, ['status', 'totalPrizeIls', 'winningCombinationCount', 'sourceUrl', 'lines']);
+    requireValue(['available', 'unavailable'].includes(value.status) && Array.isArray(value.lines) && value.lines.length === 14);
+    requireValue(value.sourceUrl === null || typeof value.sourceUrl === 'string');
+    let sum = 0; let winners = 0;
+    value.lines.forEach(line => {
+      fields(line, ['status', 'tierKey', 'prizeIls']);
+      requireValue(line.tierKey === null || (typeof line.tierKey === 'string' && /^[0-6](?:\+strong)?$/.test(line.tierKey)));
+      if (value.status === 'unavailable') requireValue(line.status === 'unavailable' && line.tierKey === null && line.prizeIls === null);
+      else if (line.status === 'no-prize') requireValue(line.prizeIls === null);
+      else if (line.status === 'not-distributed') requireValue(line.tierKey !== null && amount(line.prizeIls) && line.prizeIls === 0);
+      else {
+        requireValue(line.status === 'won' && line.tierKey !== null && amount(line.prizeIls, 1));
+        sum += line.prizeIls; winners++;
+        requireValue(Number.isSafeInteger(sum));
+      }
+    });
+    if (value.status === 'unavailable') requireValue(value.totalPrizeIls === null && value.winningCombinationCount === null && value.sourceUrl === null);
+    else requireValue(amount(value.totalPrizeIls) && value.totalPrizeIls === sum
+      && amount(value.winningCombinationCount) && value.winningCombinationCount === winners);
+  }
   function validateState(state) {
     jsonValue(state);
     requireValue(integer(state.revision));
@@ -105,7 +128,7 @@
       fields(snap.arms, ARMS);
       for (const arm of ARMS) {
         requireValue(Array.isArray(snap.arms[arm]) && snap.arms[arm].length === 14);
-        const comboNumbers = new Set();
+        const comboNumbers = new Set(); const sixes = new Set();
         snap.arms[arm].forEach(line => {
           // The core preserves JSON metadata and legacy number order. Identity
           // belongs to comboNum, not the row's current position in its arm.
@@ -117,6 +140,9 @@
               && number <= 37 && (arm === 'legacy' || i === 0 || number > line.numbers[i - 1]))
             && integer(line.strong, 1) && line.strong <= 7);
           comboNumbers.add(line.comboNum);
+          const six = line.numbers.slice().sort((a, b) => a - b).join(',');
+          requireValue(arm === 'legacy' || !sixes.has(six));
+          sixes.add(six);
         });
       }
       snapshots.set(snap.target, snap);
@@ -143,7 +169,7 @@
       fields(prize, ['experimentId', 'target', 'drawDigest', 'checkedAt', 'arms']);
       requireValue(prize.experimentId === exp.id && integer(prize.target, exp.originAnchor + 1)
         && snapshots.has(prize.target) && observations.has(prize.target) && digest(prize.drawDigest) && timestamp(prize.checkedAt));
-      fields(prize.arms, ARMS); ARMS.forEach(arm => requireValue(object(prize.arms[arm])));
+      fields(prize.arms, ARMS); ARMS.forEach(arm => validateWinnings(prize.arms[arm]));
     }
     state.faults.forEach(fault => {
       fields(fault, ['target', 'code']); requireValue((fault.target === null || integer(fault.target, exp.originAnchor + 1)) && text(fault.code));

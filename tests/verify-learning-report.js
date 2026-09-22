@@ -10,7 +10,7 @@ function check(name, run) { run(); console.log(`PASS ${name}`); }
 function primary({ sampleCount, winCount, rate }) { return { sampleCount, winCount, rate }; }
 function lineSet(win, strong = 1) {
   return Array.from({ length: 14 }, (_, i) => ({ comboNum: i + 1, strategy: 'test',
-    numbers: win ? [1, 2, 3, 20, 21, 22] : [20, 21, 22, 23, 24, 25], strong }));
+    numbers: win ? [1, 2, 3, 10 + i, 25, 26] : [7 + i, 22, 23, 24, 25, 26], strong }));
 }
 function stateWith(count = 1) {
   const experiment = { id: 'report-test', protocolVersion: core.PROTOCOL_VERSION, coreVersion: core.CORE_VERSION,
@@ -37,6 +37,17 @@ function outcome(target, learner, legacy, random, kind = 'eligible') {
   return { target, kind, scores: Object.fromEntries(arms.map((arm, i) => [arm, { win3Plus: [learner, legacy, random][i] }])) };
 }
 function envelope(state) { return JSON.stringify({ schemaVersion: 1, protocolVersion: core.PROTOCOL_VERSION, exportedAt: '2026-09-22T12:00:00Z', state }); }
+
+check('readonly imports reject duplicate learner/random sixes but preserve legacy duplicates', () => {
+  for (const arm of ['learner', 'random']) {
+    const state = stateWith();
+    state.snapshots[0].arms[arm][1].numbers = state.snapshots[0].arms[arm][0].numbers.slice();
+    assert.throws(() => report.readBackup(envelope(state)), { code: 'MALFORMED_RECORD' }, arm);
+  }
+  const legacy = stateWith();
+  legacy.snapshots[0].arms.legacy[1].numbers = legacy.snapshots[0].arms.legacy[0].numbers.slice();
+  assert.deepEqual(report.readBackup(envelope(legacy)).state.snapshots, legacy.snapshots);
+});
 
 check('Jerusalem midnight and winter dates never use host timezone', () => {
   assert.equal(report.classifySnapshot({ target: 4000, createdAt: '2026-09-21T20:59:59Z' }, draw), 'eligible');

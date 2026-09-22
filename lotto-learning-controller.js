@@ -163,10 +163,21 @@
       }
       const settled = { ...state, experiment: transition.experiment,
         observations: state.observations.concat(transition.observations) };
-      transition.prizes = await prizeAdapter({ state: clone(settled), rows: clone(data.modern), signal: token.signal, now }); check(token);
+      let prizeFailure = null;
+      try {
+        transition.prizes = await prizeAdapter({ state: clone(settled), rows: clone(data.modern), signal: token.signal, now });
+      } catch (error) {
+        check(token);
+        if (onlyPrizes || error.code !== 'PRIZE_REFRESH_FAILED') throw error;
+        // Prize retrieval is ancillary: valid numerical results/forms still settle.
+        // An empty prize delta preserves all prior monetary records atomically.
+        prizeFailure = error;
+      }
+      check(token);
       // Capture the local time after all computation and I/O, immediately before this save attempt.
       if (transition.snapshots.length) transition.snapshots[0].createdAt = createdAt(state);
       await save(state, transition, token, data);
+      if (prizeFailure) throw prizeFailure;
     }
     function provenance(data, digest) {
       return { kind: data.kind, url: data.url, fetchedAt: data.fetchedAt, generation: data.generation, digest };

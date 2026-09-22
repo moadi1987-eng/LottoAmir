@@ -50,7 +50,7 @@ function workbookBytes(rows, XLSX) {
   return Buffer.from(XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }));
 }
 
-async function openLearningHarness() {
+async function openLearningHarness({ bfcache = false } = {}) {
   const root = fs.realpathSync(path.resolve(__dirname, '../..'));
   const server = http.createServer((request, response) => {
     try {
@@ -80,6 +80,7 @@ async function openLearningHarness() {
   try {
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     browser = await chromium.launch({ headless: true,
+      ...(bfcache ? { ignoreDefaultArgs: ['--disable-back-forward-cache'] } : {}),
       ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {}) });
     context = await browser.newContext();
     page = await context.newPage();

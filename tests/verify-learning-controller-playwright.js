@@ -3,7 +3,160 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { buildLearningDraws, toLearningMatrix } = require('./fixtures/learning-fixture');
-const { openLearningHarness, learningSheetJsPath } = require('./helpers/learning-browser');
+const { openLearningHarness, learningSheetJsPath, configureLearningPage } = require('./helpers/learning-browser');
+async function verifyPrizeFailures(h) {
+  const context = await h.browser.newContext(); const page = await context.newPage();
+  try {
+    await page.goto(h.baseUrl + '/tests/fixtures/learning-harness.html');
+    await page.evaluate(async () => {
+      const change = await makeStartTransition();
+      const rows = LottoLearningFixture.buildLearningDraws(701); const draw = rows.at(-1);
+      change.experiment.lastProcessedDraw = draw.drawNumber;
+      change.experiment.sourceCutoff = draw.drawNumber;
+      change.experiment.sourceDigest = await LottoLearningCore.hashHistory(rows);
+      change.observations = [{ experimentId: change.experiment.id, target: draw.drawNumber, draw, kind: 'eligible',
+        scores: Object.fromEntries(['learner', 'legacy', 'random'].map(arm => [arm, LottoLearningCore.scoreArm(change.snapshots[0].arms[arm], draw)])) }];
+      const store = await LottoLearningStore.open(); await store.commit(0, change); await store.setPaused(1, true); store.close();
+    });
+    const draw = buildLearningDraws(701).at(-1);
+    let prizeDocument = { schemaVersion: 1, draws: { [draw.drawNumber]: {
+      drawNumber: draw.drawNumber, drawDate: draw.date.split('-').reverse().join('/'),
+      sourceUrl: 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=' + draw.drawNumber,
+      regular: Object.fromEntries(['3', '3+strong', '4', '4+strong', '5', '5+strong', '6', '6+strong']
+        .map(tier => [tier, { winnerCount: 1, prizeIls: 25 }])) } } };
+    let workbookCount = 701;
+    await configureLearningPage(page, { workbook: () => toLearningMatrix(buildLearningDraws(workbookCount)), prizes: () => prizeDocument });
+    await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await page.evaluate(() => lottoLearningReady);
+    await page.evaluate(() => loadDefaultNumbersFile());
+    await page.waitForFunction(() => lottoLearningView?.stored?.prizes.length === 1);
+    const known = await page.evaluate(() => lottoLearningView.stored);
+    assert.equal(known.prizes[0].arms.learner.status, 'available');
+    assert.ok(Object.values(known.prizes[0].arms).some(arm => arm.totalPrizeIls > 0), 'Fixture includes actual known money');
+    for (const failure of ['http', 'network', 'json', 'schema']) {
+      await page.unroute('**/LOTTO_PRIZES.json');
+      await page.route('**/LOTTO_PRIZES.json', route => failure === 'network' ? route.abort('failed')
+        : route.fulfill(failure === 'http' ? { status: 503, body: 'offline' } : failure === 'schema'
+          ? { json: { schemaVersion: 99, draws: {} } } : { contentType: 'application/json', body: '{broken' }));
+      await page.getByRole('button', { name: 'רענן נתוני זכייה', exact: true }).click();
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('#learningExperimentCard button'))
+        .some(button => button.textContent === 'רענן נתוני זכייה' && !button.disabled));
+      const result = await page.evaluate(async () => {
+        const store = await LottoLearningStore.open();
+        try { return { saved: await store.read(), exported: JSON.parse(LottoLearningReport.exportBackup(lottoLearningView.stored)).state,
+          error: lottoLearningView.error, text: document.querySelector('#learningExperimentCard [role="status"]').textContent }; }
+        finally { store.close(); }
+      });
+      assert.deepEqual(result.saved, known, failure + ' refresh must not replace known persisted prizes');
+      assert.deepEqual(result.exported, known, failure + ' refresh must preserve exported prizes');
+      assert.equal(result.error?.code, 'PRIZE_REFRESH_FAILED');
+      assert.match(result.text, /PRIZE_REFRESH_FAILED/);
+      console.log('PASS ' + failure + ' prize retrieval preserves known persisted/exported amounts and reports failure');
+    }
+    // Cancel at the actual fetch boundary: neither the eventual response nor a
+    // swallowed network error may write a replacement report after invalidation.
+    await page.unroute('**/LOTTO_PRIZES.json');
+    let entered; let release;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route('**/LOTTO_PRIZES.json', async route => { entered(); await gate; await route.fulfill({ json: prizeDocument }); });
+    await page.evaluate(() => { window.pendingPrizeRefresh = lottoLearningController.refreshPrizes(); });
+    await waiting;
+    await page.evaluate(() => lottoLearningController.cancel());
+    release();
+    await page.evaluate(() => pendingPrizeRefresh);
+    assert.deepEqual(await page.evaluate(() => lottoLearningView.stored), known);
+    assert.equal(await page.evaluate(() => lottoLearningView.error), null);
+    console.log('PASS cancellation during actual prize fetch preserves state without a stale failure or success');
+    await page.unroute('**/LOTTO_PRIZES.json');
+    await page.route('**/LOTTO_PRIZES.json', route => route.fulfill({ json: prizeDocument }));
+    Object.values(prizeDocument.draws[draw.drawNumber].regular).forEach(tier => { tier.prizeIls = 50; });
+    await page.evaluate(() => lottoLearningController.refreshPrizes());
+    const updated = await page.evaluate(() => lottoLearningView.stored);
+    assert.equal(await page.evaluate(() => lottoLearningView.error), null);
+    for (const arm of ['learner', 'legacy', 'random']) assert.equal(updated.prizes[0].arms[arm].totalPrizeIls, known.prizes[0].arms[arm].totalPrizeIls * 2);
+    await page.evaluate(async () => { await lottoLearningController.pause(false); await lottoLearningController.synchronize(); });
+    const beforeOutage = await page.evaluate(() => lottoLearningView.stored);
+    assert.equal(beforeOutage.snapshots.at(-1).target, 3701);
+    await page.unroute('**/LOTTO_PRIZES.json');
+    await page.route('**/LOTTO_PRIZES.json', route => route.fulfill({ status: 503, body: 'offline' }));
+    workbookCount = 702;
+    await page.evaluate(() => loadDefaultNumbersFile());
+    await page.waitForFunction(() => lottoLearningView.error?.code === 'PRIZE_REFRESH_FAILED');
+    const duringOutage = await page.evaluate(() => lottoLearningView.stored);
+    assert.equal(duringOutage.experiment.lastProcessedDraw, 3701, 'Prize-only outage must not block numerical settlement');
+    assert.equal(duringOutage.observations.at(-1).target, 3701);
+    assert.ok(duringOutage.observations.at(-1).scores, 'Previously saved target is still scored');
+    assert.equal(duringOutage.snapshots.at(-1).target, 3702, 'Valid next-target creation survives unavailable prize retrieval');
+    assert.deepEqual(duringOutage.prizes, beforeOutage.prizes, 'Only prize data stays unchanged during ordinary synchronization');
+    assert.deepEqual(duringOutage.snapshots.slice(0, -1), beforeOutage.snapshots);
+    console.log('PASS prize outage preserves monetary history while valid results settle and the next form is saved');
+    await page.unroute('**/LOTTO_PRIZES.json');
+    await page.route('**/LOTTO_PRIZES.json', route => route.fulfill({ json: prizeDocument }));
+    prizeDocument = { schemaVersion: 1, draws: {} };
+    await page.evaluate(() => lottoLearningController.refreshPrizes());
+    assert.equal(await page.evaluate(() => lottoLearningView.stored.prizes[0].arms.learner.status), 'unavailable');
+    assert.equal(await page.evaluate(() => lottoLearningView.error), null);
+    console.log('PASS successful later updates and genuinely unavailable fresh data remain distinct from refresh failure');
+  } finally { await context.close(); }
+}
+async function verifyBFCache(h) {
+  const context = await h.browser.newContext(); const page = await context.newPage();
+  try {
+    await page.goto(h.baseUrl + '/tests/fixtures/learning-harness.html');
+    const initial = await page.evaluate(async () => {
+      const store = await LottoLearningStore.open();
+      try { return await store.commit(0, await makeStartTransition()); } finally { store.close(); }
+    });
+    await configureLearningPage(page, { workbook: () => toLearningMatrix(buildLearningDraws(700)) });
+    await page.addInitScript(() => {
+      addEventListener('pageshow', event => {
+        if (location.pathname.endsWith('/lotto_analyzer.html') && event.persisted)
+          sessionStorage.setItem('learning-bfcache-count', String(Number(sessionStorage.getItem('learning-bfcache-count') || 0) + 1));
+      });
+    });
+    await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await page.waitForFunction(() => lottoLearningView?.stored?.snapshots.length === 1);
+    await page.evaluate(() => loadDefaultNumbersFile());
+    await page.waitForFunction(() => lottoLearningView.sourceState.status === 'ready');
+    const source = await page.evaluate(() => lottoLearningView.sourceState);
+    await page.evaluate(() => addEventListener('pagehide', () => {
+      try { lottoLearningController.beginSource('manual'); sessionStorage.setItem('learning-departure', 'still-open'); }
+      catch (error) { sessionStorage.setItem('learning-departure', error.code); }
+    }));
+    // Network routing is unnecessary for the navigation itself; allow Chrome's real BFCache.
+    await page.unrouteAll();
+    for (let visit = 0; visit < 2; visit++) {
+      await page.evaluate(() => { window.originalLearningController = lottoLearningController; });
+      await page.goto(h.baseUrl + '/tests/fixtures/learning-harness.html?away=' + visit);
+      assert.equal(await page.evaluate(() => sessionStorage.getItem('learning-departure')), 'CONTROLLER_CLOSED');
+      await page.goBack({ waitUntil: 'commit' });
+      await page.waitForFunction(count => Number(sessionStorage.getItem('learning-bfcache-count')) === count, visit + 1);
+      await page.waitForFunction(() => window.lottoLearningController && window.lottoLearningView?.stored?.snapshots.length === 1);
+      await page.evaluate(() => lottoLearningReady);
+      assert.equal(await page.evaluate(() => originalLearningController !== lottoLearningController), true);
+      assert.deepEqual(await page.evaluate(() => lottoLearningView.sourceState), source, 'Restore the accepted full-source provenance unchanged');
+      await page.evaluate(() => lottoLearningController.pause(true));
+      assert.equal(await page.evaluate(() => lottoLearningView.stored.experiment.status), 'paused',
+        'BFCache-restored learning controller must perform actions rather than silently return');
+      await page.getByRole('button', { name: 'המשך ניסוי', exact: true }).click();
+      await page.waitForFunction(() => lottoLearningView.stored.experiment.status === 'active');
+      const restored = await page.evaluate(async () => {
+        const store = await LottoLearningStore.open(); try { return await store.read(); } finally { store.close(); }
+      });
+      assert.equal(restored.experiment.seedHex, initial.experiment.seedHex);
+      assert.equal(restored.experiment.id, initial.experiment.id);
+      assert.deepEqual(restored.snapshots, initial.snapshots);
+      assert.equal(restored.revision, initial.revision + (visit + 1) * 2, 'Exactly one pause and one resume per visit');
+      console.log('PASS real BFCache back visit ' + (visit + 1) + ' recovers controls without new seeds, targets or duplicate action writes');
+    }
+    await configureLearningPage(page, { workbook: () => toLearningMatrix(buildLearningDraws(700)) });
+    await page.evaluate(() => loadDefaultNumbersFile());
+    await page.waitForFunction(() => lottoLearningView.sourceState.status === 'ready');
+    assert.equal(await page.evaluate(() => lottoLearningView.sourceState.rowCount), 700);
+    console.log('PASS source publication works after BFCache restoration');
+  } finally { await context.close(); }
+}
 async function verifyAnalyzer(h) {
   const context = await h.browser.newContext();
   const page = await context.newPage();
@@ -303,8 +456,10 @@ async function verifyLifecycle(h, fixture, pauseOnly = false) {
   }, ['paused', 1, 0, null, null]);
 }
 async function main() {
-  const h = await openLearningHarness();
+  const h = await openLearningHarness({ bfcache: process.argv.includes('--bfcache-only') });
   try {
+    if (process.argv.includes('--bfcache-only')) { await verifyBFCache(h); return; }
+    if (process.argv.includes('--prize-refresh-only')) { await verifyPrizeFailures(h); return; }
     if (process.argv.includes('--pause-only')) {
       console.time('Prepare reusable pause transition');
       const fixture = await h.page.evaluate(() => makeStartTransition());

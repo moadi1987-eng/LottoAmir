@@ -9,6 +9,127 @@ const panel = page => page.locator('#learningExperimentCard');
 const button = (page, name) => panel(page).getByRole('button', { name, exact: true });
 const inputFile = json => ({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(json) });
 
+async function verifyFinalPresentation(h) {
+  const page = h.page;
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.evaluate(async () => {
+    const core = LottoLearningCore; const arms = ['learner', 'legacy', 'random'];
+    const lines = win => Array.from({ length: 14 }, (_, i) => ({ comboNum: i + 1, strategy: 'נתוני בדיקה סינתטיים',
+      numbers: win ? [1, 2, 3, 10 + i, 25, 26] : [7 + i, 22, 23, 24, 25, 26], strong: 1 }));
+    const experiment = { id: 'synthetic-ui-only', protocolVersion: core.PROTOCOL_VERSION, coreVersion: core.CORE_VERSION,
+      seedHex: '00112233445566778899aabbccddeeff', originAnchor: 3999, lastProcessedDraw: 4199,
+      sourceCutoff: 3999, sourceDigest: 'a'.repeat(64), status: 'paused' };
+    // Commit valid active snapshots first, then pause through the real store API.
+    experiment.status = 'active';
+    const change = { experiment, decisions: [], snapshots: [], observations: [], prizes: [], faults: [] };
+    for (let i = 0; i < 200; i++) {
+      if (i % 20 === 0) change.decisions.push({ cutoff: 3999 + i, window: 500, counts: { 100: 0, 200: 0, 500: 0 } });
+      const target = 4000 + i; const draw = { drawNumber: target, date: '2026-09-22', numbers: [1, 2, 3, 4, 5, 6], strong: 1 };
+      const snapshot = { experimentId: experiment.id, target, anchor: target - 1, createdAt: '2026-09-21T12:00:00Z',
+        protocolVersion: core.PROTOCOL_VERSION, coreVersion: core.CORE_VERSION, seedHex: experiment.seedHex, window: 500,
+        source: { kind: 'canonical', url: 'NUMBERS.xlsx', fetchedAt: '2026-09-21T12:00:00Z', generation: 1, digest: 'a'.repeat(64) },
+        arms: { learner: lines(true), legacy: lines(false).map(line => ({ ...line, numbers: [20, 21, 22, 23, 24, 25] })), random: lines(i < 100) } };
+      change.snapshots.push(snapshot);
+      change.observations.push({ experimentId: experiment.id, target, draw, kind: 'eligible',
+        scores: Object.fromEntries(arms.map(arm => [arm, core.scoreArm(snapshot.arms[arm], draw)])) });
+    }
+    function winnings(value) {
+      return { status: value === null ? 'unavailable' : 'available', totalPrizeIls: value,
+        winningCombinationCount: value === null ? null : Number(value > 0), sourceUrl: null,
+        lines: Array.from({ length: 14 }, (_, i) => value === null ? { status: 'unavailable', tierKey: null, prizeIls: null }
+          : i === 0 && value > 0 ? { status: 'won', tierKey: '3', prizeIls: value } : { status: 'no-prize', tierKey: '0', prizeIls: null }) };
+    }
+    change.prizes = [{ experimentId: experiment.id, target: 4000, checkedAt: '2026-09-22T12:00:00Z',
+      drawDigest: await core.hashHistory([change.observations[0].draw]),
+      arms: { learner: winnings(25), legacy: winnings(0), random: winnings(null) } }];
+    const store = await LottoLearningStore.open(); await store.commit(0, change); await store.setPaused(1, true); store.close();
+  });
+  await configureLearningPage(page);
+  await page.goto(h.baseUrl + '/lotto_analyzer.html');
+  await page.waitForFunction(() => lottoLearningView?.stored?.snapshots.length === 200);
+  await page.evaluate(() => {
+    document.querySelector('#learningExperimentCard .learning-disclaimer').prepend('נתוני בדיקה סינתטיים — לא המלצה ולא תוצאות ניסוי אמיתי. ');
+  });
+  const failures = [];
+  async function check(name, fn) {
+    try { await fn(); console.log('PASS ' + name); }
+    catch (error) { failures.push(name); console.error('FAIL ' + name + ': ' + error.message); }
+  }
+  await check('paired differences, qualifying bounds/method and distinct-six counts are disclosed', async () => {
+    assert.match(await panel(page).locator('[data-learning-paired="legacy"]').textContent(), /100\.0.*נקודות אחוז/);
+    assert.match(await panel(page).locator('[data-learning-paired="random"]').textContent(), /50\.0.*נקודות אחוז/);
+    const block = panel(page).locator('[data-learning-block="1"]');
+    assert.match(await block.locator('[data-learning-evidence-bound="legacy"]').textContent(), /79\.1.*נקודות אחוז/);
+    assert.match(await block.locator('[data-learning-evidence-bound="random"]').textContent(), /29\.1.*נקודות אחוז/);
+    assert.match(await block.locator('[data-learning-evidence-method]').textContent(), /0\.0125/);
+    assert.match(await block.locator('[data-learning-evidence-method]').textContent(), /Hoeffding/);
+    assert.equal(await block.locator('bdi[dir="ltr"]').count() >= 3, true);
+    const saved = panel(page).locator('[data-learning-saved]');
+    for (const [arm, count] of [['learner', 14], ['legacy', 1], ['random', 14]])
+      assert.match(await saved.locator(`[data-learning-distinct="${arm}"]`).textContent(), new RegExp(count + ' מתוך 14'));
+  });
+  await check('closed history shows per-arm known zero/unavailable totals without opening tables', async () => {
+    const entry = panel(page).locator('[data-learning-history-target="4000"]');
+    const text = await entry.locator(':scope > summary').textContent();
+    assert.match(text, /לומד.*₪25/); assert.match(text, /שיטה קיימת.*₪0/); assert.match(text, /אקראי.*לא זמין/);
+    assert.equal(await entry.getAttribute('open'), null);
+    assert.equal(await entry.locator('table').count(), 0);
+    assert.match(await panel(page).locator('[data-learning-prize-total="learner"]').textContent(), /ידוע.*₪25.*199/);
+  });
+  await check('collapsed 200-target history is lazy, opens once and restores expanded entries on revision', async () => {
+    assert.equal(await panel(page).locator('[data-learning-history-target]').count(), 200);
+    assert.equal(await panel(page).locator('[data-learning-history-target] table').count(), 0);
+    const entry = panel(page).locator('[data-learning-history-target="4000"]');
+    await entry.locator(':scope > summary').click();
+    await page.waitForFunction(() => document.querySelector('[data-learning-history-target="4000"]').querySelectorAll('table').length === 3);
+    await page.evaluate(() => { window.firstHistoryTable = document.querySelector('[data-learning-history-target="4000"] table'); });
+    await entry.locator(':scope > summary').click(); await entry.locator(':scope > summary').click();
+    assert.equal(await page.evaluate(() => firstHistoryTable === document.querySelector('[data-learning-history-target="4000"] table')), true);
+    await entry.locator('[data-learning-key="technical-4000"] > summary').click();
+    await page.evaluate(async () => { await lottoLearningController.pause(false); });
+    assert.equal(await entry.getAttribute('open'), '');
+    await page.waitForFunction(() => document.querySelector('[data-learning-history-target="4000"]').querySelectorAll('table').length === 3);
+    assert.equal(await entry.locator('[data-learning-key="technical-4000"]').getAttribute('open'), '');
+    assert.equal(await panel(page).locator('[data-learning-history-target] table').count(), 3);
+  });
+  assert.deepEqual(failures, [], 'Final presentation findings');
+  // Show just a few closed records in screenshots, with all summary disclosures above them.
+  await page.evaluate(() => {
+    document.querySelectorAll('[data-learning-history-target]').forEach(node => { node.open = false; node.hidden = !['4199', '4000'].includes(node.dataset.learningHistoryTarget); });
+  });
+  fs.mkdirSync(path.join(__dirname, '../test-results'), { recursive: true });
+  for (const [name, width, height] of [['desktop', 1440, 900], ['mobile', 390, 844]]) {
+    await page.setViewportSize({ width, height });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, name + ' document does not overflow');
+    await panel(page).screenshot({ path: path.join(__dirname, `../test-results/learning-final-${name}.png`) });
+  }
+  const backup = await page.evaluate(() => LottoLearningReport.exportBackup(lottoLearningView.stored));
+  await panel(page).getByLabel('פתח גיבוי לקריאה בלבד').setInputFiles(inputFile(backup));
+  await panel(page).locator('[data-learning-import]').waitFor();
+  assert.equal(await panel(page).locator('[data-learning-evidence-bound]').count(), 0, 'Readonly import never gains live evidence bounds');
+  assert.doesNotMatch(await panel(page).innerText(), /עדות לתקופה/);
+  await button(page, 'חזרה למעקב המקומי').click();
+  await page.evaluate(() => {
+    const state = lottoLearningView.stored;
+    const replay = { mode: 'historical', sampleCount: 200, seed: LottoLearningCore.HISTORICAL_SEED,
+      targets: state.observations.map((observation, index) => ({ target: observation.target, draw: observation.draw, arms: state.snapshots[index].arms })) };
+    learningUI.render({ ...lottoLearningView, mode: 'historical', report: LottoLearningReport.summarizeHistoricalReplay(replay), pendingReplay: { digest: 'synthetic-history' } });
+  });
+  await panel(page).getByRole('tab', { name: 'סימולציה היסטורית' }).click();
+  const historical = panel(page).locator('#learning-historical');
+  assert.equal(await historical.locator('[data-learning-evidence-bound]').count(), 0);
+  assert.doesNotMatch(await historical.innerText(), /עדות לתקופה/);
+  await page.evaluate(() => {
+    const empty = { compatibility: 'compatible', incompatibilityCodes: [], rawBackup: null, revision: 0,
+      experiment: null, decisions: [], snapshots: [], observations: [], prizes: [], faults: [] };
+    learningUI.render({ ...lottoLearningView, mode: 'live', stored: empty, report: LottoLearningReport.summarizeExperiment(empty) });
+  });
+  for (const arm of ['legacy', 'random']) assert.match(await panel(page).locator(`#learning-live [data-learning-paired="${arm}"]`).textContent(), /לא זמין/);
+  assert.deepEqual(errors, []);
+  console.log('PASS historical/import evidence suppression and unavailable paired differences');
+  console.log('SCREENSHOTS synthetic: test-results/learning-final-desktop.png and learning-final-mobile.png');
+}
+
 async function main() {
   const h = await openLearningHarness();
   try {
@@ -349,9 +470,9 @@ async function verifyResumeOwnership(h, invalidationsOnly = false) {
   }
   assert.deepEqual(failures, [], 'Resume continuation ownership cases');
 }
-(process.argv.includes('--unavailable-only') || process.argv.includes('--shell-only') || process.argv.includes('--import-only') || process.argv.includes('--resume-only') || process.argv.includes('--resume-invalidations-only') ? (async () => {
+(process.argv.includes('--final-presentation-only') || process.argv.includes('--unavailable-only') || process.argv.includes('--shell-only') || process.argv.includes('--import-only') || process.argv.includes('--resume-only') || process.argv.includes('--resume-invalidations-only') ? (async () => {
   const h = await openLearningHarness();
-  try { await (process.argv.includes('--resume-only') || process.argv.includes('--resume-invalidations-only')
+  try { await (process.argv.includes('--final-presentation-only') ? verifyFinalPresentation(h) : process.argv.includes('--resume-only') || process.argv.includes('--resume-invalidations-only')
     ? verifyResumeOwnership(h, process.argv.includes('--resume-invalidations-only'))
     : process.argv.includes('--shell-only') ? verifyShell(h) : process.argv.includes('--import-only') ? verifyImportIsolation(h) : verifyUnavailable(h)); }
   finally { await h.close(); }

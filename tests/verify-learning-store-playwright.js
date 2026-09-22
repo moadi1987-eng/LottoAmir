@@ -51,6 +51,54 @@ const { openLearningHarness } = require('./helpers/learning-browser');
       assert.deepStrictEqual(actual, expected, name);
       console.log(`PASS ${name}`);
     }
+    const validationFailures = [];
+    for (const corruption of ['duplicate-learner', 'duplicate-random', 'prize-shape', 'prize-sum', 'prize-negative-zero']) {
+      await page.evaluate(value => { window.finalCorruption = value; }, corruption);
+      try { await check(`physical ${corruption} is readonly and raw-exportable; invalid imports/writes are rejected`, async () => {
+        let store = await LottoLearningStore.open();
+        const change = settlement();
+        const zero = { status: 'available', totalPrizeIls: 0, winningCombinationCount: 0, sourceUrl: null,
+          lines: Array.from({ length: 14 }, () => ({ status: 'no-prize', tierKey: '0', prizeIls: null })) };
+        change.prizes = [{ experimentId: change.experiment.id, target: 3700,
+          drawDigest: await LottoLearningCore.hashHistory([change.observations[0].draw]), checkedAt: '2026-09-22T12:00:00Z',
+          arms: { learner: zero, legacy: structuredClone(zero), random: structuredClone(zero) } }];
+        const original = await store.commit(0, change);
+        const corrupt = structuredClone(original);
+        const name = finalCorruption.startsWith('duplicate') ? 'snapshots' : 'prizes';
+        if (name === 'snapshots') {
+          const arm = finalCorruption.split('-')[1];
+          corrupt.snapshots[0].arms[arm][1].numbers = corrupt.snapshots[0].arms[arm][0].numbers.slice();
+          corrupt.observations[0].scores[arm] = LottoLearningCore.scoreArm(corrupt.snapshots[0].arms[arm], corrupt.observations[0].draw);
+        } else if (finalCorruption === 'prize-shape') corrupt.prizes[0].arms.learner = {};
+        else corrupt.prizes[0].arms.learner.totalPrizeIls = finalCorruption === 'prize-sum' ? 25 : -0;
+        // Import is intentionally readonly and cannot repair or overwrite the live database.
+        const envelope = JSON.stringify({ schemaVersion: 1, protocolVersion: LottoLearningCore.PROTOCOL_VERSION,
+          exportedAt: '2026-09-22T12:00:00Z', state: corrupt });
+        const imported = await codeOf(() => LottoLearningReport.readBackup(envelope));
+        const unchanged = JSON.stringify(await store.read()) === JSON.stringify(original);
+        store.close();
+        await new Promise((resolve, reject) => {
+          const request = indexedDB.open('lottoLearningExperimentV1');
+          request.onsuccess = () => {
+            const db = request.result; const tx = db.transaction(name === 'snapshots' ? ['snapshots', 'observations'] : name, 'readwrite');
+            tx.objectStore(name).put(corrupt[name][0]);
+            if (name === 'snapshots') tx.objectStore('observations').put(corrupt.observations[0]);
+            tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => reject(tx.error);
+          }; request.onerror = () => reject(request.error);
+        });
+        store = await LottoLearningStore.open();
+        try {
+          const state = await store.read();
+          let exported;
+          try { exported = LottoLearningReport.exportBackup(state); } catch (error) { exported = error.code; }
+          return [state.compatibility, imported !== 'saved' || finalCorruption === 'prize-negative-zero', unchanged,
+            exported === JSON.stringify(state.rawBackup), await codeOf(() => store.commit(1, change)),
+            JSON.stringify((await store.read()).rawBackup) === exported];
+        } finally { store.close(); }
+      }, ['readonly', true, true, true, 'INCOMPATIBLE_STORE', true]);
+      } catch (error) { validationFailures.push(corruption); console.error('FAIL ' + corruption + ': ' + error.message); }
+    }
+    assert.deepStrictEqual(validationFailures, [], 'All malformed storage shapes must be quarantined');
     await check('read returns complete compatible state and exact repeats are no-ops', async () => {
       const store = await LottoLearningStore.open();
       try {
@@ -272,15 +320,22 @@ const { openLearningHarness } = require('./helpers/learning-browser');
         const first = await store.commit(0, change);
         const prize = { experimentId: change.experiment.id, target: 3700,
           drawDigest: await LottoLearningCore.hashHistory([change.observations[0].draw]),
-          checkedAt: '2026-09-22T12:00:00Z', arms: { learner: { total: null }, legacy: { total: 0 }, random: { total: 0 } } };
+          checkedAt: '2026-09-22T12:00:00Z', arms: Object.fromEntries(['learner', 'legacy', 'random'].map(arm => [arm, {
+            status: arm === 'learner' ? 'unavailable' : 'available', totalPrizeIls: arm === 'learner' ? null : 0,
+            winningCombinationCount: arm === 'learner' ? null : 0, sourceUrl: null,
+            lines: Array.from({ length: 14 }, () => ({ status: arm === 'learner' ? 'unavailable' : 'no-prize',
+              tierKey: arm === 'learner' ? null : '0', prizeIls: null })) }])) };
         change.prizes = [prize];
         await store.commit(1, change);
-        prize.checkedAt = '2026-09-23T12:00:00Z'; prize.arms.learner.total = 25;
+        prize.checkedAt = '2026-09-23T12:00:00Z';
+        prize.arms.learner = structuredClone(prize.arms.legacy);
+        Object.assign(prize.arms.learner, { totalPrizeIls: 25, winningCombinationCount: 1 });
+        prize.arms.learner.lines[0] = { status: 'won', tierKey: '3', prizeIls: 25 };
         const late = await store.commit(2, change);
         prize.drawDigest = 'a'.repeat(64);
         const conflict = await codeOf(() => store.commit(3, change));
         const after = await store.read();
-        return [late.revision, late.prizes[0].arms.learner.total, conflict,
+        return [late.revision, late.prizes[0].arms.learner.totalPrizeIls, conflict,
           ['decisions', 'snapshots', 'observations'].every(key => JSON.stringify(first[key]) === JSON.stringify(after[key])),
           JSON.stringify(late) === JSON.stringify(after)];
       } finally { store.close(); }
