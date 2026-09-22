@@ -343,6 +343,12 @@ async function verifyShell(h) {
     await frame.locator('#learningExperimentCard').waitFor();
     assert.equal(await frame.locator('#backtestWorkspace').isVisible(), false);
     await page.waitForFunction(() => document.querySelector('#analyzerIframe').contentDocument.activeElement?.id === 'learningExperimentCard');
+    await page.locator('[data-target="pinnedFutureCard"]').focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.target), 'learningExperimentCard',
+      'Keyboard navigation must offer the independent learning section immediately after PIN');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#analyzerIframe').contentDocument.activeElement?.id === 'learningExperimentCard');
     await page.locator('[data-target="pinnedFutureCard"]').click();
     await page.locator('#navFormBtn').click();
     await page.waitForTimeout(250);

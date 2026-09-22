@@ -99,6 +99,12 @@ async function canonical(page) {
 async function verifyLayout(page) {
   for (const [width, height] of [[1440, 900], [900, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });
+    assert.equal(await page.locator('.pinned-future-source').count(), 4);
+    const followsPins = await panel(page).evaluate(card => {
+      const pins = document.querySelector('#pinnedFutureCard');
+      return !pins.contains(card) && card.getBoundingClientRect().top >= pins.getBoundingClientRect().bottom;
+    });
+    assert.equal(followsPins, true, `Independent learning panel must follow all four PIN forms at ${width}px`);
     if (width > 768) {
       assert.equal(await page.locator('#sideNav').isVisible(), true);
       const clear = await panel(page).evaluate(card => card.getBoundingClientRect().right
@@ -133,6 +139,8 @@ async function main() {
     const initialBytes = await routeLearningWorkbook(page, draws);
     await page.goto(h.baseUrl + '/lotto_analyzer.html');
     await page.evaluate(() => lottoLearningReady);
+    assert.equal(await page.locator('#results').isVisible(), false);
+    assert.equal(await panel(page).isVisible(), true, 'Learning must remain accessible before legacy analysis');
     let originalPins = pins();
     const backtestRows = buildSyntheticDraws(502);
     const cache = strategy.runWalkForwardBacktest(backtestRows);
@@ -172,7 +180,7 @@ async function main() {
     assert.deepEqual(await preserved(page), bytesBefore);
     console.log('PASS independent openpyxl XLSX decoding, canonical/manual provenance, and live start preserve PIN/Backtest bytes');
     await verifyLayout(page);
-    console.log('PASS learning row IDs remain hit-test visible with legacy navigation at desktop/tablet/mobile widths');
+    console.log('PASS independent learning panel follows all four PINs with visible row IDs at desktop/tablet/mobile widths');
     if (process.argv.includes('--layout-only')) return;
 
     await action(page, 'השהה יצירת טפסים').click();
