@@ -50,9 +50,16 @@
     }
     const start = control('התחל ניסוי ושמור טופס', () => run(() => controller.start()));
     const pause = control('השהה יצירת טפסים', () => run(async () => {
+      const serial = actionSerial;
+      const generation = view.sourceState?.generation;
+      const experimentId = view.stored?.experiment?.id;
       const resume = view.stored?.experiment?.status === 'paused';
       await controller.pause(!resume);
-      if (resume && !controller.readView().error && canonicalReady()) await controller.synchronize();
+      const resumed = controller.readView();
+      // Cancelled controller actions resolve too; only this still-owned, successful resume may continue.
+      if (resume && !unmounted && serial === actionSerial && resumed.sourceState?.generation === generation
+        && !resumed.error && resumed.stored?.experiment?.id === experimentId && resumed.stored.experiment.status === 'active'
+        && resumed.sourceState.status === 'ready' && resumed.sourceState.kind === 'canonical') await controller.synchronize();
     }));
     const replay = control('בדיקה היסטורית', () => run(() => controller.replay()));
     const cancel = control('בטל חישוב', () => {

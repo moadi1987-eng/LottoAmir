@@ -167,6 +167,7 @@ async function main() {
     await verifyUnavailable(h);
     await verifyImportIsolation(h);
     await verifyShell(h);
+    await verifyResumeOwnership(h);
     console.log('Learning UI verification passed');
   } finally { await h.close(); }
 }
@@ -265,8 +266,93 @@ async function verifyImportIsolation(h) {
     console.log('PASS source labels and metric directions remain readable in Hebrew');
   } finally { await context.close(); }
 }
-(process.argv.includes('--unavailable-only') || process.argv.includes('--shell-only') || process.argv.includes('--import-only') ? (async () => {
+async function verifyResumeOwnership(h, invalidationsOnly = false) {
+  // One real generated transition reused across fresh IndexedDB origins/contexts.
+  await h.page.goto(h.baseUrl + '/tests/fixtures/learning-harness.html');
+  const transition = await h.page.evaluate(() => makeStartTransition());
+  const failures = [];
+  for (const scenario of ['cancel-before-save', 'controller-cancel-before-save', 'cancel-after-save', 'source-after-save', 'unmount-after-save', ...(!invalidationsOnly ? ['normal'] : [])]) {
+    const context = await h.browser.newContext(); const page = await context.newPage();
+    try {
+      await page.goto(h.baseUrl + '/tests/fixtures/learning-harness.html');
+      await page.addScriptTag({ url: h.baseUrl + '/lotto-learning-ui.js' });
+      await page.evaluate(async ({ initial, scenario }) => {
+        const store = await LottoLearningStore.open();
+        await store.commit(0, initial); await store.setPaused(1, true);
+        window.resumeStore = store;
+        window.resumeEntered = false; window.synchronizationCalls = 0;
+        const gate = new Promise(resolve => { window.releaseResume = resolve; });
+        const beforeSave = scenario.endsWith('before-save');
+        const controlledStore = { ...store, setPaused: async (...args) => {
+          if (beforeSave && !args[1]) { window.resumeEntered = true; await gate; }
+          return store.setPaused(...args);
+        } };
+        const controller = LottoLearningController.create({ store: controlledStore, workerFactory: () => new Worker('/lotto-learning-worker.js'), now: () => '2025-10-10T12:00:00Z',
+          onState: view => window.resumeUI?.render(view) });
+        window.resumeController = controller;
+        const actualPause = controller.pause;
+        controller.pause = paused => {
+          const response = (async () => {
+            await actualPause(paused);
+            // A delayed response after the real write also exposes an active view;
+            // checking status alone cannot establish that the UI still owns it.
+            if (!beforeSave && scenario !== 'normal' && !paused) { window.resumeEntered = true; await gate; }
+          })();
+          window.resumeResponse = response; return response;
+        };
+        const actualSynchronize = controller.synchronize;
+        controller.synchronize = (...args) => {
+          window.synchronizationCalls++;
+          window.resumeSynchronization = actualSynchronize(...args); return window.resumeSynchronization;
+        };
+      }, { initial: transition, scenario });
+      await page.waitForFunction(() => resumeController.readView().stored);
+      await page.evaluate(async () => {
+        const root = document.createElement('section'); root.id = 'learningExperimentCard'; document.body.append(root);
+        window.resumeUI = LottoLearningUI.mount(root, resumeController);
+        const generation = resumeController.beginSource('canonical');
+        await resumeController.acceptSource(LottoLearningFixture.toLearningMatrix(LottoLearningFixture.buildLearningDraws(701)), {
+          kind: 'canonical', generation, url: 'NUMBERS.xlsx', fetchedAt: '2025-10-10T12:00:00Z' });
+      });
+      assert.equal(await page.evaluate(() => resumeController.readView().sourceState.status), 'ready');
+      assert.equal(await page.evaluate(() => resumeController.readView().error), null);
+      await button(page, 'המשך ניסוי').click();
+      if (scenario !== 'normal') {
+        await page.waitForFunction(() => resumeEntered);
+        if (scenario.startsWith('cancel-')) await button(page, 'בטל חישוב').click();
+        else if (scenario === 'controller-cancel-before-save') await page.evaluate(() => resumeController.cancel());
+        else if (scenario === 'unmount-after-save') await page.evaluate(() => resumeUI.unmount());
+        else await page.evaluate(async () => {
+          const generation = resumeController.beginSource('canonical');
+          await resumeController.acceptSource(LottoLearningFixture.toLearningMatrix(LottoLearningFixture.buildLearningDraws(701)), {
+            kind: 'canonical', generation, url: 'NUMBERS.xlsx', fetchedAt: '2025-10-11T12:00:00Z' });
+        });
+        const beforeRelease = await page.evaluate(() => resumeStore.read());
+        const result = await page.evaluate(async () => {
+          releaseResume(); await resumeResponse;
+          // Flush the UI await continuation, then await any real work it incorrectly launched.
+          await new Promise(resolve => setTimeout(resolve, 0));
+          if (window.resumeSynchronization) await resumeSynchronization;
+          return { calls: synchronizationCalls, state: await resumeStore.read() };
+        });
+        assert.equal(result.calls, 0, scenario + ' must not start follow-up synchronization');
+        assert.deepEqual(result.state, beforeRelease, scenario + ' must not write after its continuation was invalidated');
+      } else {
+        await page.waitForFunction(() => resumeController.readView().stored.snapshots.at(-1).target === 3701, null, { timeout: 180000 });
+        assert.equal(await page.evaluate(() => resumeController.readView().stored.experiment.status), 'active');
+        assert.equal(await page.evaluate(() => synchronizationCalls), 1);
+        assert.equal(await panel(page).locator('[data-learning-active-line]').count(), 14);
+      }
+      console.log('PASS resume continuation ownership: ' + scenario);
+    } catch (error) { failures.push(scenario); console.error('FAIL resume continuation ownership: ' + scenario + ': ' + error.message); }
+    finally { await context.close(); }
+  }
+  assert.deepEqual(failures, [], 'Resume continuation ownership cases');
+}
+(process.argv.includes('--unavailable-only') || process.argv.includes('--shell-only') || process.argv.includes('--import-only') || process.argv.includes('--resume-only') || process.argv.includes('--resume-invalidations-only') ? (async () => {
   const h = await openLearningHarness();
-  try { await (process.argv.includes('--shell-only') ? verifyShell(h) : process.argv.includes('--import-only') ? verifyImportIsolation(h) : verifyUnavailable(h)); }
+  try { await (process.argv.includes('--resume-only') || process.argv.includes('--resume-invalidations-only')
+    ? verifyResumeOwnership(h, process.argv.includes('--resume-invalidations-only'))
+    : process.argv.includes('--shell-only') ? verifyShell(h) : process.argv.includes('--import-only') ? verifyImportIsolation(h) : verifyUnavailable(h)); }
   finally { await h.close(); }
 })() : main()).catch(error => { console.error(error); process.exitCode = 1; });
