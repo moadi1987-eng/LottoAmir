@@ -3,12 +3,12 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { buildLearningDraws, toLearningMatrix } = require('./fixtures/learning-fixture');
-const { openLearningHarness } = require('./helpers/learning-browser');
+const { openLearningHarness, learningSheetJsPath } = require('./helpers/learning-browser');
 async function verifyAnalyzer(h) {
   const context = await h.browser.newContext();
   const page = await context.newPage();
   try {
-    const sheetjs = process.env.LOTTO_LEARNING_SHEETJS_PATH || 'C:/Users/amirmoa/AppData/Local/Temp/lotto-learning-tests-ec0460aa-e82d-43dc-861a-0a3bf5b96ef0/xlsx-0.20.3.min.js';
+    const sheetjs = learningSheetJsPath();
     const XLSX = require(sheetjs);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(toLearningMatrix(buildLearningDraws(700))), 'draws');

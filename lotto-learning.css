@@ -43,6 +43,13 @@
 #learningExperimentCard summary { cursor: pointer; min-block-size: 30px; font-weight: 600; overflow-wrap: anywhere; }
 .learning-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; margin-block: 12px; }
 .learning-summary-arm { background: #1c2941; border-radius: 8px; padding: 12px; overflow-wrap: anywhere; }
+@media (min-width: 769px) {
+    /* The standalone analyzer's fixed right rail appears after Analyze. Keep this
+       new panel clear without changing the existing PIN or navigation layouts. */
+    body:not(.embedded-shell):has(#sideNav.show:not([hidden])) #learningExperimentCard {
+        margin-inline-start: 170px;
+    }
+}
 @media (max-width: 480px) {
     #learningExperimentCard { border-radius: 10px; }
     .learning-actions > button { flex: 1 1 130px; }

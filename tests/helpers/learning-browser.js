@@ -4,10 +4,38 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { chromium } = require('playwright');
+const { spawnSync } = require('child_process');
+const { toLearningMatrix } = require('../fixtures/learning-fixture');
+
+function learningSheetJsPath() {
+  const sheetjs = process.env.LOTTO_LEARNING_SHEETJS_PATH;
+  if (!sheetjs || !fs.existsSync(sheetjs)) {
+    throw new Error('Set LOTTO_LEARNING_SHEETJS_PATH to an existing cached SheetJS 0.20.3 xlsx.full.min.js (the application CDN asset). See docs/learning-experiment.md test prerequisites.');
+  }
+  return sheetjs;
+}
+
+async function routeLearningWorkbook(page, draws) {
+  const sheetjs = learningSheetJsPath();
+  const python = process.env.LOTTO_LEARNING_PYTHON;
+  if (!python) throw new Error('Set LOTTO_LEARNING_PYTHON to a Python executable with openpyxl. See docs/learning-experiment.md test prerequisites.');
+  const result = spawnSync(python, [path.join(__dirname, 'create-learning-workbook.py')], {
+    input: JSON.stringify(toLearningMatrix(draws)), maxBuffer: 10 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(`LOTTO_LEARNING_PYTHON must run the openpyxl fixture helper: ${result.error?.message || result.stderr.toString()}`);
+  }
+  await page.route('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+    route => route.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(sheetjs) }));
+  await page.unroute(/\/NUMBERS\.xlsx(?:\?.*)?$/);
+  await page.route(/\/NUMBERS\.xlsx(?:\?.*)?$/, route => route.fulfill({
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: result.stdout,
+  }));
+  return result.stdout;
+}
 
 async function configureLearningPage(page, { workbook, prizes = () => ({ schemaVersion: 1, draws: {} }) } = {}) {
-  const sheetjs = process.env.LOTTO_LEARNING_SHEETJS_PATH || 'C:/Users/amirmoa/AppData/Local/Temp/lotto-learning-tests-ec0460aa-e82d-43dc-861a-0a3bf5b96ef0/xlsx-0.20.3.min.js';
-  if (!fs.existsSync(sheetjs)) throw new Error('Set LOTTO_LEARNING_SHEETJS_PATH to the cached SheetJS 0.20.3 browser bundle.');
+  const sheetjs = learningSheetJsPath();
   const XLSX = require(sheetjs);
   await page.route(/cdn\.sheetjs\.com/, route => route.fulfill({ path: sheetjs, contentType: 'text/javascript' }));
   await page.route(/fonts\.googleapis\.com/, route => route.abort());
@@ -61,4 +89,4 @@ async function openLearningHarness() {
   } catch (error) { await close(); throw error; }
 }
 
-module.exports = { openLearningHarness, configureLearningPage };
+module.exports = { openLearningHarness, configureLearningPage, routeLearningWorkbook, learningSheetJsPath };
