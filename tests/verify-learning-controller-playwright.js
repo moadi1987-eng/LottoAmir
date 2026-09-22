@@ -136,8 +136,8 @@ async function verifyAnalyzer(h) {
     console.log('PASS learning database closure does not break legacy source staging');
   } finally { await context.close(); }
 }
-async function verifyLifecycle(h, fixture) {
-  async function check(name, run, expected, seedStore = true) {
+async function verifyLifecycle(h, fixture, pauseOnly = false) {
+  async function check(name, run, expected, seedStore = true, argument) {
     const context = await h.browser.newContext();
     const page = await context.newPage();
     try {
@@ -155,10 +155,35 @@ async function verifyLifecycle(h, fixture) {
             kind, generation, url: kind === 'canonical' ? 'NUMBERS.xlsx' : null, fetchedAt: '2025-10-10T12:00:00Z' });
         };
       }, { initial: fixture, seedStore });
-      assert.deepEqual(await page.evaluate(run), expected, name);
+      assert.deepEqual(await page.evaluate(run, argument), expected, name);
       console.log('PASS ' + name);
     } finally { await context.close(); }
   }
+  for (const paused of [true, false]) {
+    for (const invalidation of ['cancel', 'source']) {
+      await check(`pending ${paused ? 'pause' : 'resume'} is aborted by ${invalidation}`, async ({ paused, invalidation }) => {
+        if (!paused) await realStore.setPaused(1, true);
+        const before = await realStore.read();
+        let release; let entered;
+        const gate = new Promise(resolve => { release = resolve; });
+        const waiting = new Promise(resolve => { entered = resolve; });
+        const c = makeController({ store: { ...realStore,
+          setPaused: async (...args) => { entered(); await gate; return realStore.setPaused(...args); },
+        } });
+        try {
+          const pending = c.pause(paused);
+          await waiting;
+          if (invalidation === 'cancel') c.cancel(); else c.beginSource('manual');
+          release(); await pending;
+          const after = await realStore.read(); const view = c.readView();
+          return [after.experiment.status, after.revision, JSON.stringify(after) === JSON.stringify(before),
+            view.error, view.sourceState.kind];
+        } finally { release(); c.close(); }
+      }, [paused ? 'active' : 'paused', paused ? 1 : 2, true, null,
+        invalidation === 'source' ? 'manual' : null], true, { paused, invalidation });
+    }
+  }
+  if (pauseOnly) return;
   await check('a competing tab wins start without rerolling the losing experiment seed', async () => {
     let minted = 0; let competing;
     const c = makeController({ makeSeed: () => { minted += 1; return 'ffeeddccbbaa99887766554433221100'; },
@@ -280,6 +305,14 @@ async function verifyLifecycle(h, fixture) {
 async function main() {
   const h = await openLearningHarness();
   try {
+    if (process.argv.includes('--pause-only')) {
+      console.time('Prepare reusable pause transition');
+      const fixture = await h.page.evaluate(() => makeStartTransition());
+      console.timeEnd('Prepare reusable pause transition');
+      await verifyLifecycle(h, fixture, true);
+      console.log('Learning controller pause verification passed');
+      return;
+    }
     await verifyAnalyzer(h);
     if (process.argv.includes('--analyzer-only')) return;
     assert.equal(await h.page.evaluate(() => typeof LottoLearningController), 'object',

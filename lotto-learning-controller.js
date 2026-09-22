@@ -227,7 +227,7 @@
     function pause(paused) {
       return execute(async token => {
         await retry(token, async state => {
-          const next = await store.setPaused(state.revision, paused); check(token); displayState(next);
+          const next = await store.setPaused(state.revision, paused, { signal: token.signal }); check(token); displayState(next);
         });
       });
     }

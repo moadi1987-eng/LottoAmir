@@ -197,6 +197,33 @@ const { openLearningHarness } = require('./helpers/learning-browser');
       } finally { store.close(); }
     }, [2, 'REVISION_CONFLICT', 'EXPERIMENT_PAUSED', 3, 'paused', 1, 1, 'EXPERIMENT_PAUSED', 4, 'active']);
 
+    for (const paused of [true, false]) {
+      await page.evaluate(value => { window.pauseTarget = value; }, paused);
+      await check(`abort signal protects ${paused ? 'pause' : 'resume'} before and during the IDB write`, async () => {
+        const store = await LottoLearningStore.open();
+        const originalPut = IDBObjectStore.prototype.put;
+        try {
+          await store.commit(0, copyStart());
+          if (!pauseTarget) await store.setPaused(1, true);
+          const before = await store.read();
+          const preAbort = new AbortController(); preAbort.abort();
+          const preCode = await codeOf(() => store.setPaused(before.revision, pauseTarget, { signal: preAbort.signal }));
+          const preUnchanged = JSON.stringify(await store.read()) === JSON.stringify(before);
+          const inWrite = new AbortController();
+          let injected = false;
+          IDBObjectStore.prototype.put = function (...args) {
+            const request = originalPut.apply(this, args);
+            if (this.name === 'meta') { injected = true; inWrite.abort(); }
+            return request;
+          };
+          const writeCode = await codeOf(() => store.setPaused(before.revision, pauseTarget, { signal: inWrite.signal }));
+          const after = await store.read();
+          return [preCode, preUnchanged, writeCode, injected, after.experiment.status,
+            after.revision, JSON.stringify(after) === JSON.stringify(before)];
+        } finally { IDBObjectStore.prototype.put = originalPut; store.close(); }
+      }, ['STORAGE_ABORTED', true, 'STORAGE_ABORTED', true, paused ? 'active' : 'paused', paused ? 1 : 2, true]);
+    }
+
     await check('duplicate target and changed prior observation roll back every store', async () => {
       const store = await LottoLearningStore.open();
       try {

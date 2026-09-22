@@ -338,7 +338,7 @@
         catch (cause) { return Promise.reject(normalizeError(cause)); }
         return mutate(expectedRevision, current => merge(current, change), signal);
       },
-      setPaused(expectedRevision, paused) {
+      setPaused(expectedRevision, paused, { signal } = {}) {
         return mutate(expectedRevision, current => {
           requireValue(typeof paused === 'boolean', 'INVALID_PAUSE');
           requireValue(Boolean(current.experiment), 'NO_EXPERIMENT');
@@ -346,7 +346,7 @@
           const status = paused ? 'paused' : 'active';
           return { ...current, revision: current.revision + Number(current.experiment.status !== status),
             experiment: { ...current.experiment, status } };
-        });
+        }, signal);
       },
     };
   }
