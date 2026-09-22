@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
+const { createHash } = require('crypto');
 const core = require('../lotto-learning-core.js');
 const { buildLearningDraws } = require('./fixtures/learning-fixture');
 
@@ -29,7 +30,23 @@ async function main() {
     }
     return messages.at(-1);
   }
-  let complete = await run();
+  const historical = buildLearningDraws(700);
+  historical[0].strong = 8;
+  const expectedHash = rows => createHash('sha256').update(JSON.stringify(rows.map(row =>
+    [row.drawNumber, row.date, ...row.numbers, row.strong]))).digest('hex');
+  let complete = await run({ operation: 'hash', rows: historical, options: { cutoffs: [3000, 3699] } });
+  assert.equal(complete.type, 'complete');
+  assert.equal(complete.result.digest, expectedHash(historical));
+  assert.equal(complete.result.prefixes[3000], expectedHash(historical.slice(0, 1)));
+  assert.equal(complete.result.prefixes[3699], expectedHash(historical));
+  assert.equal(messages.length, 1, 'Hash-only work must not generate policy progress or arms');
+  for (const cutoffs of [[2999], [3700], ['3000'], [null], undefined]) {
+    assert.equal((await run({ operation: 'hash', options: { cutoffs } })).code, 'INVALID_CUTOFF');
+  }
+  assert.equal((await run({ operation: 'hash', coreVersion: 'old', options: { cutoffs: [] } })).code, 'INVALID_VERSION');
+  console.log('PASS worker hashes full historical prefix and rejects invalid cutoffs under version fences');
+  if (process.argv.includes('--hash-only')) return;
+  complete = await run();
   assert.equal(complete.type, 'complete');
   assert.ok(messages.some(message => message.type === 'progress'));
   assert.deepStrictEqual(complete.result, await core.prepareAtCutoff(request.rows, request.options));

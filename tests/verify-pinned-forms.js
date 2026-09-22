@@ -44,7 +44,7 @@ const requiredText = [
   'function ensureDefaultPrizeData()',
   'function normalizeLottoPrizeDocument(parsed)',
   'function getPinnedPrizeTierKey(result)',
-  'function calculatePinnedDrawWinnings(score, draw)',
+  'function calculatePinnedDrawWinnings(score, draw, prizeDocument = lottoPrizeDocument)',
   'function formatPrizeIls(value)',
   'function renderPinnedWinningsAttributes(winnings)',
   'function readPinnedDrawWinnings(detail)',

@@ -6,6 +6,10 @@
     <title>🎰 מנתח לוטו חכם - גרסה מלאה</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="lotto-strategy-core.js"></script>
+    <script src="lotto-learning-core.js"></script>
+    <script src="lotto-learning-store.js"></script>
+    <script src="lotto-learning-report.js"></script>
+    <script src="lotto-learning-controller.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap');
 
@@ -1454,6 +1458,75 @@
         let lottoPrizeLoadState = 'idle';
         let lottoPrizeLoadPromise = null;
         let loadedExcelRows = null;
+        let loadedExcelSource = null;
+        let selectedFileSource = null;
+        let learningSourceGeneration = 0;
+        let latestLearningSource = null;
+        let learningClosed = false;
+        window.lottoLearningController = null;
+        window.lottoLearningView = null;
+        function publishLearningView(view) {
+            window.lottoLearningView = view;
+            if (typeof window.CustomEvent === 'function' && typeof window.dispatchEvent === 'function') {
+                window.dispatchEvent(new window.CustomEvent('lotto-learning-state', { detail: view }));
+            }
+        }
+        // Request identity exists synchronously, even while IndexedDB is opening.
+        function beginLearningSource(kind) {
+            const request = { kind, generation: ++learningSourceGeneration };
+            latestLearningSource = request;
+            bindLearningSource(request);
+            return request;
+        }
+        function bindLearningSource(request) {
+            const controller = window.lottoLearningController;
+            if (!controller || request !== latestLearningSource || learningClosed) return;
+            while (controller.readView().sourceState.generation < request.generation) controller.beginSource(request.kind);
+        }
+        function publishLearningSource(request, rows) {
+            // Reanalyzing the same selected File may reread it for legacy analysis,
+            // but a range change must not replace that selection's provenance.
+            if (request !== latestLearningSource || learningClosed || request.rows) return;
+            request.rows = rows.map(row => Array.isArray(row) ? row.slice() : row);
+            request.fetchedAt = new Date().toISOString();
+            // Do not block legacy staging/analysis on store startup or worker work.
+            void window.lottoLearningReady.then(controller => {
+                if (!controller || request !== latestLearningSource || learningClosed) return;
+                bindLearningSource(request);
+                return controller.acceptSource(request.rows, { kind: request.kind,
+                    url: request.kind === 'canonical' ? DEFAULT_NUMBERS_FILE : null,
+                    fetchedAt: request.fetchedAt, generation: request.generation });
+            });
+        }
+        function rejectLearningSource(request, error) {
+            if (request !== latestLearningSource || learningClosed) return;
+            void window.lottoLearningReady.then(controller => {
+                if (!controller || request !== latestLearningSource || learningClosed) return;
+                bindLearningSource(request); controller.rejectSource(request.generation, error);
+            });
+        }
+        window.lottoLearningReady = Promise.resolve().then(() => LottoLearningStore.open({
+            onVersionChange: () => {
+                learningClosed = true;
+                if (window.lottoLearningController) window.lottoLearningController.close();
+                publishLearningView({ ...window.lottoLearningView,
+                    error: { code: 'STORAGE_CLOSED', message: 'הטופס לא נשמר' } });
+            }
+        })).then(store => {
+            if (learningClosed) { store.close(); return null; }
+            const controller = LottoLearningController.create({ store, prizeAdapter: fetchLearningPrizes,
+                onState: publishLearningView });
+            window.lottoLearningController = controller;
+            if (latestLearningSource) bindLearningSource(latestLearningSource);
+            return controller;
+        }).catch(error => {
+            publishLearningView({ error: { code: error.code || 'STORAGE_FAILED', message: 'הטופס לא נשמר' } });
+            return null;
+        });
+        window.addEventListener('pagehide', () => {
+            learningClosed = true;
+            if (window.lottoLearningController) window.lottoLearningController.close();
+        });
         let comparisonLiveUpdateTimer = null;
         var dataFormat = { numStart: 0, strongIdx: 6, hasDrawDate: false };
         const PINNED_FORMS_STORAGE_KEY_V1 = 'lottoPinnedFormsV1';
@@ -2517,12 +2590,12 @@
             };
         }
 
-        function calculatePinnedDrawWinnings(score, draw) {
+        function calculatePinnedDrawWinnings(score, draw, prizeDocument = lottoPrizeDocument) {
             const drawNumber = normalizePrizeInteger(draw && draw.drawNumber);
             const prizeDraw = drawNumber != null
-                && lottoPrizeDocument
-                && lottoPrizeDocument.draws
-                ? lottoPrizeDocument.draws[String(drawNumber)]
+                && prizeDocument
+                && prizeDocument.draws
+                ? prizeDocument.draws[String(drawNumber)]
                 : null;
             if (!isPlainPrizeObject(prizeDraw)
                 || !isPlainPrizeObject(prizeDraw.regular)
@@ -2569,6 +2642,44 @@
         function formatPrizeIls(value) {
             const amount = normalizePrizeInteger(value);
             return amount == null ? null : '₪' + amount.toLocaleString('he-IL');
+        }
+
+        function calculateLearningDrawWinnings(lines, draw, prizeDocument) {
+            // scoreArm retains immutable row order/identity; never use a sorted display table.
+            const score = { results: LottoLearningCore.scoreArm(lines, draw).rows.map(row => ({
+                regularMatches: row.regularMatches, strongMatch: row.strongMatch
+            })) };
+            const prizeDraw = prizeDocument && prizeDocument.draws[String(draw.drawNumber)];
+            let valid = !!prizeDraw;
+            try { valid = valid && LottoLearningCore.parseLearningDate(prizeDraw.drawDate) === draw.date; }
+            catch (_) { valid = false; }
+            if (valid) valid = score.results.every(row => {
+                if (row.regularMatches < 3) return true;
+                const tier = prizeDraw.regular[getPinnedPrizeTierKey(row)];
+                return tier && Number.isSafeInteger(tier.winnerCount) && tier.winnerCount >= 0 && !Object.is(tier.winnerCount, -0)
+                    && Number.isSafeInteger(tier.prizeIls) && tier.prizeIls >= 0 && !Object.is(tier.prizeIls, -0);
+            });
+            return valid ? calculatePinnedDrawWinnings(score, draw, prizeDocument) : createPinnedWinningsUnavailable(score);
+        }
+
+        async function fetchLearningPrizes({ state, signal, now }) {
+            let document = null;
+            try {
+                const response = await fetch(DEFAULT_PRIZES_FILE, { cache: 'no-store', signal });
+                if (response.ok) document = normalizeLottoPrizeDocument(await response.json());
+            } catch (_) { if (signal.aborted) throw Object.assign(new Error('Cancelled'), { code: 'CANCELLED' }); }
+            const prizes = [];
+            for (const observation of state.observations) {
+                const snapshot = state.snapshots.find(item => item.target === observation.target);
+                if (!snapshot || observation.kind === 'conflict') continue;
+                const arms = {};
+                for (const arm of ['learner', 'legacy', 'random']) {
+                    arms[arm] = calculateLearningDrawWinnings(snapshot.arms[arm], observation.draw, document);
+                }
+                prizes.push({ experimentId: state.experiment.id, target: observation.target,
+                    drawDigest: await LottoLearningCore.hashHistory([observation.draw]), checkedAt: now(), arms });
+            }
+            return prizes;
         }
 
         function renderPinnedFutureSource(pin) {
@@ -2774,7 +2885,9 @@
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
+                selectedFileSource = beginLearningSource('manual');
                 loadedExcelRows = null;
+                loadedExcelSource = null;
                 document.getElementById('fileName').textContent = `✓ ${file.name}`;
                 document.getElementById('analyzeBtn').disabled = false;
             }
@@ -2793,12 +2906,13 @@
         document.getElementById('analyzeBtn').addEventListener('click', async function() {
             const file = document.getElementById('fileInput').files[0];
             await ensureDefaultPrizeData();
-            if (loadedExcelRows) runAnalysisWithRows(loadedExcelRows);
-            else if (file) runAnalysisWithFile(file);
+            if (loadedExcelRows) runAnalysisWithRows(loadedExcelRows, loadedExcelSource);
+            else if (file) runAnalysisWithFile(file, selectedFileSource);
             else showError('אנא בחר קובץ תחילה');
         });
 
         async function loadDefaultNumbersFile() {
+            const sourceRequest = beginLearningSource('canonical');
             ensureDefaultPrizeData();
             const btn = document.getElementById('defaultDataBtn');
             const originalText = btn.textContent;
@@ -2813,16 +2927,23 @@
                 }
 
                 const data = readExcelArrayBuffer(await response.arrayBuffer());
+                if (sourceRequest !== latestLearningSource) return;
                 if (!data || data.length === 0) {
                     throw new Error('קובץ המספרים הקבוע ריק');
                 }
 
                 loadedExcelRows = data;
+                loadedExcelSource = sourceRequest;
+                selectedFileSource = null;
+                publishLearningSource(sourceRequest, data);
                 document.getElementById('fileInput').value = '';
                 document.getElementById('fileName').textContent = `✓ ${DEFAULT_NUMBERS_LABEL} נטען (${data.length} שורות)`;
                 document.getElementById('analyzeBtn').disabled = false;
             } catch (error) {
+                if (sourceRequest !== latestLearningSource) return;
+                rejectLearningSource(sourceRequest, error);
                 loadedExcelRows = null;
+                loadedExcelSource = null;
                 document.getElementById('fileName').textContent = '';
                 showError('שגיאה בטעינת קובץ המספרים הקבוע: ' + error.message);
             } finally {
@@ -2842,11 +2963,24 @@
             }, 500);
         }
         
-        async function runAnalysisWithFile(file) {
-            return runAnalysisFromSource(() => readExcelFile(file));
+        async function runAnalysisWithFile(file, stagedSource) {
+            const request = stagedSource && stagedSource === latestLearningSource && stagedSource.kind === 'manual'
+                ? stagedSource : beginLearningSource('manual');
+            return runAnalysisFromSource(async () => {
+                try {
+                    const rows = await readExcelFile(file);
+                    if (request !== latestLearningSource) return null;
+                    publishLearningSource(request, rows);
+                    return rows;
+                } catch (error) { rejectLearningSource(request, error); throw error; }
+            });
         }
 
-        async function runAnalysisWithRows(rows) {
+        async function runAnalysisWithRows(rows, stagedSource) {
+            if (!stagedSource || stagedSource !== latestLearningSource || stagedSource !== loadedExcelSource || rows !== loadedExcelRows) {
+                const request = beginLearningSource('manual');
+                publishLearningSource(request, rows);
+            }
             return runAnalysisFromSource(() => rows);
         }
 
@@ -2857,6 +2991,7 @@
 
             try {
                 const data = await loadRows();
+                if (data === null) { document.getElementById('loading').style.display = 'none'; return; }
                 await processAnalysisRows(data);
             } catch (error) {
                 console.error('Error:', error);

@@ -15,13 +15,23 @@ self.onmessage = async function handleLearningMessage(event) {
   const core = self.LottoLearningCore;
   function fail(code) { const error = new Error(code); error.code = code; throw error; }
   try {
-    if (request.operation !== 'prepare' && request.operation !== 'replay') fail('INVALID_OPERATION');
+    if (!['prepare', 'replay', 'hash'].includes(request.operation)) fail('INVALID_OPERATION');
     if (request.protocolVersion !== core.PROTOCOL_VERSION || request.coreVersion !== core.CORE_VERSION) {
       fail('INVALID_VERSION');
     }
     const onProgress = progress => self.postMessage({ type: 'progress', ...identity, ...progress });
     let result;
-    if (request.operation === 'prepare') {
+    if (request.operation === 'hash') {
+      const canonical = JSON.parse(core.canonicalHistory(request.rows));
+      const cutoffs = request.options && request.options.cutoffs;
+      if (!Array.isArray(cutoffs) || cutoffs.some(cutoff => !Number.isSafeInteger(cutoff)
+        || !canonical.some(row => row[0] === cutoff))) fail('INVALID_CUTOFF');
+      const prefixes = {};
+      for (const cutoff of new Set(cutoffs)) {
+        prefixes[cutoff] = await core.hashHistory(request.rows.filter(row => row.drawNumber <= cutoff));
+      }
+      result = { digest: await core.hashHistory(request.rows), prefixes };
+    } else if (request.operation === 'prepare') {
       result = await core.prepareAtCutoff(request.rows, {
         ...request.options, protocolVersion: request.protocolVersion, coreVersion: request.coreVersion,
       }, onProgress);
