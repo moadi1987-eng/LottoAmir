@@ -1,0 +1,51 @@
+#learningExperimentCard {
+    margin-block: 20px;
+    padding: clamp(14px, 2.5vw, 28px);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    border: 1px solid #526486;
+    border-radius: 16px;
+    background: #141d2f;
+    color: #e2e8f0;
+    text-align: start;
+}
+#learningExperimentCard [hidden] { display: none !important; }
+#learningExperimentCard h2 { font-size: 1.5rem; margin-block-end: 10px; }
+#learningExperimentCard h3 { margin-block: 22px 10px; font-size: 1.16rem; }
+#learningExperimentCard h4 { margin-block: 12px 8px; }
+#learningExperimentCard p { margin-block: 6px; }
+.learning-disclaimer { padding: 12px; background: #22304d; border-inline-start: 3px solid #b7a0ff; border-radius: 6px; }
+.learning-tabs, .learning-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-block: 16px; align-items: center; }
+#learningExperimentCard button {
+    min-block-size: 44px;
+    padding: 10px 14px;
+    border: 1px solid #647799;
+    border-radius: 8px;
+    background: #253450;
+    color: #f1f5f9;
+    font: inherit;
+    cursor: pointer;
+}
+#learningExperimentCard button:disabled { opacity: .5; cursor: not-allowed; }
+#learningExperimentCard [aria-selected="true"] { background: #6240ad; border-color: #c5b2ff; }
+#learningExperimentCard :focus-visible { outline: 3px solid #e8bf57; outline-offset: 3px; }
+.learning-meta { color: #b8c5dc; font-size: .85rem; overflow-wrap: anywhere; margin-block: 12px; }
+.learning-status { min-block-size: 28px; color: #f3cf79; overflow-wrap: anywhere; }
+.learning-import-control { display: flex; gap: 7px; flex-direction: column; max-inline-size: 100%; }
+#learningExperimentCard input[type="file"] { max-inline-size: 100%; inline-size: 240px; color: #cbd5e1; }
+.learning-table-scroll { overflow-x: auto; max-inline-size: 100%; margin-block: 10px; border: 1px solid #354768; border-radius: 8px; }
+#learningExperimentCard table { border-collapse: collapse; inline-size: 100%; font-size: .87rem; }
+#learningExperimentCard th, #learningExperimentCard td { padding: 9px 10px; border-block-end: 1px solid #35415b; text-align: start; }
+#learningExperimentCard th { background: #253450; color: #f1f5f9; white-space: nowrap; }
+#learningExperimentCard td:nth-child(2) { white-space: nowrap; direction: ltr; text-align: end; }
+#learningExperimentCard td:last-child { min-inline-size: 85px; overflow-wrap: anywhere; }
+#learningExperimentCard details { margin-block: 10px; border: 1px solid #354768; border-radius: 8px; padding: 10px; }
+#learningExperimentCard summary { cursor: pointer; min-block-size: 30px; font-weight: 600; overflow-wrap: anywhere; }
+.learning-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; margin-block: 12px; }
+.learning-summary-arm { background: #1c2941; border-radius: 8px; padding: 12px; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+    #learningExperimentCard { border-radius: 10px; }
+    .learning-actions > button { flex: 1 1 130px; }
+    .learning-tabs > button { flex: 1; }
+    #learningExperimentCard th, #learningExperimentCard td { padding: 8px; }
+}

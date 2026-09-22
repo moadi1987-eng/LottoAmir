@@ -440,6 +440,7 @@
         <button type="button" class="analyzer-rail-btn" data-target="tripletsCard" onclick="goToAnalyzerSection('tripletsCard')">🎲 טריפלטים</button>
         <button type="button" class="analyzer-rail-btn" data-target="quartetsCard" onclick="goToAnalyzerSection('quartetsCard')">🎯 רביעיות</button>
         <button type="button" class="analyzer-rail-btn" data-target="pinnedFutureCard" onclick="goToAnalyzerSection('pinnedFutureCard')">📌 PIN</button>
+        <button type="button" class="analyzer-rail-btn" data-target="learningExperimentCard" onclick="goToAnalyzerSection('learningExperimentCard')">ניסוי למידה</button>
     </nav>
     
     <!-- Transfer Notification -->
@@ -480,6 +481,8 @@
         // ========== GLOBAL FUNCTIONS ==========
         let activeShellSection = 'form';
         let requestedAnalyzerWorkspace = 'analysis';
+        let pendingAnalyzerSection = null;
+        let analyzerNavigationVersion = 0;
 
         function updateViewportMetrics() {
             const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -513,6 +516,7 @@
         function handleAnalyzerLoad() {
             setEmbeddedAnalyzerMode();
             showChildAnalyzerWorkspace(requestedAnalyzerWorkspace);
+            if (activeShellSection === 'analyzer' && requestedAnalyzerWorkspace === 'analysis') focusPendingAnalyzerSection();
         }
 
         function setActiveRailButton(sectionId) {
@@ -523,6 +527,8 @@
 
         function setActiveSection(section, options) {
             options = options || {};
+            analyzerNavigationVersion++;
+            pendingAnalyzerSection = null;
             const normalized = ['analyzer', 'backtest'].includes(section) ? 'analyzer' : 'form';
             const activeNav = options.navTarget || (section === 'backtest' ? 'backtest' : normalized);
             activeShellSection = normalized;
@@ -560,33 +566,32 @@
         function goToAnalyzerSection(sectionId, navTarget) {
             setActiveSection('analyzer', { preserveScroll: true, navTarget: navTarget || 'analyzer' });
             setActiveRailButton(sectionId);
+            pendingAnalyzerSection = sectionId;
+            const navigationVersion = analyzerNavigationVersion;
+            setTimeout(() => { if (navigationVersion === analyzerNavigationVersion) focusPendingAnalyzerSection(); }, 180);
+        }
 
-            setTimeout(() => {
-                showChildAnalyzerWorkspace('analysis');
-                const analyzerIframe = document.getElementById('analyzerIframe');
-                if (!analyzerIframe || !analyzerIframe.contentWindow) return;
-
-                try {
-                    if (typeof analyzerIframe.contentWindow.scrollToSection === 'function') {
-                        analyzerIframe.contentWindow.scrollToSection(sectionId);
-                        return;
-                    }
-
-                    const target = analyzerIframe.contentWindow.document.getElementById(sectionId);
-                    if (target) {
-                        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                } catch (e) {
-                    console.log('Analyzer section focus skipped:', e);
-                }
-            }, 180);
+        function focusPendingAnalyzerSection() {
+            if (!pendingAnalyzerSection || activeShellSection !== 'analyzer' || requestedAnalyzerWorkspace !== 'analysis') return;
+            const analyzerIframe = document.getElementById('analyzerIframe');
+            const child = analyzerIframe?.contentWindow;
+            try {
+                // A pending navigation can leave the previous, fully loaded document accessible.
+                if (child?.document.URL.split('#')[0] !== analyzerIframe.src.split('#')[0]) return;
+                const target = child?.document.getElementById(pendingAnalyzerSection);
+                if (!target || child.document.readyState === 'loading') return;
+                if (typeof child.scrollToSection === 'function') child.scrollToSection(pendingAnalyzerSection);
+                else { target.tabIndex = -1; target.focus({ preventScroll: true }); target.scrollIntoView({ block: 'start' }); }
+                if (child.document.activeElement === target) pendingAnalyzerSection = null;
+            } catch (e) { console.log('Analyzer section focus skipped:', e); }
         }
 
         function openBacktestView() {
             setActiveSection('backtest', { preserveScroll: true, navTarget: 'backtest' });
             setActiveRailButton('backtestWorkspace');
+            const navigationVersion = analyzerNavigationVersion;
             setTimeout(function focusBacktestWorkspace() {
-                showChildAnalyzerWorkspace('backtest');
+                if (navigationVersion === analyzerNavigationVersion) showChildAnalyzerWorkspace('backtest');
             }, 180);
         }
         

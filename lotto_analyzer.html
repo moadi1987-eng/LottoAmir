@@ -10,6 +10,8 @@
     <script src="lotto-learning-store.js"></script>
     <script src="lotto-learning-report.js"></script>
     <script src="lotto-learning-controller.js"></script>
+    <script src="lotto-learning-ui.js"></script>
+    <link rel="stylesheet" href="lotto-learning.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap');
 
@@ -1144,6 +1146,7 @@
                 <a class="nav-item" onclick="scrollToSection('pairsCard')">🤝 זוגות</a>
                 <a class="nav-item" onclick="scrollToSection('tripletsCard')">🎲 טריפלטים</a>
                 <a class="nav-item" onclick="scrollToSection('quartetsCard')">🎯 רביעיות</a>
+                <button type="button" class="nav-item" onclick="scrollToSection('learningExperimentCard')">ניסוי למידה</button>
             </div>
             
             <div class="loading" id="loading">
@@ -1156,6 +1159,8 @@
             
             <div class="error" id="error"></div>
             
+            <section id="learningExperimentCard" tabindex="-1" aria-label="ניסוי למידה עצמאי"></section>
+
             <div class="results" id="results">
                 <!-- סטטיסטיקות כלליות - בראש העמוד -->
                 <div class="card" id="statsCard">
@@ -1465,8 +1470,19 @@
         let learningClosed = false;
         window.lottoLearningController = null;
         window.lottoLearningView = null;
+        let learningUI = null;
+        function renderLearningPanel(view) {
+            try {
+                if (!learningUI) learningUI = LottoLearningUI.mount(document.getElementById('learningExperimentCard'), window.lottoLearningController);
+                learningUI.render(view);
+            } catch (error) {
+                // Presentation errors stay within this independent panel, never legacy analysis/PIN paths.
+                document.getElementById('learningExperimentCard').textContent = 'תצוגת ניסוי הלמידה אינה זמינה; הנתונים נשמרים ללא שינוי.';
+            }
+        }
         function publishLearningView(view) {
             window.lottoLearningView = view;
+            renderLearningPanel(view);
             if (typeof window.CustomEvent === 'function' && typeof window.dispatchEvent === 'function') {
                 window.dispatchEvent(new window.CustomEvent('lotto-learning-state', { detail: view }));
             }
@@ -3366,6 +3382,7 @@
             document.querySelector('.upload-section').hidden = isBacktest;
             document.getElementById('sideNav').hidden = isBacktest;
             document.getElementById('results').hidden = isBacktest;
+            document.getElementById('learningExperimentCard').hidden = isBacktest;
             if (isBacktest) {
                 if (currentBacktestResult) {
                     renderBacktestResult(currentBacktestResult);
@@ -3892,10 +3909,15 @@
         
         // ========== ניווט ==========
         function scrollToSection(sectionId) {
+            if (sectionId === 'learningExperimentCard') setAnalyzerWorkspace('analysis');
             const element = document.getElementById(sectionId);
             if (element) {
+                element.setAttribute('tabindex', '-1');
+                element.focus({ preventScroll: true });
                 element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return true;
             }
+            return false;
         }
         
         // ========== השוואה ==========

@@ -5,6 +5,23 @@ const http = require('http');
 const path = require('path');
 const { chromium } = require('playwright');
 
+async function configureLearningPage(page, { workbook, prizes = () => ({ schemaVersion: 1, draws: {} }) } = {}) {
+  const sheetjs = process.env.LOTTO_LEARNING_SHEETJS_PATH || 'C:/Users/amirmoa/AppData/Local/Temp/lotto-learning-tests-ec0460aa-e82d-43dc-861a-0a3bf5b96ef0/xlsx-0.20.3.min.js';
+  if (!fs.existsSync(sheetjs)) throw new Error('Set LOTTO_LEARNING_SHEETJS_PATH to the cached SheetJS 0.20.3 browser bundle.');
+  const XLSX = require(sheetjs);
+  await page.route(/cdn\.sheetjs\.com/, route => route.fulfill({ path: sheetjs, contentType: 'text/javascript' }));
+  await page.route(/fonts\.googleapis\.com/, route => route.abort());
+  if (workbook) await page.route('**/NUMBERS.xlsx', route => route.fulfill({ body: workbookBytes(workbook(), XLSX) }));
+  await page.route('**/LOTTO_PRIZES.json', route => route.fulfill({ json: prizes() }));
+  return { workbookBytes: rows => workbookBytes(rows, XLSX) };
+}
+
+function workbookBytes(rows, XLSX) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'draws');
+  return Buffer.from(XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }));
+}
+
 async function openLearningHarness() {
   const root = fs.realpathSync(path.resolve(__dirname, '../..'));
   const server = http.createServer((request, response) => {
@@ -44,4 +61,4 @@ async function openLearningHarness() {
   } catch (error) { await close(); throw error; }
 }
 
-module.exports = { openLearningHarness };
+module.exports = { openLearningHarness, configureLearningPage };
