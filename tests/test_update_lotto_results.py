@@ -1,7 +1,9 @@
 import os
+import ctypes
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import uuid
@@ -395,7 +397,7 @@ class LocalSchedulerContractTests(unittest.TestCase):
 class WindowsSchedulerRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
+        self.addCleanup(self.cleanup_temp_dir, self.temp_dir)
         self.root = Path(self.temp_dir.name)
         self.remote = self.root / "remote.git"
         self.seed = self.root / "seed"
@@ -460,6 +462,38 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
         )
         self.run_command(["git", "push", "-u", "origin", "main"], self.seed)
 
+    def cleanup_temp_dir(self, temp_dir):
+        retry_delays = (0.1, 0.2, 0.4, 0.8, 0.8)
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                temp_dir.cleanup()
+                return
+            except OSError as error:
+                if error.winerror not in (5, 32, 33) or attempt == len(retry_delays):
+                    raise
+                time.sleep(retry_delays[attempt])
+
+    def hold_file_without_delete_sharing(self, path):
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = [
+            ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+        ]
+        create_file.restype = ctypes.c_void_p
+        handle = create_file(str(path), 0x80000000, 1, None, 3, 0, None)
+        if handle == ctypes.c_void_p(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return kernel32, handle
+
+    def wait_for_archive_retry(self, process, output_lines, timeout=10):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and process.poll() is None:
+            if "Archive rename blocked" in "".join(output_lines):
+                return True
+            time.sleep(0.02)
+        return False
+
     def run_command(self, command, cwd=None):
         return subprocess.run(
             command,
@@ -469,7 +503,7 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             capture_output=True,
         )
 
-    def run_scheduler(self, no_push=True):
+    def scheduler_command(self, no_push=True):
         command = [
                 str(self.power_shell),
                 "-NoProfile",
@@ -487,8 +521,11 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
             ]
         if no_push:
             command.append("-NoPush")
+        return command
+
+    def run_scheduler(self, no_push=True):
         return subprocess.run(
-            command,
+            self.scheduler_command(no_push),
             check=False,
             text=True,
             capture_output=True,
@@ -820,6 +857,170 @@ class WindowsSchedulerRecoveryTests(unittest.TestCase):
 
     def recovery_directories(self):
         return list(self.automation_root.glob("repo-recovery-*"))
+
+    def test_archive_retries_real_sharing_violation_then_preserves_clone(self):
+        managed_repo = self.create_managed_repo()
+        workbook = managed_repo / "NUMBERS.xlsx"
+        workbook.write_text("interrupted\n", encoding="utf-8")
+        kernel32, handle = self.hold_file_without_delete_sharing(workbook)
+        try:
+            process = subprocess.Popen(
+                self.scheduler_command(), text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, bufsize=1,
+            )
+            output_lines = []
+
+            def capture_output():
+                for line in process.stdout:
+                    output_lines.append(line)
+
+            reader = threading.Thread(target=capture_output, daemon=True)
+            reader.start()
+            try:
+                saw_retry = self.wait_for_archive_retry(process, output_lines)
+                kernel32.CloseHandle(ctypes.c_void_p(handle))
+                handle = None
+                exit_code = process.wait(timeout=15)
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                reader.join(timeout=5)
+                process.stdout.close()
+        finally:
+            if handle is not None:
+                kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+        output = "".join(output_lines)
+        self.assertTrue(saw_retry, output)
+        self.assertEqual(exit_code, 0, output)
+        self.assertEqual(workbook.read_text(encoding="utf-8"), "3944\n")
+        archives = self.recovery_directories()
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(
+            (archives[0] / "NUMBERS.xlsx").read_text(encoding="utf-8"),
+            "interrupted\n",
+        )
+
+    def test_archive_exhausts_retries_without_removing_locked_clone(self):
+        managed_repo = self.create_managed_repo()
+        workbook = managed_repo / "NUMBERS.xlsx"
+        workbook.write_text("interrupted\n", encoding="utf-8")
+        kernel32, handle = self.hold_file_without_delete_sharing(workbook)
+        try:
+            recovery = self.run_scheduler()
+        finally:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+        self.assertNotEqual(recovery.returncode, 0)
+        self.assertIn("Archive rename blocked", recovery.stdout)
+        self.assertTrue(managed_repo.exists())
+        self.assertEqual(workbook.read_text(encoding="utf-8"), "interrupted\n")
+        self.assertEqual(self.recovery_directories(), [])
+
+    def test_archive_refuses_destination_created_during_retry(self):
+        managed_repo = self.create_managed_repo()
+        workbook = managed_repo / "NUMBERS.xlsx"
+        workbook.write_text("interrupted\n", encoding="utf-8")
+        kernel32, handle = self.hold_file_without_delete_sharing(workbook)
+        try:
+            process = subprocess.Popen(
+                self.scheduler_command(), text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, bufsize=1,
+            )
+            output_lines = []
+
+            def capture_output():
+                for line in process.stdout:
+                    output_lines.append(line)
+
+            reader = threading.Thread(target=capture_output, daemon=True)
+            reader.start()
+            try:
+                saw_retry = self.wait_for_archive_retry(process, output_lines)
+                self.assertTrue(saw_retry, "".join(output_lines))
+                archive_line = next(
+                    line for line in output_lines if "Preserving the old clone at " in line
+                )
+                destination = Path(archive_line.rsplit(" at ", 1)[1].strip().rstrip("."))
+                destination.mkdir()
+                marker = destination / "existing.txt"
+                marker.write_text("keep\n", encoding="utf-8")
+                kernel32.CloseHandle(ctypes.c_void_p(handle))
+                handle = None
+                exit_code = process.wait(timeout=15)
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                reader.join(timeout=5)
+                process.stdout.close()
+        finally:
+            if handle is not None:
+                kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+        output = "".join(output_lines)
+        self.assertNotEqual(exit_code, 0, output)
+        self.assertIn("archive destination already exists; refusing recovery", output)
+        self.assertEqual(workbook.read_text(encoding="utf-8"), "interrupted\n")
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep\n")
+
+    def test_fixture_cleanup_retries_transient_winerror_and_removes_root(self):
+        temp_dir = tempfile.TemporaryDirectory(dir=self.root)
+        root = Path(temp_dir.name)
+        cleanup = temp_dir.cleanup
+        locked = PermissionError(13, "held by another process", None, 32)
+        attempts = 0
+
+        def cleanup_after_one_lock():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise locked
+            cleanup()
+
+        try:
+            with mock.patch.object(temp_dir, "cleanup", side_effect=cleanup_after_one_lock):
+                self.cleanup_temp_dir(temp_dir)
+            self.assertFalse(root.exists())
+        finally:
+            cleanup()
+
+    def test_fixture_cleanup_rethrows_permanent_error_without_retry(self):
+        temp_dir = tempfile.TemporaryDirectory(dir=self.root)
+        cleanup = temp_dir.cleanup
+        permanent = OSError(2, "not found", None, 2)
+        try:
+            with mock.patch.object(temp_dir, "cleanup", side_effect=permanent) as attempted:
+                with self.assertRaises(OSError) as raised:
+                    self.cleanup_temp_dir(temp_dir)
+            self.assertIs(raised.exception, permanent)
+            self.assertEqual(attempted.call_count, 1)
+        finally:
+            cleanup()
+
+    def test_fixture_cleanup_rethrows_exhausted_sharing_error(self):
+        temp_dir = tempfile.TemporaryDirectory(dir=self.root)
+        cleanup = temp_dir.cleanup
+        locked = PermissionError(13, "held by another process", None, 32)
+        try:
+            with mock.patch.object(temp_dir, "cleanup", side_effect=locked) as attempted:
+                with self.assertRaises(PermissionError) as raised:
+                    self.cleanup_temp_dir(temp_dir)
+            self.assertIs(raised.exception, locked)
+            self.assertGreater(attempted.call_count, 1)
+            self.assertLessEqual(attempted.call_count, 6)
+            self.assertTrue(Path(temp_dir.name).exists())
+        finally:
+            cleanup()
 
     def advance_remote(self, filename, contents):
         remote_writer = self.root / f"remote-writer-{uuid.uuid4().hex}"

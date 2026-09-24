@@ -109,7 +109,39 @@ function Archive-AutomationClone {
         ([guid]::NewGuid().ToString("N").Substring(0, 8))
     $backupPath = Join-Path $AutomationRoot $backupName
     Write-UpdateLog "$Reason Preserving the old clone at $backupPath."
-    Move-Item -LiteralPath $repositoryPath -Destination $backupPath
+    $retryDelaysMilliseconds = @(100, 200, 400, 800, 800)
+    for ($renameAttempt = 0; $renameAttempt -le $retryDelaysMilliseconds.Count; $renameAttempt++) {
+        if (-not (Test-Path -LiteralPath $repositoryPath -PathType Container)) {
+            throw "Automation clone disappeared before it could be archived; refusing recovery."
+        }
+        if (Test-Path -LiteralPath $backupPath) {
+            throw "Automation archive destination already exists; refusing recovery."
+        }
+
+        try {
+            [System.IO.Directory]::Move($repositoryPath, $backupPath)
+            break
+        } catch {
+            $failure = $_.Exception
+            while ($null -ne $failure.InnerException) {
+                $failure = $failure.InnerException
+            }
+            $windowsErrorCode = $failure.HResult -band 0xFFFF
+            if (
+                $windowsErrorCode -notin @(5, 32, 33) -or
+                $renameAttempt -eq $retryDelaysMilliseconds.Count
+            ) {
+                throw
+            }
+
+            $delay = $retryDelaysMilliseconds[$renameAttempt]
+            Write-UpdateLog (
+                "Archive rename blocked by Windows error {0}; retrying in {1} ms." -f `
+                $windowsErrorCode, $delay
+            )
+            Start-Sleep -Milliseconds $delay
+        }
+    }
     New-AutomationClone
 }
 
