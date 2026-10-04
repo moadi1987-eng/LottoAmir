@@ -67742,8 +67742,86 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3969"
+    },
+    "3970": {
+      "drawDate": "29/09/2026",
+      "drawNumber": 3970,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 103074
+        },
+        "3+strong": {
+          "prizeIls": 35,
+          "winnerCount": 17966
+        },
+        "4": {
+          "prizeIls": 45,
+          "winnerCount": 8800
+        },
+        "4+strong": {
+          "prizeIls": 128,
+          "winnerCount": 1599
+        },
+        "5": {
+          "prizeIls": 613,
+          "winnerCount": 246
+        },
+        "5+strong": {
+          "prizeIls": 4590,
+          "winnerCount": 47
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3970"
+    },
+    "3971": {
+      "drawDate": "03/10/2026",
+      "drawNumber": 3971,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 111003
+        },
+        "3+strong": {
+          "prizeIls": 39,
+          "winnerCount": 17524
+        },
+        "4": {
+          "prizeIls": 50,
+          "winnerCount": 8672
+        },
+        "4+strong": {
+          "prizeIls": 164,
+          "winnerCount": 1286
+        },
+        "5": {
+          "prizeIls": 791,
+          "winnerCount": 205
+        },
+        "5+strong": {
+          "prizeIls": 5833,
+          "winnerCount": 24
+        },
+        "6": {
+          "prizeIls": 250000,
+          "winnerCount": 2
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3971"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-09-27T03:43:28.279873+00:00"
+  "updatedAt": "2026-10-04T07:40:11.833142+00:00"
 }
