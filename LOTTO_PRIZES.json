@@ -67820,8 +67820,47 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3971"
+    },
+    "3972": {
+      "drawDate": "06/10/2026",
+      "drawNumber": 3972,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 124690
+        },
+        "3+strong": {
+          "prizeIls": 38,
+          "winnerCount": 19277
+        },
+        "4": {
+          "prizeIls": 46,
+          "winnerCount": 9665
+        },
+        "4+strong": {
+          "prizeIls": 146,
+          "winnerCount": 1521
+        },
+        "5": {
+          "prizeIls": 709,
+          "winnerCount": 239
+        },
+        "5+strong": {
+          "prizeIls": 5059,
+          "winnerCount": 44
+        },
+        "6": {
+          "prizeIls": 750000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3972"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-10-04T07:40:11.833142+00:00"
+  "updatedAt": "2026-10-07T05:52:25.587480+00:00"
 }
