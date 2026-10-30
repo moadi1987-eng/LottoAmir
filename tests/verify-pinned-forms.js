@@ -29,6 +29,10 @@ const requiredText = [
   'function getPinnedForm(source, mode)',
   'function canPinForm(source, mode)',
   'function pinForm(source, mode)',
+  "pinPortfolioForm('coverage1')",
+  "pinPortfolioForm('coverage2')",
+  "pinPortfolioForm('depth1')",
+  "pinPortfolioForm('depth2')",
   'function clearPinnedForm(source, mode)',
   'function sendPinnedFormToForm(source, mode)',
   'function getLatestDrawAnchor()',
@@ -79,6 +83,10 @@ assert(/pinForm\('main', 'baseline'\)/.test(html), 'Main baseline action must be
 assert(/pinForm\('main', 'improved'\)/.test(html), 'Main improved action must be explicit');
 assert(/pinForm\('form2', 'baseline'\)/.test(html), 'Form2 baseline action must be explicit');
 assert(/pinForm\('form2', 'improved'\)/.test(html), 'Form2 improved action must be explicit');
+assert(/pinPortfolioForm\('coverage1'\)/.test(html), 'Coverage 1 portfolio action must be explicit');
+assert(/pinPortfolioForm\('coverage2'\)/.test(html), 'Coverage 2 portfolio action must be explicit');
+assert(/pinPortfolioForm\('depth1'\)/.test(html), 'Depth 1 portfolio action must be explicit');
+assert(/pinPortfolioForm\('depth2'\)/.test(html), 'Depth 2 portfolio action must be explicit');
 assert(/getFormSet\(source, mode\)/.test(html), 'PIN must request the selected mode directly');
 assert(/polic(?:y|ies)[\s\S]*validated/.test(html), 'Improved PIN must require a validated policy');
 assert(/draw\.drawNumber\s*>\s*pin\.anchorDrawNumber/.test(html), 'Future filtering must prefer draw number comparison');

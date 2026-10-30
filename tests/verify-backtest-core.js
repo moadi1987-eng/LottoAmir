@@ -53,8 +53,17 @@ const secondEvaluation = core.evaluateStrategyWindows(rows, [100, 200, 500]);
 assert.strictEqual(firstEvaluation.rankings.length, 84);
 assert.deepStrictEqual(firstEvaluation, secondEvaluation);
 
-const result = core.runWalkForwardBacktest(rows);
-const repeatedResult = core.runWalkForwardBacktest(rows);
+const backtestOptions = {
+  coverageSearchIterations: 50,
+  depthSearchIterations: 50,
+  bootstrapSamples: 500,
+};
+const progress = [];
+const result = core.runWalkForwardBacktest(rows, {
+  ...backtestOptions,
+  onProgress: update => progress.push(update),
+});
+const repeatedResult = core.runWalkForwardBacktest(rows, backtestOptions);
 assert.deepStrictEqual(result, repeatedResult);
 assert.deepStrictEqual(result.windows, [100, 200, 500]);
 assert.deepStrictEqual(result.split, { eligibleCount: 40, calibrationCount: 28, holdoutCount: 12 });
@@ -62,12 +71,41 @@ assert.strictEqual(result.currentForms.main.length, 14);
 assert.strictEqual(result.currentForms.form2.length, 14);
 assert.strictEqual(typeof result.policies.main.validated, 'boolean');
 assert.strictEqual(typeof result.policies.form2.validated, 'boolean');
+assert.ok(result.portfolio);
+assert.strictEqual(result.portfolio.version, core.FOUR_PIN_PORTFOLIO_VERSION);
+assert.strictEqual(result.portfolio.constraintVersion, core.PORTFOLIO_CONSTRAINT_VERSION);
+assert.strictEqual(result.portfolio.metricVersion, core.BINARY_METRIC_VERSION);
+assert.strictEqual(result.portfolio.confidenceVersion, core.CONFIDENCE_METHOD_VERSION);
+assert.deepStrictEqual(Object.keys(result.portfolio.current.forms), [
+  'coverage1', 'coverage2', 'depth1', 'depth2',
+]);
+assert.ok(Object.values(result.portfolio.current.forms).every(form => form.length === 14));
+for (const comparison of Object.values(result.portfolio.comparisons)) {
+  assert.strictEqual(comparison.total, result.split.holdoutCount);
+}
+assert.strictEqual(
+  result.portfolio.diagnostics.portfolio3PlusStrong.total,
+  result.split.holdoutCount,
+);
+assert.strictEqual(
+  progress.filter(update => update.phase === 'identity-evaluation').length,
+  result.split.eligibleCount,
+  'The integrated run must reuse its existing calibration rankings',
+);
+assert.strictEqual(
+  progress.filter(update => update.phase === 'portfolio-holdout').length,
+  result.split.holdoutCount,
+);
+assert.strictEqual(
+  progress.filter(update => update.phase === 'portfolio-current').length,
+  1,
+);
 
 if (process.env.LOTTO_FULL_BENCHMARK === '1' || process.argv.includes('--full-benchmark')) {
   const benchmarkRows = buildSyntheticDraws(1712);
   const startingHeap = process.memoryUsage().heapUsed;
   const startedAt = Date.now();
-  const benchmark = core.runWalkForwardBacktest(benchmarkRows);
+  const benchmark = core.runWalkForwardBacktest(benchmarkRows, backtestOptions);
   const elapsedMs = Date.now() - startedAt;
   const endingHeap = process.memoryUsage().heapUsed;
   const peakRssKb = process.resourceUsage().maxRSS;
