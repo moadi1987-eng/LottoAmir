@@ -68132,8 +68132,47 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3979"
+    },
+    "3980": {
+      "drawDate": "31/10/2026",
+      "drawNumber": 3980,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 63018
+        },
+        "3+strong": {
+          "prizeIls": 39,
+          "winnerCount": 10694
+        },
+        "4": {
+          "prizeIls": 56,
+          "winnerCount": 4454
+        },
+        "4+strong": {
+          "prizeIls": 169,
+          "winnerCount": 787
+        },
+        "5": {
+          "prizeIls": 707,
+          "winnerCount": 127
+        },
+        "5+strong": {
+          "prizeIls": 5345,
+          "winnerCount": 22
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3980"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-10-30T10:15:53.386647+00:00"
+  "updatedAt": "2026-10-31T21:55:22.292941+00:00"
 }
