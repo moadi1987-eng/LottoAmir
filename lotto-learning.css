@@ -9,6 +9,20 @@
     color: #e2e8f0;
     text-align: start;
 }
+.learning-primary-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 16px; }
+#learningExperimentCard [data-learning-update] { background: #7752dd; border-color: #af94ff; font-weight: 700; }
+#learningExperimentCard [data-learning-advanced] { margin-block-start: 24px; }
+.learning-numbers { display: flex; flex-wrap: nowrap; gap: 6px; direction: rtl; }
+.learning-number { display: inline-flex; align-items: center; justify-content: center; inline-size: 32px; block-size: 32px; flex: 0 0 32px; border-radius: 50%; background: #2b3d5b; color: #f8fafc; font-weight: 700; font-variant-numeric: tabular-nums; }
+.learning-strong { background: #5b3fa0; border: 1px solid #af94ff; }
+.learning-number.learning-hit { background: #176b56; border: 1px solid #4bdfb1; }
+.learning-result-card { border: 1px solid #358b79; border-radius: 12px; padding: 16px; margin-block: 24px; }
+.learning-result-total { color: #54e0b3; font-size: 1.35rem; font-weight: 700; }
+.learning-winning-row { background: #16352f; }
+.learning-row-prize { font-weight: 600; }
+.learning-draw-status, .learning-footnote { color: #b8c5dc; font-size: .9rem; }
+#learningExperimentCard [data-learning-saved] { max-inline-size: 1100px; margin-inline: auto; }
+#learningExperimentCard [data-learning-latest-result] { max-inline-size: 1100px; margin-inline: auto; }
 #learningExperimentCard [hidden] { display: none !important; }
 #learningExperimentCard h2 { font-size: 1.5rem; margin-block-end: 10px; }
 #learningExperimentCard h3 { margin-block: 22px 10px; font-size: 1.16rem; }
@@ -57,4 +71,8 @@
     .learning-actions > button { flex: 1 1 130px; }
     .learning-tabs > button { flex: 1; }
     #learningExperimentCard th, #learningExperimentCard td { padding: 8px; }
+    .learning-primary-actions > button { flex: 1 1 150px; }
+    .learning-numbers { gap: 3px; }
+    .learning-number { inline-size: 25px; block-size: 25px; flex-basis: 25px; font-size: .8rem; }
+    .learning-result-card { padding: 8px; }
 }

@@ -212,24 +212,31 @@
       invalidate(); source = null; view.sourceState.status = 'error';
       view.error = { code: error?.code || 'SOURCE_FAILED', message: error?.message || 'Source failed' }; emit();
     }
-    function start() {
+    function start(restarting = false) {
       return execute(async token => {
         view.mode = 'live'; const data = canonical(); let startSeed;
+        const previousId = stored?.experiment?.id;
         if (data.modern.length < 700) throw fault('INSUFFICIENT_HISTORY');
         await retry(token, async state => {
-          if (state.experiment) return synchronizeState(state, data, token);
+          if (state.experiment && !restarting) return synchronizeState(state, data, token);
+          if (restarting && (!previousId || state.experiment?.id !== previousId)) throw fault('REVISION_CONFLICT');
           if (!startSeed) startSeed = makeSeed();
           const cutoff = data.modern.at(-1).drawNumber;
+          if (restarting && cutoff < state.experiment.lastProcessedDraw) throw fault('SOURCE_ROLLBACK');
           const prepared = await worker('prepare', data.rows, { originAnchor: cutoff, decisions: [], cutoff,
             seedHex: startSeed, mode: 'live' }, token, state.revision); check(token);
           if (prepared.digest !== data.digest || prepared.cutoff !== cutoff) throw fault('SOURCE_CONFLICT');
           const experiment = { id: 'learning-' + startSeed, protocolVersion: core.PROTOCOL_VERSION, coreVersion: core.CORE_VERSION,
             seedHex: startSeed, originAnchor: cutoff, lastProcessedDraw: cutoff, status: 'active', sourceDigest: prepared.digest, sourceCutoff: cutoff };
           const transition = change(experiment); transition.decisions = prepared.decisions;
-          transition.snapshots = [{ experimentId: experiment.id, target: cutoff + 1, anchor: cutoff, createdAt: createdAt(state),
+          transition.snapshots = [{ experimentId: experiment.id, target: cutoff + 1, anchor: cutoff, createdAt: createdAt(restarting ? { snapshots: [] } : state),
             protocolVersion: core.PROTOCOL_VERSION, coreVersion: core.CORE_VERSION, seedHex: startSeed, window: prepared.window,
             source: provenance(data, prepared.digest), arms: prepared.arms }];
-          await save(state, transition, token, data);
+          if (restarting) {
+            check(token); if (canonical() !== data) throw fault('CANCELLED');
+            const next = await store.restart(state.revision, transition, { signal: token.signal, archivedAt: transition.snapshots[0].createdAt });
+            check(token); displayState(next);
+          } else await save(state, transition, token, data);
         });
       });
     }
@@ -254,7 +261,8 @@
     }
     function cancel() { invalidate(); view.error = null; emit(); }
     function close() { if (closed) return; invalidate(); closed = true; store.close(); }
-    return { beginSource, acceptSource, rejectSource, start, synchronize, pause, replay, cancel, refreshPrizes, readView, close };
+    return { beginSource, acceptSource, rejectSource, start: () => start(), restart: () => start(true),
+      readArchives: () => store.readArchives(), synchronize, pause, replay, cancel, refreshPrizes, readView, close };
   }
   return { create };
 }));

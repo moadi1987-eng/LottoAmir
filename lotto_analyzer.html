@@ -7,11 +7,11 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="lotto-strategy-core.js"></script>
     <script src="lotto-learning-core.js"></script>
-    <script src="lotto-learning-store.js"></script>
+    <script src="lotto-learning-store.js?v=20261106"></script>
     <script src="lotto-learning-report.js"></script>
-    <script src="lotto-learning-controller.js"></script>
-    <script src="lotto-learning-ui.js"></script>
-    <link rel="stylesheet" href="lotto-learning.css">
+    <script src="lotto-learning-controller.js?v=20261106"></script>
+    <script src="lotto-learning-ui.js?v=20261106"></script>
+    <link rel="stylesheet" href="lotto-learning.css?v=20261106">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap');
 
@@ -1146,7 +1146,7 @@
                 <a class="nav-item" onclick="scrollToSection('pairsCard')">🤝 זוגות</a>
                 <a class="nav-item" onclick="scrollToSection('tripletsCard')">🎲 טריפלטים</a>
                 <a class="nav-item" onclick="scrollToSection('quartetsCard')">🎯 רביעיות</a>
-                <button type="button" class="nav-item" onclick="scrollToSection('learningExperimentCard')">ניסוי למידה</button>
+                <button type="button" class="nav-item" onclick="scrollToSection('learningExperimentCard')">טופס לומד</button>
             </div>
             
             <div class="loading" id="loading">
@@ -1408,7 +1408,7 @@
                 </div>
             </div>
 
-            <section id="learningExperimentCard" tabindex="-1" aria-label="ניסוי למידה עצמאי"></section>
+            <section id="learningExperimentCard" tabindex="-1" aria-label="הטופס הלומד"></section>
 
             <section class="backtest-workspace" id="backtestWorkspace" hidden>
                 <div class="backtest-toolbar">
@@ -1474,7 +1474,8 @@
         let learningUI = null;
         function renderLearningPanel(view) {
             try {
-                if (!learningUI) learningUI = LottoLearningUI.mount(document.getElementById('learningExperimentCard'), window.lottoLearningController);
+                if (!learningUI) learningUI = LottoLearningUI.mount(document.getElementById('learningExperimentCard'), window.lottoLearningController,
+                    { loadSource: options => loadDefaultNumbersFile({ ...options, waitForLearning: true }) });
                 learningUI.render(view);
             } catch (error) {
                 // Presentation errors stay within this independent panel, never legacy analysis/PIN paths.
@@ -1507,7 +1508,7 @@
             request.rows = rows.map(row => Array.isArray(row) ? row.slice() : row);
             request.fetchedAt = new Date().toISOString();
             // Do not block legacy staging/analysis on store startup or worker work.
-            void window.lottoLearningReady.then(controller => {
+            return window.lottoLearningReady.then(controller => {
                 if (!controller || request !== latestLearningSource || learningClosed) return;
                 bindLearningSource(request);
                 return controller.acceptSource(request.rows, { kind: request.kind,
@@ -2958,7 +2959,7 @@
             else showError('אנא בחר קובץ תחילה');
         });
 
-        async function loadDefaultNumbersFile() {
+        async function loadDefaultNumbersFile({ signal, waitForLearning = false } = {}) {
             const sourceRequest = beginLearningSource('canonical');
             ensureDefaultPrizeData();
             const btn = document.getElementById('defaultDataBtn');
@@ -2968,7 +2969,7 @@
             document.getElementById('fileName').textContent = `טוען ${DEFAULT_NUMBERS_LABEL}...`;
 
             try {
-                const response = await fetch(DEFAULT_NUMBERS_FILE, { cache: 'no-store' });
+                const response = await fetch(DEFAULT_NUMBERS_FILE, { cache: 'no-store', signal });
                 if (!response.ok) {
                     throw new Error(`לא ניתן לטעון את ${DEFAULT_NUMBERS_FILE}`);
                 }
@@ -2982,10 +2983,12 @@
                 loadedExcelRows = data;
                 loadedExcelSource = sourceRequest;
                 selectedFileSource = null;
-                publishLearningSource(sourceRequest, data);
+                const accepted = publishLearningSource(sourceRequest, data);
                 document.getElementById('fileInput').value = '';
                 document.getElementById('fileName').textContent = `✓ ${DEFAULT_NUMBERS_LABEL} נטען (${data.length} שורות)`;
                 document.getElementById('analyzeBtn').disabled = false;
+                if (waitForLearning) await accepted;
+                return true;
             } catch (error) {
                 if (sourceRequest !== latestLearningSource) return;
                 rejectLearningSource(sourceRequest, error);
@@ -2993,6 +2996,7 @@
                 loadedExcelSource = null;
                 document.getElementById('fileName').textContent = '';
                 showError('שגיאה בטעינת קובץ המספרים הקבוע: ' + error.message);
+                return false;
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;

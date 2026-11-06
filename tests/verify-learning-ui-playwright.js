@@ -2,7 +2,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { openLearningHarness, configureLearningPage } = require('./helpers/learning-browser');
+const { openLearningHarness, openLearningAdvanced, configureLearningPage } = require('./helpers/learning-browser');
 const { buildLearningDraws, toLearningMatrix } = require('./fixtures/learning-fixture');
 const startName = 'התחל ניסוי ושמור טופס';
 const panel = page => page.locator('#learningExperimentCard');
@@ -46,6 +46,7 @@ async function verifyFinalPresentation(h) {
   });
   await configureLearningPage(page);
   await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await openLearningAdvanced(page);
   await page.waitForFunction(() => lottoLearningView?.stored?.snapshots.length === 200);
   await page.evaluate(() => {
     document.querySelector('#learningExperimentCard .learning-disclaimer').prepend('נתוני בדיקה סינתטיים — לא המלצה ולא תוצאות ניסוי אמיתי. ');
@@ -71,7 +72,7 @@ async function verifyFinalPresentation(h) {
   await check('closed history shows per-arm known zero/unavailable totals without opening tables', async () => {
     const entry = panel(page).locator('[data-learning-history-target="4000"]');
     const text = await entry.locator(':scope > summary').textContent();
-    assert.match(text, /לומד.*₪25/); assert.match(text, /שיטה קיימת.*₪0/); assert.match(text, /אקראי.*לא זמין/);
+    assert.match(text, /זכייה.*₪25/);
     assert.equal(await entry.getAttribute('open'), null);
     assert.equal(await entry.locator('table').count(), 0);
     assert.match(await panel(page).locator('[data-learning-prize-total="learner"]').textContent(), /ידוע.*₪25.*199/);
@@ -85,6 +86,7 @@ async function verifyFinalPresentation(h) {
     await page.evaluate(() => { window.firstHistoryTable = document.querySelector('[data-learning-history-target="4000"] table'); });
     await entry.locator(':scope > summary').click(); await entry.locator(':scope > summary').click();
     assert.equal(await page.evaluate(() => firstHistoryTable === document.querySelector('[data-learning-history-target="4000"] table')), true);
+    await entry.locator('[data-learning-key="comparisons-4000"] > summary').click();
     await entry.locator('[data-learning-key="technical-4000"] > summary').click();
     await page.evaluate(async () => { await lottoLearningController.pause(false); });
     assert.equal(await entry.getAttribute('open'), '');
@@ -124,7 +126,7 @@ async function verifyFinalPresentation(h) {
       experiment: null, decisions: [], snapshots: [], observations: [], prizes: [], faults: [] };
     learningUI.render({ ...lottoLearningView, mode: 'live', stored: empty, report: LottoLearningReport.summarizeExperiment(empty) });
   });
-  for (const arm of ['legacy', 'random']) assert.match(await panel(page).locator(`#learning-live [data-learning-paired="${arm}"]`).textContent(), /לא זמין/);
+  for (const arm of ['legacy', 'random']) assert.match(await panel(page).locator(`#learning-advanced-report [data-learning-paired="${arm}"]`).textContent(), /לא זמין/);
   assert.deepEqual(errors, []);
   console.log('PASS historical/import evidence suppression and unavailable paired differences');
   console.log('SCREENSHOTS synthetic: test-results/learning-final-desktop.png and learning-final-mobile.png');
@@ -140,6 +142,7 @@ async function main() {
     const routes = await configureLearningPage(page, { workbook: () => toLearningMatrix(draws), prizes: () => prizeDocument });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await openLearningAdvanced(page);
     await page.evaluate(() => lottoLearningReady);
     // Catches a missing/hidden panel and accidental implicit experiment creation.
     assert.equal(await panel(page).count(), 1, 'Learning panel exists outside hidden results');
@@ -178,12 +181,14 @@ async function main() {
     assert.equal(await button(page, startName).isDisabled(), true);
     assert.match(await panel(page).innerText(), /שיטה קיימת \+ השלמה קבועה/);
     await page.reload();
+    await openLearningAdvanced(page);
     await panel(page).locator(`[data-learning-snapshot-id="${original}"]`).waitFor();
     assert.equal(await panel(page).locator('[data-learning-history-count]').textContent(), '0');
     assert.equal(await page.evaluate(() => lottoLearningView.sourceState.status), 'empty');
     const technical = panel(page).getByText('פרטים טכניים', { exact: true });
     assert.equal(await technical.count(), 1, 'Technical provenance is available without overwhelming the main summary');
     assert.equal(await technical.locator('..').getAttribute('open'), null);
+    await panel(page).locator('[data-learning-saved] [data-learning-key^="comparisons-"] > summary').click();
     assert.match(await panel(page).innerText(), /Asia\/Jerusalem/);
     await technical.click();
     assert.match(await technical.locator('..').innerText(), /Seed:/);
@@ -208,7 +213,7 @@ async function main() {
     assert.equal(await panel(page).locator('[data-learning-history-count]').textContent(), '2');
     assert.match(await panel(page).locator('[data-learning-prize-total="learner"]').innerText(), /₪0.*2/);
     await panel(page).locator('[data-learning-history-target="3700"] > summary').click();
-    assert.match(await panel(page).locator('[data-learning-history-target="3700"]').innerText(), /לא זמין/);
+    assert.match(await panel(page).locator('[data-learning-history-target="3700"]').innerText(), /ממתין לנתוני פרסים/);
     assert.match(await panel(page).locator('[data-learning-history-target="3701"]').innerText(), /חסר/);
     const snapshotBefore = await page.evaluate(() => JSON.stringify(lottoLearningView.stored.snapshots));
     const date = draws[700].date.split('-').reverse().join('/');
@@ -221,7 +226,8 @@ async function main() {
     assert.match(await panel(page).locator('[data-learning-prize-total="learner"]').innerText(), /חסרים: 1/);
     assert.equal(await page.evaluate(() => JSON.stringify(lottoLearningView.stored.snapshots)), snapshotBefore);
     console.log('PASS late prizes update partial totals without rewriting rows; missing targets remain explicit');
-    await button(page, 'המשך ניסוי').click();
+    await openLearningAdvanced(page);
+      await button(page, 'המשך ניסוי').click();
     await page.waitForFunction(() => lottoLearningView.stored.snapshots.at(-1).target === 3702, null, { timeout: 180000 });
     assert.equal(await panel(page).locator('[data-learning-active-line]').count(), 14);
     await button(page, 'השהה יצירת טפסים').click();
@@ -310,6 +316,7 @@ async function verifyUnavailable(h) {
         }), failure);
       }
       await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await openLearningAdvanced(page);
       await page.evaluate(() => lottoLearningReady);
       assert.equal(await panel(page).isVisible(), true);
       assert.equal(await button(page, startName).isDisabled(), true);
@@ -373,6 +380,7 @@ async function verifyImportIsolation(h) {
   try {
     await configureLearningPage(page, { workbook: () => toLearningMatrix(buildLearningDraws(700)) });
     await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await openLearningAdvanced(page);
     await page.waitForFunction(() => lottoLearningView?.stored);
     const backup = await page.evaluate(() => LottoLearningReport.exportBackup(lottoLearningView.stored));
     await panel(page).getByLabel('פתח גיבוי לקריאה בלבד').setInputFiles(inputFile(backup));
@@ -385,7 +393,7 @@ async function verifyImportIsolation(h) {
     console.log('PASS readonly import isolates both keyboard and pointer replay navigation');
     await page.locator('#defaultDataBtn').click();
     await page.waitForFunction(() => lottoLearningView.sourceState.status === 'ready');
-    assert.match(await panel(page).innerText(), /קובץ התוצאות הראשי של האתר/);
+    assert.match(await panel(page).innerText(), /NUMBERS מהאתר/);
     for (const label of ['3+', '4+', '5+']) {
       const metric = panel(page).locator('bdi[dir="ltr"]').filter({ hasText: new RegExp('^' + label.replace('+', '\\+') + ':') });
       assert.equal(await metric.count(), 3, 'Each arm isolates the ' + label + ' metric for RTL reading');
@@ -443,6 +451,7 @@ async function verifyResumeOwnership(h, invalidationsOnly = false) {
       });
       assert.equal(await page.evaluate(() => resumeController.readView().sourceState.status), 'ready');
       assert.equal(await page.evaluate(() => resumeController.readView().error), null);
+      await openLearningAdvanced(page);
       await button(page, 'המשך ניסוי').click();
       if (scenario !== 'normal') {
         await page.waitForFunction(() => resumeEntered);

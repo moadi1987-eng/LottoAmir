@@ -247,7 +247,7 @@
     const close = () => { closed = true; db.close(); };
     db.onversionchange = () => { close(); onVersionChange(); };
     function assertOpen() { if (closed) throw error('STORE_CLOSED'); }
-    async function read() {
+    async function read(includeArchives = false) {
       assertOpen();
       const names = Array.from(db.objectStoreNames);
       // Unknown schemas may legally use names such as "__proto__". Preserve them
@@ -271,9 +271,17 @@
           raw.stores[name].forEach((record, index) => requireValue(equal(storedKey(name, record), raw.keys[name][index])));
         });
         const state = empty();
-        requireValue(raw.stores.meta.length <= 1);
-        if (raw.stores.meta.length) {
-          const meta = raw.stores.meta[0]; fields(meta, ['key', 'revision', 'experiment']);
+        const active = raw.stores.meta.filter(record => record.key === 'active');
+        const archives = raw.stores.meta.filter(record => record.key !== 'active');
+        requireValue(active.length <= 1);
+        for (const archive of archives) {
+          fields(archive, ['key', 'archivedAt', 'state']);
+          requireValue(archive.state?.experiment && archive.key === 'archive:' + archive.state.experiment.id
+            && timestamp(archive.archivedAt) && archive.state.compatibility === 'compatible');
+          validateState(archive.state); await validateDigests(archive.state);
+        }
+        if (active.length) {
+          const meta = active[0]; fields(meta, ['key', 'revision', 'experiment']);
           requireValue(meta.key === 'active'); state.revision = meta.revision; state.experiment = meta.experiment;
         }
         for (const name of RECORDS) state[name] = raw.stores[name].map(record => {
@@ -285,18 +293,22 @@
           }
           return copy;
         });
-        validateState(state); await validateDigests(state); return state;
+        validateState(state); await validateDigests(state);
+        return includeArchives ? { state, archives: archives.map(({ archivedAt, state }) => ({ archivedAt, state })) } : state;
       } catch (cause) {
-        return { ...empty(), compatibility: 'readonly', incompatibilityCodes: [cause.code || 'MALFORMED_RECORD'], rawBackup: raw };
+        const state = { ...empty(), compatibility: 'readonly', incompatibilityCodes: [cause.code || 'MALFORMED_RECORD'], rawBackup: raw };
+        return includeArchives ? { state, archives: [] } : state;
       }
     }
-    async function mutate(expectedRevision, build, signal) {
+    async function mutate(expectedRevision, build, signal, archivedAt = null) {
       assertOpen();
       if (signal && signal.aborted) throw error('STORAGE_ABORTED');
       const current = await read();
       if (current.compatibility !== 'compatible') throw error('INCOMPATIBLE_STORE');
       requireValue(integer(expectedRevision) && current.revision === expectedRevision, 'REVISION_CONFLICT');
       const next = build(current);
+      if (archivedAt !== null) requireValue(timestamp(archivedAt) && current.experiment
+        && next.experiment.id !== current.experiment.id, 'INVALID_RESTART');
       await validateDigests(next);
       assertOpen();
       if (signal && signal.aborted) throw error('STORAGE_ABORTED');
@@ -322,20 +334,25 @@
               const meta = request.result || { key: 'active', revision: 0, experiment: null };
               requireValue(meta.revision === expectedRevision, 'REVISION_CONFLICT');
               requireValue(equal(meta.experiment, current.experiment), 'INCOMPATIBLE_STORE');
-              let remaining = RECORDS.length;
+              let remaining = RECORDS.length + 1;
               const existing = {};
-              for (const name of RECORDS) {
+              for (const name of [...RECORDS, 'meta']) {
                 const lookup = tx.objectStore(name).getAll();
                 lookup.onsuccess = () => {
                   try {
                     existing[name] = lookup.result;
                     // Also fence unexpected out-of-band writes that did not update meta.
-                    requireValue(equal(existing[name], current[name].map(record => storageRecord(name, record, current.experiment && current.experiment.id))), 'INCOMPATIBLE_STORE');
+                    if (name !== 'meta') requireValue(equal(existing[name], current[name].map(record => storageRecord(name, record, current.experiment && current.experiment.id))), 'INCOMPATIBLE_STORE');
                     remaining -= 1;
                     if (remaining) return;
                     if (next.revision === current.revision) return;
+                    if (archivedAt !== null) {
+                      requireValue(!existing.meta.some(record => record.key === 'archive:' + next.experiment.id), 'INVALID_RESTART');
+                      tx.objectStore('meta').add({ key: 'archive:' + current.experiment.id, archivedAt, state: current });
+                    }
                     for (const table of RECORDS) {
-                      const old = new Map(existing[table].map(record => [stable(storedKey(table, record)), record]));
+                      if (archivedAt !== null) tx.objectStore(table).clear();
+                      const old = new Map((archivedAt !== null ? [] : existing[table]).map(record => [stable(storedKey(table, record)), record]));
                       for (const record of next[table]) {
                         const stored = storageRecord(table, record, next.experiment.id);
                         const prior = old.get(stable(storedKey(table, stored)));
@@ -357,6 +374,24 @@
     }
     return {
       close, read,
+      async readArchives() {
+        const result = await read(true);
+        requireValue(result.state.compatibility === 'compatible', 'INCOMPATIBLE_STORE');
+        return result.archives;
+      },
+      restart(expectedRevision, transition, { signal, archivedAt } = {}) {
+        let change;
+        try { jsonValue(transition); change = runtime.structuredClone(transition); }
+        catch (cause) { return Promise.reject(normalizeError(cause)); }
+        return mutate(expectedRevision, current => {
+          const next = merge(empty(), change);
+          requireValue(Boolean(current.experiment), 'INVALID_RESTART');
+          requireValue(next.experiment.originAnchor >= current.experiment.lastProcessedDraw, 'SOURCE_ROLLBACK');
+          requireValue(next.experiment && next.snapshots.length === 1 && !next.observations.length && !next.prizes.length
+            && next.experiment.originAnchor === next.experiment.lastProcessedDraw, 'INVALID_RESTART');
+          return { ...next, revision: current.revision + 1 };
+        }, signal, archivedAt ?? '');
+      },
       commit(expectedRevision, transition, { signal } = {}) {
         // Copy at call time: caller mutation while digesting must not change a write.
         let change;

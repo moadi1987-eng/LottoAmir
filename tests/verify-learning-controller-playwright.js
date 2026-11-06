@@ -3,7 +3,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { buildLearningDraws, toLearningMatrix } = require('./fixtures/learning-fixture');
-const { openLearningHarness, learningSheetJsPath, configureLearningPage } = require('./helpers/learning-browser');
+const { openLearningHarness, openLearningAdvanced, learningSheetJsPath, configureLearningPage } = require('./helpers/learning-browser');
 async function verifyPrizeFailures(h) {
   const context = await h.browser.newContext(); const page = await context.newPage();
   try {
@@ -38,6 +38,7 @@ async function verifyPrizeFailures(h) {
       await page.route('**/LOTTO_PRIZES.json', route => failure === 'network' ? route.abort('failed')
         : route.fulfill(failure === 'http' ? { status: 503, body: 'offline' } : failure === 'schema'
           ? { json: { schemaVersion: 99, draws: {} } } : { contentType: 'application/json', body: '{broken' }));
+      await openLearningAdvanced(page);
       await page.getByRole('button', { name: 'רענן נתוני זכייה', exact: true }).click();
       await page.waitForFunction(() => Array.from(document.querySelectorAll('#learningExperimentCard button'))
         .some(button => button.textContent === 'רענן נתוני זכייה' && !button.disabled));
@@ -139,6 +140,7 @@ async function verifyBFCache(h) {
       await page.evaluate(() => lottoLearningController.pause(true));
       assert.equal(await page.evaluate(() => lottoLearningView.stored.experiment.status), 'paused',
         'BFCache-restored learning controller must perform actions rather than silently return');
+      await openLearningAdvanced(page);
       await page.getByRole('button', { name: 'המשך ניסוי', exact: true }).click();
       await page.waitForFunction(() => lottoLearningView.stored.experiment.status === 'active');
       const restored = await page.evaluate(async () => {
@@ -168,7 +170,7 @@ async function verifyAnalyzer(h) {
     const bytes = Buffer.from(XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }));
     await page.route(/cdn\.sheetjs\.com/, route => route.fulfill({ path: sheetjs, contentType: 'text/javascript' }));
     await page.route(/fonts\.googleapis\.com/, route => route.abort());
-    await page.route('**/lotto-learning-store.js', route => route.fulfill({ contentType: 'text/javascript',
+    await page.route(/\/lotto-learning-store\.js(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/javascript',
       body: fs.readFileSync(path.join(__dirname, '../lotto-learning-store.js'), 'utf8') +
         '\n{ const actualOpen = LottoLearningStore.open; const gate = new Promise(resolve => window.releaseLearningOpen = resolve); LottoLearningStore.open = async (...args) => { const store = await actualOpen(...args); await gate; return store; }; }' }));
     let releaseFetch;

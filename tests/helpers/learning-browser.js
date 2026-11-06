@@ -90,4 +90,10 @@ async function openLearningHarness({ bfcache = false } = {}) {
   } catch (error) { await close(); throw error; }
 }
 
-module.exports = { openLearningHarness, configureLearningPage, routeLearningWorkbook, learningSheetJsPath };
+async function openLearningAdvanced(page) {
+  const details = page.locator('#learningExperimentCard [data-learning-advanced]');
+  await details.locator(':scope > summary').waitFor();
+  if (await details.getAttribute('open') === null) await details.locator(':scope > summary').click();
+}
+
+module.exports = { openLearningHarness, configureLearningPage, routeLearningWorkbook, learningSheetJsPath, openLearningAdvanced };

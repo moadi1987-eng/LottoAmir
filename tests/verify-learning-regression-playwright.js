@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const { openLearningHarness, configureLearningPage, routeLearningWorkbook } = require('./helpers/learning-browser');
+const { openLearningHarness, openLearningAdvanced, configureLearningPage, routeLearningWorkbook } = require('./helpers/learning-browser');
 const { buildLearningDraws, toLearningMatrix } = require('./fixtures/learning-fixture');
 const { buildSyntheticDraws } = require('./fixtures/backtest-fixture');
 const strategy = require('../lotto-strategy-core');
@@ -138,6 +138,7 @@ async function main() {
     let draws = buildLearningDraws(700);
     const initialBytes = await routeLearningWorkbook(page, draws);
     await page.goto(h.baseUrl + '/lotto_analyzer.html');
+    await openLearningAdvanced(page);
     await page.evaluate(() => lottoLearningReady);
     assert.equal(await page.locator('#results').isVisible(), false);
     assert.equal(await panel(page).isVisible(), true, 'Learning must remain accessible before legacy analysis');
@@ -149,6 +150,7 @@ async function main() {
       saveBacktestCache(cache);
     }, { originals: originalPins, cache });
     await page.reload();
+    await openLearningAdvanced(page);
     await page.evaluate(() => lottoLearningReady);
     const normalizedPins = await page.evaluate(() => pinnedForms);
     for (const source of ['main', 'form2']) for (const mode of ['baseline', 'improved']) {
@@ -204,6 +206,7 @@ async function main() {
     await configureLearningPage(second);
     await routeLearningWorkbook(second, buildLearningDraws(703));
     await second.goto(h.baseUrl + '/lotto_analyzer.html');
+    await openLearningAdvanced(second);
     await second.evaluate(() => lottoLearningReady);
     await canonical(second);
     await Promise.all([action(page, 'המשך ניסוי').click(), action(second, 'המשך ניסוי').click()]);
@@ -249,7 +252,7 @@ async function main() {
     await verifyPinControls(page, originalPins);
     await page.locator('[data-pin-action="compare"]').first().click();
     assert.equal(await page.locator('#pinnedFutureCard').isVisible(), true);
-    await page.getByRole('button', { name: 'ניסוי למידה', exact: true }).click();
+    await page.getByRole('button', { name: 'טופס לומד', exact: true }).click();
     assert.equal(await panel(page).isVisible(), true);
     assert.deepEqual(await preserved(page), bytesBefore);
     assert.equal(await page.evaluate(rows => !!loadCompatibleBacktestCache(rows), backtestRows), true);
