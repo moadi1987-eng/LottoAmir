@@ -1,0 +1,111 @@
+name: Pais connectivity probe - one shot
+
+on:
+  push:
+    branches:
+      - codex/pais-connectivity-probe-2026-11-06
+    paths:
+      - .github/workflows/pais-connectivity-probe.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pais-connectivity-probe-2026-11-06
+  cancel-in-progress: false
+
+jobs:
+  connectivity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Check public sources without publishing or changing data
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv
+          import io
+          import json
+          import re
+          import socket
+          import ssl
+          import sys
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          host = 'www.pais.co.il'
+          try:
+              addresses = sorted({entry[4][0] for entry in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)})
+              print(json.dumps({'stage': 'dns', 'host': host, 'addresses': addresses}), flush=True)
+          except OSError as error:
+              print(json.dumps({'stage': 'dns', 'error': str(error)}), flush=True)
+
+          started = time.monotonic()
+          try:
+              with socket.create_connection((host, 443), timeout=8) as connection:
+                  print(json.dumps({'stage': 'tcp', 'ok': True, 'peer': connection.getpeername()[0]}), flush=True)
+                  with ssl.create_default_context().wrap_socket(connection, server_hostname=host) as secure:
+                      print(json.dumps({'stage': 'tls', 'ok': True, 'version': secure.version()}), flush=True)
+          except OSError as error:
+              print(json.dumps({'stage': 'tcp_or_tls', 'ok': False, 'seconds': round(time.monotonic()-started, 2), 'error': str(error)}), flush=True)
+
+          sources = [
+              ('control', 'https://moadi1987-eng.github.io/LottoAmir/LOTTO_PRIZES.json'),
+              ('results', 'https://www.pais.co.il/Lotto/lotto_resultsDownload.aspx'),
+              ('prizes', 'https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3981'),
+          ]
+          outcomes = []
+          for name, url in sources:
+              started = time.monotonic()
+              result = {'source': name, 'url': url, 'http_ok': False, 'plausible_payload': False}
+              try:
+                  request = Request(url, headers={
+                      'User-Agent': 'Mozilla/5.0 (compatible; LottoAmir-Updater/1.0)',
+                      'Referer': 'https://www.pais.co.il/lotto/archive.aspx',
+                  })
+                  with urlopen(request, timeout=20) as response:
+                      payload = response.read(8 * 1024 * 1024 + 1)
+                      result.update(status=response.status, final_url=response.url,
+                                    content_type=response.headers.get('Content-Type'), bytes=len(payload))
+                      result['http_ok'] = response.status == 200
+                  if len(payload) > 8 * 1024 * 1024:
+                      raise ValueError('Response exceeds diagnostic size limit')
+                  if name == 'control':
+                      document = json.loads(payload)
+                      result['plausible_payload'] = document.get('schemaVersion') == 1 and bool(document.get('draws'))
+                  elif name == 'results':
+                      for encoding in ('utf-8-sig', 'cp1255'):
+                          try:
+                              decoded = payload.decode(encoding)
+                          except UnicodeDecodeError:
+                              continue
+                          for row in csv.reader(io.StringIO(decoded)):
+                              if len(row) >= 9 and re.fullmatch(r'\d+', row[0].strip()) and re.fullmatch(r'\d{1,2}/\d{1,2}/\d{4}', row[1].strip()):
+                                  numbers = [int(value.strip()) for value in row[2:9]]
+                                  if len(set(numbers[:6])) == 6 and all(1 <= value <= 37 for value in numbers[:6]) and 1 <= numbers[6] <= 7:
+                                      result.update(plausible_payload=True, first_draw=int(row[0]), first_date=row[1].strip())
+                                      break
+                          if result['plausible_payload']:
+                              break
+                  else:
+                      for encoding in ('utf-8', 'cp1255'):
+                          try:
+                              decoded = payload.decode(encoding)
+                          except UnicodeDecodeError:
+                              continue
+                          result['plausible_payload'] = '<table' in decoded.lower() and '3981' in decoded and 'לוטו' in decoded and 'פרס' in decoded
+                          if result['plausible_payload']:
+                              break
+              except HTTPError as error:
+                  result.update(status=error.code, error=str(error))
+              except (URLError, OSError, ValueError) as error:
+                  result['error'] = str(error)
+              result['seconds'] = round(time.monotonic()-started, 2)
+              outcomes.append(result)
+              print(json.dumps(result, ensure_ascii=False), flush=True)
+          # This probes connection and basic payload shape, not full updater correctness.
+          passed = all(item['http_ok'] and item['plausible_payload'] for item in outcomes)
+          print(json.dumps({'probe_passed': passed, 'writes_or_publication': False}), flush=True)
+          sys.exit(0 if passed else 1)
+          PY
