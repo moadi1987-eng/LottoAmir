@@ -67664,8 +67664,554 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3967"
+    },
+    "3968": {
+      "drawDate": "23/09/2026",
+      "drawNumber": 3968,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 85127
+        },
+        "3+strong": {
+          "prizeIls": 38,
+          "winnerCount": 15355
+        },
+        "4": {
+          "prizeIls": 56,
+          "winnerCount": 6540
+        },
+        "4+strong": {
+          "prizeIls": 147,
+          "winnerCount": 1326
+        },
+        "5": {
+          "prizeIls": 866,
+          "winnerCount": 148
+        },
+        "5+strong": {
+          "prizeIls": 4861,
+          "winnerCount": 39
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3968"
+    },
+    "3969": {
+      "drawDate": "26/09/2026",
+      "drawNumber": 3969,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 87692
+        },
+        "3+strong": {
+          "prizeIls": 35,
+          "winnerCount": 15044
+        },
+        "4": {
+          "prizeIls": 44,
+          "winnerCount": 6919
+        },
+        "4+strong": {
+          "prizeIls": 134,
+          "winnerCount": 1236
+        },
+        "5": {
+          "prizeIls": 649,
+          "winnerCount": 160
+        },
+        "5+strong": {
+          "prizeIls": 3675,
+          "winnerCount": 41
+        },
+        "6": {
+          "prizeIls": 375000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3969"
+    },
+    "3970": {
+      "drawDate": "29/09/2026",
+      "drawNumber": 3970,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 103074
+        },
+        "3+strong": {
+          "prizeIls": 35,
+          "winnerCount": 17966
+        },
+        "4": {
+          "prizeIls": 45,
+          "winnerCount": 8800
+        },
+        "4+strong": {
+          "prizeIls": 128,
+          "winnerCount": 1599
+        },
+        "5": {
+          "prizeIls": 613,
+          "winnerCount": 246
+        },
+        "5+strong": {
+          "prizeIls": 4590,
+          "winnerCount": 47
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3970"
+    },
+    "3971": {
+      "drawDate": "03/10/2026",
+      "drawNumber": 3971,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 111003
+        },
+        "3+strong": {
+          "prizeIls": 39,
+          "winnerCount": 17524
+        },
+        "4": {
+          "prizeIls": 50,
+          "winnerCount": 8672
+        },
+        "4+strong": {
+          "prizeIls": 164,
+          "winnerCount": 1286
+        },
+        "5": {
+          "prizeIls": 791,
+          "winnerCount": 205
+        },
+        "5+strong": {
+          "prizeIls": 5833,
+          "winnerCount": 24
+        },
+        "6": {
+          "prizeIls": 250000,
+          "winnerCount": 2
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3971"
+    },
+    "3972": {
+      "drawDate": "06/10/2026",
+      "drawNumber": 3972,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 124690
+        },
+        "3+strong": {
+          "prizeIls": 38,
+          "winnerCount": 19277
+        },
+        "4": {
+          "prizeIls": 46,
+          "winnerCount": 9665
+        },
+        "4+strong": {
+          "prizeIls": 146,
+          "winnerCount": 1521
+        },
+        "5": {
+          "prizeIls": 709,
+          "winnerCount": 239
+        },
+        "5+strong": {
+          "prizeIls": 5059,
+          "winnerCount": 44
+        },
+        "6": {
+          "prizeIls": 750000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3972"
+    },
+    "3973": {
+      "drawDate": "10/10/2026",
+      "drawNumber": 3973,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 65917
+        },
+        "3+strong": {
+          "prizeIls": 38,
+          "winnerCount": 10204
+        },
+        "4": {
+          "prizeIls": 49,
+          "winnerCount": 5205
+        },
+        "4+strong": {
+          "prizeIls": 158,
+          "winnerCount": 786
+        },
+        "5": {
+          "prizeIls": 705,
+          "winnerCount": 143
+        },
+        "5+strong": {
+          "prizeIls": 7491,
+          "winnerCount": 15
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3973"
+    },
+    "3974": {
+      "drawDate": "13/10/2026",
+      "drawNumber": 3974,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 60296
+        },
+        "3+strong": {
+          "prizeIls": 45,
+          "winnerCount": 9264
+        },
+        "4": {
+          "prizeIls": 61,
+          "winnerCount": 4289
+        },
+        "4+strong": {
+          "prizeIls": 187,
+          "winnerCount": 667
+        },
+        "5": {
+          "prizeIls": 832,
+          "winnerCount": 115
+        },
+        "5+strong": {
+          "prizeIls": 5475,
+          "winnerCount": 16
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3974"
+    },
+    "3975": {
+      "drawDate": "15/10/2026",
+      "drawNumber": 3975,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 49289
+        },
+        "3+strong": {
+          "prizeIls": 37,
+          "winnerCount": 9509
+        },
+        "4": {
+          "prizeIls": 53,
+          "winnerCount": 4071
+        },
+        "4+strong": {
+          "prizeIls": 138,
+          "winnerCount": 834
+        },
+        "5": {
+          "prizeIls": 620,
+          "winnerCount": 135
+        },
+        "5+strong": {
+          "prizeIls": 3106,
+          "winnerCount": 36
+        },
+        "6": {
+          "prizeIls": 1125000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 8000000,
+          "winnerCount": 1
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3975"
+    },
+    "3976": {
+      "drawDate": "17/10/2026",
+      "drawNumber": 3976,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 47093
+        },
+        "3+strong": {
+          "prizeIls": 37,
+          "winnerCount": 8595
+        },
+        "4": {
+          "prizeIls": 57,
+          "winnerCount": 3272
+        },
+        "4+strong": {
+          "prizeIls": 155,
+          "winnerCount": 654
+        },
+        "5": {
+          "prizeIls": 867,
+          "winnerCount": 76
+        },
+        "5+strong": {
+          "prizeIls": 5277,
+          "winnerCount": 20
+        },
+        "6": {
+          "prizeIls": 750000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3976"
+    },
+    "3977": {
+      "drawDate": "20/10/2026",
+      "drawNumber": 3977,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 64348
+        },
+        "3+strong": {
+          "prizeIls": 37,
+          "winnerCount": 11333
+        },
+        "4": {
+          "prizeIls": 53,
+          "winnerCount": 4969
+        },
+        "4+strong": {
+          "prizeIls": 151,
+          "winnerCount": 913
+        },
+        "5": {
+          "prizeIls": 701,
+          "winnerCount": 114
+        },
+        "5+strong": {
+          "prizeIls": 5593,
+          "winnerCount": 18
+        },
+        "6": {
+          "prizeIls": 375000,
+          "winnerCount": 2
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3977"
+    },
+    "3978": {
+      "drawDate": "24/10/2026",
+      "drawNumber": 3978,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 62851
+        },
+        "3+strong": {
+          "prizeIls": 40,
+          "winnerCount": 11025
+        },
+        "4": {
+          "prizeIls": 53,
+          "winnerCount": 4884
+        },
+        "4+strong": {
+          "prizeIls": 161,
+          "winnerCount": 843
+        },
+        "5": {
+          "prizeIls": 760,
+          "winnerCount": 118
+        },
+        "5+strong": {
+          "prizeIls": 3333,
+          "winnerCount": 37
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 8000000,
+          "winnerCount": 1
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3978"
+    },
+    "3979": {
+      "drawDate": "27/10/2026",
+      "drawNumber": 3979,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 60275
+        },
+        "3+strong": {
+          "prizeIls": 34,
+          "winnerCount": 11065
+        },
+        "4": {
+          "prizeIls": 48,
+          "winnerCount": 4587
+        },
+        "4+strong": {
+          "prizeIls": 138,
+          "winnerCount": 742
+        },
+        "5": {
+          "prizeIls": 675,
+          "winnerCount": 134
+        },
+        "5+strong": {
+          "prizeIls": 5025,
+          "winnerCount": 18
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3979"
+    },
+    "3980": {
+      "drawDate": "31/10/2026",
+      "drawNumber": 3980,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 63018
+        },
+        "3+strong": {
+          "prizeIls": 39,
+          "winnerCount": 10694
+        },
+        "4": {
+          "prizeIls": 56,
+          "winnerCount": 4454
+        },
+        "4+strong": {
+          "prizeIls": 169,
+          "winnerCount": 787
+        },
+        "5": {
+          "prizeIls": 707,
+          "winnerCount": 127
+        },
+        "5+strong": {
+          "prizeIls": 5345,
+          "winnerCount": 22
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3980"
+    },
+    "3981": {
+      "drawDate": "03/11/2026",
+      "drawNumber": 3981,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 70297
+        },
+        "3+strong": {
+          "prizeIls": 39,
+          "winnerCount": 11047
+        },
+        "4": {
+          "prizeIls": 51,
+          "winnerCount": 5311
+        },
+        "4+strong": {
+          "prizeIls": 156,
+          "winnerCount": 832
+        },
+        "5": {
+          "prizeIls": 839,
+          "winnerCount": 142
+        },
+        "5+strong": {
+          "prizeIls": 4208,
+          "winnerCount": 19
+        },
+        "6": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3981"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-09-20T05:54:01.201526+00:00"
+  "updatedAt": "2026-11-03T21:55:20.943336+00:00"
 }
