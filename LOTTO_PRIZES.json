@@ -68288,8 +68288,86 @@
         }
       },
       "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3983"
+    },
+    "3984": {
+      "drawDate": "14/11/2026",
+      "drawNumber": 3984,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 59961
+        },
+        "3+strong": {
+          "prizeIls": 43,
+          "winnerCount": 9807
+        },
+        "4": {
+          "prizeIls": 61,
+          "winnerCount": 4194
+        },
+        "4+strong": {
+          "prizeIls": 183,
+          "winnerCount": 693
+        },
+        "5": {
+          "prizeIls": 964,
+          "winnerCount": 90
+        },
+        "5+strong": {
+          "prizeIls": 9320,
+          "winnerCount": 13
+        },
+        "6": {
+          "prizeIls": 750000,
+          "winnerCount": 1
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3984"
+    },
+    "3985": {
+      "drawDate": "17/11/2026",
+      "drawNumber": 3985,
+      "regular": {
+        "3": {
+          "prizeIls": 10,
+          "winnerCount": 81885
+        },
+        "3+strong": {
+          "prizeIls": 33,
+          "winnerCount": 13223
+        },
+        "4": {
+          "prizeIls": 34,
+          "winnerCount": 7916
+        },
+        "4+strong": {
+          "prizeIls": 98,
+          "winnerCount": 1387
+        },
+        "5": {
+          "prizeIls": 296,
+          "winnerCount": 332
+        },
+        "5+strong": {
+          "prizeIls": 2210,
+          "winnerCount": 40
+        },
+        "6": {
+          "prizeIls": 75000,
+          "winnerCount": 8
+        },
+        "6+strong": {
+          "prizeIls": 0,
+          "winnerCount": 0
+        }
+      },
+      "sourceUrl": "https://www.pais.co.il/Lotto/CurrentLotto.aspx?lotteryId=3985"
     }
   },
   "schemaVersion": 1,
-  "updatedAt": "2026-11-10T21:55:20.466111+00:00"
+  "updatedAt": "2026-11-18T07:06:10.800775+00:00"
 }
