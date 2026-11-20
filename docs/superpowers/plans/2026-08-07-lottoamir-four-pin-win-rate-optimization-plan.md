@@ -148,9 +148,9 @@ Expected: failure because `hasRegularWin` and the other binary-statistics functi
 Add version constants near the existing constants:
 
 ```js
-const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v1';
+const FOUR_PIN_PORTFOLIO_VERSION = 'four-pin-portfolio-v2';
 const BINARY_METRIC_VERSION = 'draw-win-3plus-v1';
-const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v1';
+const CONFIDENCE_METHOD_VERSION = 'wilson-paired-bootstrap-v2';
 const DEFAULT_BOOTSTRAP_SAMPLES = 10000;
 ```
 
@@ -263,7 +263,10 @@ for (const windowSize of windows) {
       source: 'main',
       strategyId: index + 1,
       window: windowSize,
-      calibration: { rate3Plus: 0.40 - index * 0.05, stability: 1 - index * 0.1 },
+      calibration: {
+        rate3Plus: 0.40 - index * 0.05,
+        binary3PlusStability: 1 - index * 0.1,
+      },
     });
   }
 }
@@ -301,11 +304,18 @@ Implement `rankPortfolioIdentities` with this exact ordering:
 
 ```text
 calibration.rate3Plus descending
-calibration.stability descending
+calibration.binary3PlusStability descending
 strategyId ascending
 window ascending
 identity lexicographically ascending
 ```
+
+Derive `binary3PlusStability` from the three chronological calibration buckets as
+`minimum(bucket3PlusRates) / average(bucket3PlusRates)`, clamped to `[0, 1]`, with
+zero returned when the average is zero. Persist separate `bucket3PlusWins`,
+`bucket3PlusCounts`, and `bucket3PlusRates` arrays. Keep the existing point-based
+`calibration.stability` unchanged for legacy ranking and display consumers; it is
+not a tie-breaker in `rankPortfolioIdentities`.
 
 Inside each window, calculate the median `rate3Plus`; retain identities whose rate is greater than or equal to that median. Assign retained rank weights `(count - index) / count`. Sum a candidate's weight into every regular number it contains, normalize each window by that window's maximum support, and fill absent number/window cells with zero.
 
@@ -814,7 +824,8 @@ Keep the existing request and error envelope. Forward Task 5 progress unchanged 
 
 - [ ] **Step 4: Version the browser cache and validate the complete portfolio**
 
-Change the cache prefix to a new version such as `lottoBacktestCacheV2:`. Extend `isCompatibleBacktestResult` to require:
+Use the final review-fix cache prefix `lottoBacktestCacheV3:`. Extend
+`isCompatibleBacktestResult` to require:
 
 ```text
 portfolio.version === FOUR_PIN_PORTFOLIO_VERSION
